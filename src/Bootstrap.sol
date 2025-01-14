@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.27;
+pragma solidity ^0.8.28;
 
 import {IBootstrap, BootstrapConfig} from "src/interfaces/IBootstrap.sol";
 import {ModuleLib} from "src/libraries/ModuleLib.sol";
