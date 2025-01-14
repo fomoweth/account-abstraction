@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {Currency} from "src/types/Currency.sol";
+import {CallType} from "src/types/ExecutionMode.sol";
 
 /// @title CalldataDecoder
 
@@ -106,6 +107,60 @@ library CalldataDecoder {
 			res.length := length
 			res.offset := offset
 		}
+	}
+
+	function decodeMultiTypeInitData(
+		bytes calldata data
+	) internal pure returns (uint256[] calldata moduleTypeIds, bytes[] calldata initData) {
+		assembly ("memory-safe") {
+			let offset := data.offset
+			let baseOffset := offset
+			let dataPointer := add(baseOffset, calldataload(offset))
+
+			moduleTypeIds.offset := add(dataPointer, 0x20)
+			moduleTypeIds.length := calldataload(dataPointer)
+			offset := add(offset, 0x20)
+
+			dataPointer := add(baseOffset, calldataload(offset))
+			initData.offset := add(dataPointer, 0x20)
+			initData.length := calldataload(dataPointer)
+		}
+	}
+
+	function decodeEnableModeData(
+		bytes calldata data
+	)
+		internal
+		pure
+		returns (
+			address module,
+			uint256 moduleTypeId,
+			bytes calldata initData,
+			bytes calldata signature,
+			bytes calldata userOpSignature
+		)
+	{
+		uint256 offset;
+		assembly ("memory-safe") {
+			offset := data.offset
+			module := shr(0x60, calldataload(offset))
+
+			offset := add(offset, 0x14)
+			moduleTypeId := calldataload(offset)
+
+			initData.length := shr(0xe0, calldataload(add(offset, 0x20)))
+			initData.offset := add(offset, 0x24)
+			offset := add(initData.offset, initData.length)
+
+			signature.length := shr(0xe0, calldataload(offset))
+			signature.offset := add(offset, 0x04)
+			offset := sub(add(signature.offset, signature.length), data.offset)
+
+			userOpSignature.offset := add(data.offset, offset)
+			userOpSignature.length := sub(data.length, offset)
+		}
+
+		// userOpSignature = data[offset:];
 	}
 
 	function toLengthOffset(bytes calldata data, uint256 index) internal pure returns (uint256 length, uint256 offset) {

@@ -4,12 +4,6 @@ pragma solidity ^0.8.28;
 import {ExecutionModeLib, ExecutionMode, CallType, ExecType} from "src/types/ExecutionMode.sol";
 import {CustomRevert} from "./CustomRevert.sol";
 
-struct Execution {
-	address target;
-	uint256 value;
-	bytes callData;
-}
-
 /// @title ExecutionLib
 /// @notice Provides functions to handle executions for smart account
 
@@ -19,45 +13,45 @@ library ExecutionLib {
 	event TryExecuteUnsuccessful(bytes callData, bytes result);
 	event TryDelegateCallUnsuccessful(bytes callData, bytes result);
 
-	error UnsupportedCallType();
-	error UnsupportedExecType();
+	error InvalidCallType();
+	error InvalidExecType();
 
-	function execute(ExecutionMode mode, bytes calldata executionData) internal returns (bytes[] memory results) {
+	function execute(ExecutionMode mode, bytes calldata executionCalldata) internal returns (bytes[] memory results) {
 		(CallType callType, ExecType execType) = mode.decodeBasic();
 
 		if (callType == ExecutionModeLib.CALLTYPE_BATCH) {
 			if (execType == ExecutionModeLib.EXECTYPE_DEFAULT) {
-				results = executeBatch(decodeBatch(executionData));
+				results = executeBatch(decodeBatch(executionCalldata));
 			} else if (execType == ExecutionModeLib.EXECTYPE_TRY) {
-				results = tryExecuteBatch(decodeBatch(executionData));
+				results = tryExecuteBatch(decodeBatch(executionCalldata));
 			} else {
-				UnsupportedExecType.selector.revertWith();
+				InvalidExecType.selector.revertWith();
 			}
 		} else {
 			results = new bytes[](1);
 
 			if (callType == ExecutionModeLib.CALLTYPE_SINGLE) {
-				(address target, uint256 value, bytes calldata callData) = decodeSingle(executionData);
+				(address target, uint256 value, bytes calldata callData) = decodeSingle(executionCalldata);
 
 				if (execType == ExecutionModeLib.EXECTYPE_DEFAULT) {
 					results[0] = executeSingle(target, value, callData);
 				} else if (execType == ExecutionModeLib.EXECTYPE_TRY) {
 					(, results[0]) = tryExecuteSingle(target, value, callData);
 				} else {
-					UnsupportedExecType.selector.revertWith();
+					InvalidExecType.selector.revertWith();
 				}
 			} else if (callType == ExecutionModeLib.CALLTYPE_DELEGATE) {
-				(address target, bytes calldata callData) = decodeDelegate(executionData);
+				(address target, bytes calldata callData) = decodeDelegate(executionCalldata);
 
 				if (execType == ExecutionModeLib.EXECTYPE_DEFAULT) {
 					results[0] = executeDelegate(target, callData);
 				} else if (execType == ExecutionModeLib.EXECTYPE_TRY) {
 					(, results[0]) = tryExecuteDelegate(target, callData);
 				} else {
-					UnsupportedExecType.selector.revertWith();
+					InvalidExecType.selector.revertWith();
 				}
 			} else {
-				UnsupportedCallType.selector.revertWith();
+				InvalidCallType.selector.revertWith();
 			}
 		}
 	}
@@ -193,42 +187,42 @@ library ExecutionLib {
 	}
 
 	function decodeSingle(
-		bytes calldata executionData
+		bytes calldata executionCalldata
 	) internal pure returns (address target, uint256 value, bytes calldata callData) {
 		assembly ("memory-safe") {
-			if iszero(gt(executionData.length, 0x33)) {
+			if iszero(gt(executionCalldata.length, 0x33)) {
 				mstore(0x00, 0x3b99b53d) // SliceOutOfBounds()
 				revert(0x1c, 0x04)
 			}
 
-			target := shr(0x60, calldataload(executionData.offset))
-			value := calldataload(add(executionData.offset, 0x14))
-			callData.offset := add(executionData.offset, 0x34)
-			callData.length := sub(executionData.length, 0x34)
+			target := shr(0x60, calldataload(executionCalldata.offset))
+			value := calldataload(add(executionCalldata.offset, 0x14))
+			callData.offset := add(executionCalldata.offset, 0x34)
+			callData.length := sub(executionCalldata.length, 0x34)
 		}
 	}
 
 	function decodeDelegate(
-		bytes calldata executionData
+		bytes calldata executionCalldata
 	) internal pure returns (address target, bytes calldata callData) {
 		assembly ("memory-safe") {
-			if iszero(gt(executionData.length, 0x13)) {
+			if iszero(gt(executionCalldata.length, 0x13)) {
 				mstore(0x00, 0x3b99b53d) // SliceOutOfBounds()
 				revert(0x1c, 0x04)
 			}
 
-			target := shr(0x60, calldataload(executionData.offset))
-			callData.offset := add(executionData.offset, 0x14)
-			callData.length := sub(executionData.length, 0x14)
+			target := shr(0x60, calldataload(executionCalldata.offset))
+			callData.offset := add(executionCalldata.offset, 0x14)
+			callData.length := sub(executionCalldata.length, 0x14)
 		}
 	}
 
-	function decodeBatch(bytes calldata executionData) internal pure returns (bytes32[] calldata pointers) {
+	function decodeBatch(bytes calldata executionCalldata) internal pure returns (bytes32[] calldata pointers) {
 		// prettier-ignore
 		assembly ("memory-safe") {
-            let u := calldataload(executionData.offset)
-            let s := add(executionData.offset, u)
-            let e := sub(add(executionData.offset, executionData.length), 0x20)
+            let u := calldataload(executionCalldata.offset)
+            let s := add(executionCalldata.offset, u)
+            let e := sub(add(executionCalldata.offset, executionCalldata.length), 0x20)
 
 			pointers.offset := add(s, 0x20)
             pointers.length := calldataload(s)
