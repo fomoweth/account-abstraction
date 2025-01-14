@@ -3,12 +3,6 @@ pragma solidity ^0.8.28;
 
 import {ExecutionMode, CallType, ExecType} from "src/types/ExecutionMode.sol";
 
-struct Execution {
-	address target;
-	uint256 value;
-	bytes callData;
-}
-
 interface IERC7579Account {
 	event ModuleInstalled(uint256 moduleTypeId, address module);
 	event ModuleUninstalled(uint256 moduleTypeId, address module);
