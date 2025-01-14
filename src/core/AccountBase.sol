@@ -8,8 +8,6 @@ import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOper
 /// @notice Implements ERC-4337 and ERC-7579 standards for account management and access control
 
 abstract contract AccountBase {
-	string internal constant ACCOUNT_IMPLEMENTATION_ID = "fomoweth.account.1.0.0";
-
 	address internal constant ENTRYPOINT = 0x0000000071727De22E5E9d8BAf0edAc6f37da032;
 
 	modifier onlyEntryPoint() {

@@ -24,10 +24,6 @@ abstract contract ERC1271 is EIP712 {
 	bytes4 internal constant SUPPORTS_ERC7739 = 0x77390000;
 	bytes4 internal constant SUPPORTS_ERC7739_V1 = 0x77390001;
 
-	function isValidSignature(bytes32 hash, bytes calldata signature) public view virtual returns (bytes4 magicValue) {
-		return _erc1271IsValidSignatureWithSender(msg.sender, hash, _erc1271UnwrapSignature(signature));
-	}
-
 	function _validateSignatureForOwner(
 		address owner,
 		bytes32 hash,

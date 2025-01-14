@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {CallType} from "src/types/ExecutionMode.sol";
+import {ModuleType} from "src/types/ModuleType.sol";
 import {SentinelList} from "src/types/SentinelList.sol";
 import {CalldataDecoder} from "./CalldataDecoder.sol";
 import {CustomRevert} from "./CustomRevert.sol";
