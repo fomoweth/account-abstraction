@@ -2,5 +2,27 @@
 src = "src"
 out = "out"
 libs = ["lib"]
+solc = "0.8.28"
+evm_version = "cancun"
+via_ir = true
+optimizer = true
+optimizer_runs = 1000000
+gas_reports = ["*"]
+fs_permissions = [
+    { access = "read", path = "./out/"},
+    { access = "read", path = "./config/"}
+]
+
+[profile.default.rpc_endpoints]
+ethereum = "${RPC_ETHEREUM}"
+optimism = "${RPC_OPTIMISM}"
+polygon = "${RPC_POLYGON}"
+arbitrum = "${RPC_ARBITRUM}"
+
+[etherscan]
+ethereum = { key = "${ETHERSCAN_API_KEY_ETHEREUM}", url = "${ETHERSCAN_URL_ETHEREUM}" }
+optimism = { key = "${ETHERSCAN_API_KEY_OPTIMISM}", url = "${ETHERSCAN_URL_OPTIMISM}" }
+polygon = { key = "${ETHERSCAN_API_KEY_POLYGON}", url = "${ETHERSCAN_URL_POLYGON}" }
+arbitrum = { key = "${ETHERSCAN_API_KEY_ARBITRUM}", url = "${ETHERSCAN_URL_ARBITRUM}" }
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
