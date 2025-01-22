@@ -9,8 +9,8 @@ abstract contract RegistryAdapter {
 	bytes32 private constant REGISTRY_CONFIGURED_TOPIC =
 		0x7d1c97842846d37d5ecd1884bd61723b85333bfbc4e3daa46882adaf1876afd2;
 
-	/// @dev keccak256(abi.encode(uint256(keccak256("RegistryAdapter.storage.registry.slot")) - 1)) & ~bytes32(uint256(0xff))
-	bytes32 private constant REGISTRY_SLOT = 0x67e0273ac2b255238360b830e41038fb59396476606ad3224640c0859a888900;
+	/// @dev keccak256(abi.encode(uint256(keccak256("eip7579.account.registry")) - 1)) & ~bytes32(uint256(0xff))
+	bytes32 private constant REGISTRY_SLOT = 0xe5f524a5fbd3033d72d91a5bc47131cee70f90a3764a2c1800c3b0911ca62c00;
 
 	modifier withRegistry(address module, uint256 moduleTypeId) {
 		_checkRegistry(module, moduleTypeId);

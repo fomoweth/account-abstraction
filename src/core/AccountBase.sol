@@ -53,6 +53,11 @@ abstract contract AccountBase {
 
 	function withdrawDepositTo(address recipient, uint256 amount) external payable {
 		assembly ("memory-safe") {
+			if iszero(shl(0x60, recipient)) {
+				mstore(0x00, 0x9c8d2cd2) // InvalidRecipient()
+				revert(0x1c, 0x04)
+			}
+
 			let ptr := mload(0x40)
 
 			mstore(ptr, 0x205c287800000000000000000000000000000000000000000000000000000000) // withdrawTo(address,uint256)

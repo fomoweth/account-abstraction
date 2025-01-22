@@ -13,9 +13,6 @@ contract SmartAccountFactory is ISmartAccountFactory {
 	/// @dev keccak256(bytes("AccountCreated(address,bytes32)"))
 	bytes32 private constant ACCOUNT_CREATED_TOPIC = 0x8fe66a5d954d6d3e0306797e31e226812a9916895165c96c367ef52807631951;
 
-	/// @dev keccak256(bytes("AccountCreated(address,address,bytes32)"))
-	// bytes32 private constant ACCOUNT_CREATED_TOPIC = 0xf66707ae2820569ece31cb5ac7cfcdd4d076c3f31ed9e28bf94394bedc0f329d;
-
 	address public immutable implementation;
 
 	constructor(address _implementation) {
