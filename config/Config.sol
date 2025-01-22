@@ -11,7 +11,7 @@ struct Config {
 }
 
 struct UniswapConfig {
-	address nft;
+	address positionManager;
 	address quoter;
 	address router;
 	address staker;
@@ -36,11 +36,11 @@ library ConfigLibrary {
 	string internal constant UNISWAP_PATH = "$.uniswap";
 
 	function getAddress(Config storage config, string memory key) internal view returns (address) {
-		return config.json.readAddress(string.concat("$.", key));
+		return config.json.readAddressOr(string.concat("$.", key), address(0));
 	}
 
 	function getAddressArray(Config storage config, string memory key) internal view returns (address[] memory) {
-		return config.json.readAddressArray(string.concat("$.", key));
+		return config.json.readAddressArrayOr(string.concat("$.", key), new address[](0));
 	}
 
 	function getAddressArray(
@@ -92,7 +92,7 @@ library ConfigLibrary {
 	}
 
 	function getForkBlockNumber(Config storage config) internal view returns (uint256) {
-		return config.json.readUint(FORK_BLOCK_NUMBER_PATH);
+		return config.json.readUintOr(FORK_BLOCK_NUMBER_PATH, 0);
 	}
 
 	function getWrappedNative(Config storage config) internal view returns (Currency) {
@@ -100,11 +100,11 @@ library ConfigLibrary {
 	}
 
 	function getLsdNatives(Config storage config) internal view returns (Currency[] memory) {
-		return getCurrencyArray(config, config.json.readStringArray(LSD_NATIVES_PATH));
+		return getCurrencyArray(config, config.json.readStringArrayOr(LSD_NATIVES_PATH, new string[](0)));
 	}
 
 	function getStablecoins(Config storage config) internal view returns (Currency[] memory) {
-		return getCurrencyArray(config, config.json.readStringArray(STABLECOINS_PATH));
+		return getCurrencyArray(config, config.json.readStringArrayOr(STABLECOINS_PATH, new string[](0)));
 	}
 
 	function getUniswapConfig(Config storage config) internal view returns (UniswapConfig memory) {
