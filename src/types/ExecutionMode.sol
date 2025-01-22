@@ -72,6 +72,9 @@ function neqModePayload(ModePayload x, ModePayload y) pure returns (bool flag) {
 /// @notice Provides functions to encode and decode execution mode
 
 library ExecutionModeLib {
+	error UnsupportedCallType(CallType callType);
+	error UnsupportedExecType(ExecType execType);
+
 	CallType internal constant CALLTYPE_SINGLE = CallType.wrap(0x00);
 	CallType internal constant CALLTYPE_BATCH = CallType.wrap(0x01);
 	CallType internal constant CALLTYPE_STATIC = CallType.wrap(0xFE);
@@ -111,23 +114,7 @@ library ExecutionModeLib {
 	function decodeBasic(ExecutionMode mode) internal pure returns (CallType callType, ExecType execType) {
 		assembly ("memory-safe") {
 			callType := mode
-			// CALLTYPE_SINGLE: 0x00
-			// CALLTYPE_BATCH: 0x01
-			// CALLTYPE_DELEGATE: 0xFF
-			if iszero(or(or(eq(callType, 0x00), eq(callType, shl(0xf8, 0x01))), eq(callType, shl(0xf8, 0xff)))) {
-				mstore(0x00, 0xb96fcfe400000000000000000000000000000000000000000000000000000000) // UnsupportedCallType(bytes1)
-				mstore(0x04, callType)
-				revert(0x00, 0x24)
-			}
-
 			execType := shl(0x08, mode)
-			// EXECTYPE_DEFAULT: 0x00
-			// EXECTYPE_TRY: 0x01
-			if iszero(or(eq(execType, 0x00), eq(execType, 0x01))) {
-				mstore(0x00, 0xb96fcfe400000000000000000000000000000000000000000000000000000000) // UnsupportedExecType(bytes1)
-				mstore(0x04, execType)
-				revert(0x00, 0x24)
-			}
 		}
 	}
 

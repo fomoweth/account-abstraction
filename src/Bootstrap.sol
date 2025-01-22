@@ -31,9 +31,11 @@ contract Bootstrap is IBootstrap, RegistryAdapter {
 			}
 		}
 
+		address module;
 		length = executors.length;
 		for (uint256 i; i < length; ) {
-			if (executors[i].module != address(0)) executors[i].module.installExecutor(executors[i].data);
+			module = executors[i].module;
+			if (module != address(0)) module.installExecutor(executors[i].data);
 
 			unchecked {
 				i = i + 1;
@@ -42,7 +44,8 @@ contract Bootstrap is IBootstrap, RegistryAdapter {
 
 		length = fallbacks.length;
 		for (uint256 i; i < length; ) {
-			if (fallbacks[i].module != address(0)) fallbacks[i].module.installFallbackHandler(fallbacks[i].data);
+			module = fallbacks[i].module;
+			if (module != address(0)) module.installFallbackHandler(fallbacks[i].data);
 
 			unchecked {
 				i = i + 1;
@@ -92,15 +95,11 @@ contract Bootstrap is IBootstrap, RegistryAdapter {
 		address registry,
 		address[] calldata attesters,
 		uint8 threshold
-	) external view returns (bytes memory) {
-		return
-			abi.encode(
-				address(this),
-				abi.encodeCall(
-					this.initialize,
-					(validators, executors, fallbacks, hook, registry, attesters, threshold)
-				)
-			);
+	) external view returns (bytes memory callData) {
+		callData = abi.encode(
+			address(this),
+			abi.encodeCall(this.initialize, (validators, executors, fallbacks, hook, registry, attesters, threshold))
+		);
 	}
 
 	function getInitializeScopedCalldata(
@@ -109,12 +108,11 @@ contract Bootstrap is IBootstrap, RegistryAdapter {
 		address registry,
 		address[] calldata attesters,
 		uint8 threshold
-	) external view returns (bytes memory) {
-		return
-			abi.encode(
-				address(this),
-				abi.encodeCall(this.initializeScoped, (validators, hook, registry, attesters, threshold))
-			);
+	) external view returns (bytes memory callData) {
+		callData = abi.encode(
+			address(this),
+			abi.encodeCall(this.initializeScoped, (validators, hook, registry, attesters, threshold))
+		);
 	}
 
 	function getInitializeWithSingleValidatorCalldata(
@@ -122,15 +120,14 @@ contract Bootstrap is IBootstrap, RegistryAdapter {
 		address registry,
 		address[] calldata attesters,
 		uint8 threshold
-	) external view returns (bytes memory) {
-		return
-			abi.encode(
-				address(this),
-				abi.encodeCall(
-					this.initializeWithSingleValidator,
-					(validator.module, validator.data, registry, attesters, threshold)
-				)
-			);
+	) external view returns (bytes memory callData) {
+		callData = abi.encode(
+			address(this),
+			abi.encodeCall(
+				this.initializeWithSingleValidator,
+				(validator.module, validator.data, registry, attesters, threshold)
+			)
+		);
 	}
 
 	function name() external pure returns (string memory) {
