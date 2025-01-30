@@ -2,8 +2,8 @@
 pragma solidity ^0.8.28;
 
 import {CallType} from "src/types/ExecutionMode.sol";
-import {ModuleType} from "src/types/ModuleType.sol";
 import {SentinelList} from "src/types/SentinelList.sol";
+import {BytesLib} from "./BytesLib.sol";
 import {CalldataDecoder} from "./CalldataDecoder.sol";
 import {CustomRevert} from "./CustomRevert.sol";
 
@@ -11,11 +11,17 @@ import {CustomRevert} from "./CustomRevert.sol";
 /// @notice Provides functions to handle the management of ERC-7579 modules
 
 library ModuleLib {
+	using BytesLib for bytes;
 	using CalldataDecoder for bytes;
 	using CustomRevert for bytes4;
 
+	error UnsupportedModuleType(uint256 moduleTypeId);
+
 	error InvalidModule(address module);
 	error InvalidModuleTypeId(uint256 moduleTypeId);
+
+	error ModuleAlreadyInstalled(address module);
+	error ModuleNotInstalled(address module);
 
 	error ValidatorAlreadyInstalled(address validator);
 	error ValidatorNotInstalled(address validator);
@@ -32,6 +38,14 @@ library ModuleLib {
 
 	error LengthMismatch();
 
+	/// @dev keccak256(bytes("ModuleInstalled(uint256,address)"))
+	bytes32 private constant MODULE_INSTALLED_TOPIC =
+		0xd21d0b289f126c4b473ea641963e766833c2f13866e4ff480abd787c100ef123;
+
+	/// @dev keccak256(bytes("ModuleUninstalled(uint256,address)"))
+	bytes32 private constant MODULE_UNINSTALLED_TOPIC =
+		0x341347516a9de374859dfda710fa4828b2d48cb57d4fbe4c1149612b8e02276e;
+
 	/// @dev keccak256(abi.encode(uint256(keccak256("eip7579.account.validators")) - 1)) & ~bytes32(uint256(0xff))
 	bytes32 private constant VALIDATORS_STORAGE_SLOT =
 		0xf2c1f63b10845c1394082ccd2352280b1281c904a50557aad80ff67eca1ddb00;
@@ -41,45 +55,18 @@ library ModuleLib {
 		0xf9162d146b6422df1bb2630e4e3d64a305decb164733850b4dcfd08f5c72b800;
 
 	/// @dev keccak256(abi.encode(uint256(keccak256("eip7579.account.fallbackHandlers")) - 1)) & ~bytes32(uint256(0xff))
-	bytes32 private constant FALLBACK_HANDLERS_STORAGE_SLOT =
+	bytes32 private constant FALLBACKS_STORAGE_SLOT =
 		0xe9bbfc6a7c1b005e63cb26d446b1154a357dd2dded84acdf0558b07639dcb300;
 
 	/// @dev keccak256(abi.encode(uint256(keccak256("eip7579.account.hook")) - 1)) & ~bytes32(uint256(0xff))
 	bytes32 private constant HOOK_STORAGE_SLOT = 0xaf4f685d452ea61d76faaeadc5c73cbfc37c47e989c36c89cfc7f80215867800;
 
-	uint256 internal constant MODULE_TYPE_MULTI = 0;
 	uint256 internal constant MODULE_TYPE_VALIDATOR = 1;
 	uint256 internal constant MODULE_TYPE_EXECUTOR = 2;
 	uint256 internal constant MODULE_TYPE_FALLBACK = 3;
 	uint256 internal constant MODULE_TYPE_HOOK = 4;
-
-	uint256 internal constant SELECTORS_INDEX = 0;
-	uint256 internal constant CALLTYPES_INDEX = 1;
-	uint256 internal constant INIT_DATA_INDEX = 2;
-
-	function installMultiType(address module, bytes calldata params) internal {
-		(uint256[] calldata moduleTypeIds, bytes[] calldata data) = params.decodeMultiTypeInitData();
-
-		uint256 length = moduleTypeIds.length;
-		if (length != data.length) LengthMismatch.selector.revertWith();
-
-		for (uint256 i; i < length; ) {
-			uint256 moduleTypeId = moduleTypeIds[i];
-			if (moduleTypeId == MODULE_TYPE_VALIDATOR) {
-				installValidator(module, data[i]);
-			} else if (moduleTypeId == MODULE_TYPE_EXECUTOR) {
-				installExecutor(module, data[i]);
-			} else if (moduleTypeId == MODULE_TYPE_FALLBACK) {
-				installFallbackHandler(module, data[i]);
-			} else if (moduleTypeId == MODULE_TYPE_HOOK) {
-				installHook(module, data[i]);
-			}
-
-			unchecked {
-				i = i + 1;
-			}
-		}
-	}
+	uint256 internal constant MODULE_TYPE_POLICY = 5;
+	uint256 internal constant MODULE_TYPE_SIGNER = 6;
 
 	function installValidator(address validator, bytes calldata data) internal {
 		validateModuleType(validator, MODULE_TYPE_VALIDATOR);
@@ -88,17 +75,17 @@ library ModuleLib {
 		if (validators.contains(validator)) ValidatorAlreadyInstalled.selector.revertWith(validator);
 
 		validators.push(validator);
-		invokeOnInstall(validator, data);
+		invokeOnInstall(validator, MODULE_TYPE_VALIDATOR, data);
 	}
 
 	function uninstallValidator(address validator, bytes calldata data) internal {
 		SentinelList storage validators = getValidatorsList();
 		if (!validators.contains(validator)) ValidatorNotInstalled.selector.revertWith(validator);
 
-		validators.pop(data.decodeAddress(0), validator);
+		validators.pop(data.toAddress(0), validator);
 		if (validators.isEmpty()) NoValidatorInstalled.selector.revertWith();
 
-		invokeOnUninstall(validator, data.decodeBytes(1));
+		invokeOnUninstall(validator, MODULE_TYPE_VALIDATOR, data.toBytes(1));
 	}
 
 	function installExecutor(address executor, bytes calldata data) internal {
@@ -108,46 +95,47 @@ library ModuleLib {
 		if (executors.contains(executor)) ExecutorAlreadyInstalled.selector.revertWith(executor);
 
 		executors.push(executor);
-		invokeOnInstall(executor, data);
+		invokeOnInstall(executor, MODULE_TYPE_EXECUTOR, data);
 	}
 
 	function uninstallExecutor(address executor, bytes calldata data) internal {
 		SentinelList storage executors = getExecutorsList();
 		if (!executors.contains(executor)) ExecutorNotInstalled.selector.revertWith(executor);
 
-		executors.pop(data.decodeAddress(0), executor);
-		invokeOnUninstall(executor, data.decodeBytes(1));
+		executors.pop(data.toAddress(0), executor);
+		invokeOnUninstall(executor, MODULE_TYPE_EXECUTOR, data.toBytes(1));
 	}
 
-	function installFallbackHandler(address handler, bytes calldata data) internal {
+	function installFallback(address handler, bytes calldata data) internal {
 		validateModuleType(handler, MODULE_TYPE_FALLBACK);
 
-		(bytes4[] calldata selectors, CallType[] calldata callTypes, ) = decodeFallbackHandlerInputs(data);
+		(bytes4[] calldata selectors, CallType[] calldata callTypes) = data.decodeSelectorsAndCallTypes();
 
-		setFallbackHandler(handler, selectors, callTypes);
-		invokeOnInstall(handler, data);
+		_installFallback(handler, selectors, callTypes);
+		invokeOnInstall(handler, MODULE_TYPE_FALLBACK, data);
 	}
 
-	function uninstallFallbackHandler(address handler, bytes calldata data) internal {
-		unsetFallbackHandler(data.decodeSelectors(0));
-		invokeOnUninstall(handler, data.decodeBytes(1));
+	function uninstallFallback(address handler, bytes calldata data) internal {
+		_uninstallFallback(data.decodeSelectors(0));
+		invokeOnUninstall(handler, MODULE_TYPE_FALLBACK, data.toBytes(1));
 	}
 
-	function setFallbackHandler(address handler, bytes4[] calldata selectors, CallType[] calldata callTypes) internal {
-		// prettier-ignore
+	function _installFallback(address handler, bytes4[] calldata selectors, CallType[] calldata callTypes) private {
 		assembly ("memory-safe") {
-			let length := selectors.length
-			if xor(length, callTypes.length) {
+			if xor(selectors.length, callTypes.length) {
 				mstore(0x00, 0xff633a38) // LengthMismatch()
 				revert(0x1c, 0x04)
 			}
 
-			handler := shr(0x60, shl(0x60, handler))
-			let selector
 			let callType
-			let derivedSlot
+			let selector
+			let slot
 
-			for { let i } lt(i, length) { i := add(i, 0x01) } {
+			handler := shr(0x60, shl(0x60, handler))
+			mstore(0x20, FALLBACKS_STORAGE_SLOT)
+
+			// prettier-ignore
+			for { let i } lt(i, selectors.length) { i := add(i, 0x01) } {
 				selector := calldataload(add(selectors.offset, shl(0x05, i)))
 				callType := calldataload(add(callTypes.offset, shl(0x05, i)))
 
@@ -167,110 +155,89 @@ library ModuleLib {
 				}
 
 				mstore(0x00, selector)
-				mstore(0x20, FALLBACK_HANDLERS_STORAGE_SLOT)
-				derivedSlot := keccak256(0x00, 0x40)
+				slot := keccak256(0x00, 0x40)
 
-				if sload(derivedSlot) {
+				if sload(slot) {
 					let ptr := mload(0x40)
 					mstore(ptr, 0xb014ac0800000000000000000000000000000000000000000000000000000000) // FallbackHandlerAlreadyInstalled(address,bytes4)
-					mstore(add(ptr, 0x04), and(handler, 0xffffffffffffffffffffffffffffffffffffffff))
-					mstore(add(ptr, 0x24), and(selector, 0xffffffff00000000000000000000000000000000000000000000000000000000))
+					mstore(add(ptr, 0x04), handler)
+					mstore(add(ptr, 0x24), selector)
 					revert(ptr, 0x44)
 				}
 
-				sstore(derivedSlot, add(callType, handler))
+				sstore(slot, add(callType, handler))
 			}
 		}
 	}
 
-	function unsetFallbackHandler(bytes4[] calldata selectors) internal {
+	function _uninstallFallback(bytes4[] calldata selectors) private {
 		assembly ("memory-safe") {
-			let length := selectors.length
 			let selector
-			let derivedSlot
+			let slot
+
+			mstore(0x20, FALLBACKS_STORAGE_SLOT)
 
 			// prettier-ignore
-			for { let i } lt(i, length) { i := add(i, 0x01) } {
-				selector := calldataload(add(selectors.offset, shl(0x05, i)))
+			for { let i } lt(i, selectors.length) { i := add(i, 0x01) } {
+				selector := shr(0xe0, shl(0xe0, calldataload(add(selectors.offset, shl(0x05, i)))))
 
 				mstore(0x00, selector)
-				mstore(0x20, FALLBACK_HANDLERS_STORAGE_SLOT)
-				derivedSlot := keccak256(0x00, 0x40)
+				slot := keccak256(0x00, 0x40)
 
-				if iszero(sload(derivedSlot)) {
-					mstore(0x00, 0x657f570200000000000000000000000000000000000000000000000000000000) // FallbackHandlerNotInstalled(bytes4)
-					mstore(0x04, selector)
-					revert(0x00, 0x24)
+				if iszero(sload(slot)) {
+					mstore(0x00, 0xc2a825f5) // UnknownSelector(bytes4)
+					mstore(0x20, selector)
+					revert(0x1c, 0x24)
 				}
 
-				sstore(derivedSlot, 0x00)
+				sstore(slot, 0x00)
 			}
 		}
 	}
 
-	function getFallbackHandler(bytes4 selector) internal view returns (CallType callType, address handler) {
+	function getFallback(bytes4 selector) internal view returns (CallType callType, address handler) {
 		assembly ("memory-safe") {
 			mstore(0x00, selector)
-			mstore(0x20, FALLBACK_HANDLERS_STORAGE_SLOT)
+			mstore(0x20, FALLBACKS_STORAGE_SLOT)
 
-			let data := sload(keccak256(0x00, 0x40))
-			if data {
-				callType := data
-				handler := shr(0x60, shl(0x60, data))
+			let stored := sload(keccak256(0x00, 0x40))
+			if stored {
+				callType := stored
+				handler := shr(0x60, shl(0x60, stored))
 			}
-		}
-	}
-
-	function decodeFallbackHandlerInputs(
-		bytes calldata data
-	) internal pure returns (bytes4[] calldata selectors, CallType[] calldata callTypes, bytes calldata initData) {
-		assembly ("memory-safe") {
-			function decode(l, o, i) -> length, offset {
-				let lengthPtr := add(o, and(calldataload(add(o, shl(0x05, i))), 0xffffffff))
-				length := and(calldataload(lengthPtr), 0xffffffff)
-				offset := add(lengthPtr, 0x20)
-			
-				if lt(add(l, o), add(length, offset)) {
-					mstore(0x00, 0x3b99b53d) // SliceOutOfBounds()
-					revert(0x1c, 0x04)
-				}
-			}
-
-			selectors.length, selectors.offset := decode(data.length, data.offset, SELECTORS_INDEX)
-			callTypes.length, callTypes.offset := decode(data.length, data.offset, CALLTYPES_INDEX)
-			initData.length, initData.offset := decode(data.length, data.offset, INIT_DATA_INDEX)
 		}
 	}
 
 	function installHook(address hook, bytes calldata data) internal {
 		validateModuleType(hook, MODULE_TYPE_HOOK);
-		setHook(hook);
-		invokeOnInstall(hook, data);
+		_installHook(hook);
+		invokeOnInstall(hook, MODULE_TYPE_HOOK, data);
 	}
 
 	function uninstallHook(address hook, bytes calldata data) internal {
-		unsetHook(hook);
-		invokeOnUninstall(hook, data);
+		_uninstallHook(hook);
+		invokeOnUninstall(hook, MODULE_TYPE_HOOK, data);
 	}
 
-	function setHook(address hook) internal {
+	function _installHook(address hook) private {
 		assembly ("memory-safe") {
+			hook := shr(0x60, shl(0x60, hook))
 			if sload(HOOK_STORAGE_SLOT) {
-				mstore(0x00, 0x741cbe0300000000000000000000000000000000000000000000000000000000) // HookAlreadyInstalled(address)
-				mstore(0x04, and(hook, 0xffffffffffffffffffffffffffffffffffffffff))
-				revert(0x00, 0x24)
+				mstore(0x00, 0x741cbe03) // HookAlreadyInstalled(address)
+				mstore(0x20, hook)
+				revert(0x1c, 0x24)
 			}
 
-			sstore(HOOK_STORAGE_SLOT, and(hook, 0xffffffffffffffffffffffffffffffffffffffff))
+			sstore(HOOK_STORAGE_SLOT, hook)
 		}
 	}
 
-	function unsetHook(address hook) internal {
+	function _uninstallHook(address hook) private {
 		assembly ("memory-safe") {
 			if xor(sload(HOOK_STORAGE_SLOT), hook) {
-				mstore(0x00, 0x2fd1f68800000000000000000000000000000000000000000000000000000000) // HookNotInstalled(address)
-				mstore(0x04, and(hook, 0xffffffffffffffffffffffffffffffffffffffff))
-				revert(0x00, 0x24)
+				mstore(0x00, 0x2fd1f688) // HookNotInstalled(address)
+				mstore(0x20, shr(0x60, shl(0x60, hook)))
+				revert(0x1c, 0x24)
 			}
 
 			sstore(HOOK_STORAGE_SLOT, 0x00)
@@ -283,7 +250,7 @@ library ModuleLib {
 		}
 	}
 
-	function invokeOnInstall(address module, bytes calldata data) internal {
+	function invokeOnInstall(address module, uint256 moduleTypeId, bytes calldata data) internal {
 		assembly ("memory-safe") {
 			let ptr := mload(0x40)
 
@@ -296,10 +263,16 @@ library ModuleLib {
 				returndatacopy(ptr, 0x00, returndatasize())
 				revert(ptr, returndatasize())
 			}
+
+			log3(0x00, 0x00, MODULE_INSTALLED_TOPIC, moduleTypeId, module)
 		}
 	}
 
-	function invokeOnUninstall(address module, bytes calldata data) internal returns (bool success) {
+	function invokeOnUninstall(
+		address module,
+		uint256 moduleTypeId,
+		bytes calldata data
+	) internal returns (bool success) {
 		assembly ("memory-safe") {
 			let ptr := mload(0x40)
 
@@ -309,6 +282,10 @@ library ModuleLib {
 			calldatacopy(add(ptr, 0x44), data.offset, data.length)
 
 			success := call(gas(), module, 0x00, ptr, add(data.length, 0x44), 0x00, 0x00)
+
+			if success {
+				log3(0x00, 0x00, MODULE_UNINSTALLED_TOPIC, moduleTypeId, module)
+			}
 		}
 	}
 
@@ -325,9 +302,9 @@ library ModuleLib {
 			}
 
 			if iszero(mload(0x00)) {
-				mstore(0x00, 0x098312d200000000000000000000000000000000000000000000000000000000) // InvalidModuleTypeId(uint256)
-				mstore(0x04, moduleTypeId)
-				revert(0x00, 0x24)
+				mstore(0x00, 0x098312d2) // InvalidModuleTypeId(uint256)
+				mstore(0x20, moduleTypeId)
+				revert(0x1c, 0x24)
 			}
 		}
 	}
@@ -340,21 +317,19 @@ library ModuleLib {
 		return getExecutorsList().contains(executor);
 	}
 
-	function isFallbackHandlerInstalled(bytes4 selector) internal view returns (bool flag) {
+	function isFallbackInstalled(bytes4 selector) internal view returns (bool flag) {
 		assembly ("memory-safe") {
 			mstore(0x00, selector)
-			mstore(0x20, FALLBACK_HANDLERS_STORAGE_SLOT)
-
+			mstore(0x20, FALLBACKS_STORAGE_SLOT)
 			flag := iszero(iszero(sload(keccak256(0x00, 0x40))))
 		}
 	}
 
-	function isFallbackHandlerInstalled(address handler, bytes4 selector) internal view returns (bool flag) {
+	function isFallbackInstalled(address handler, bytes4 selector) internal view returns (bool flag) {
 		assembly ("memory-safe") {
 			mstore(0x00, selector)
-			mstore(0x20, FALLBACK_HANDLERS_STORAGE_SLOT)
-
-			flag := eq(and(sload(keccak256(0x00, 0x40)), 0xffffffffffffffffffffffffffffffffffffffff), handler)
+			mstore(0x20, FALLBACKS_STORAGE_SLOT)
+			flag := eq(shr(0x60, shl(0x60, sload(keccak256(0x00, 0x40)))), shr(0x60, shl(0x60, handler)))
 		}
 	}
 
@@ -366,7 +341,7 @@ library ModuleLib {
 
 	function isHookInstalled(address hook) internal view returns (bool flag) {
 		assembly ("memory-safe") {
-			flag := eq(sload(HOOK_STORAGE_SLOT), hook)
+			flag := eq(sload(HOOK_STORAGE_SLOT), shr(0x60, shl(0x60, hook)))
 		}
 	}
 

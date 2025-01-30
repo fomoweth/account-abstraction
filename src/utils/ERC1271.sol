@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {ECDSA} from "solady/utils/ECDSA.sol";
-import {SignatureCheckerLib} from "solady/utils/SignatureCheckerLib.sol";
-import {EIP712} from "src/utils/EIP712.sol";
+import {IERC7579Account} from "src/interfaces/IERC7579Account.sol";
+import {AccountIdLib} from "src/libraries/AccountIdLib.sol";
 
 /// @title ERC1271
-/// @dev Modified from https://github.com/Vectorized/solady/blob/main/src/accounts/ERC1271.sol
+/// @notice Provides functions for nested typed data sign support for ERC-7579 validators
 
-abstract contract ERC1271 is EIP712 {
-	using SignatureCheckerLib for address;
-	using ECDSA for bytes32;
+abstract contract ERC1271 {
+	using AccountIdLib for string;
+
+	/// @dev keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)")
+	bytes32 internal constant DOMAIN_TYPEHASH = 0x8b73c3c69bb8fe3d512ecc4cf759cc79239f7b179b0ffacaa9a75d522b39400f;
 
 	/// @dev keccak256("PersonalSign(bytes prefixed)")
 	bytes32 internal constant PERSONAL_SIGN_TYPEHASH =
@@ -24,16 +25,6 @@ abstract contract ERC1271 is EIP712 {
 	bytes4 internal constant SUPPORTS_ERC7739 = 0x77390000;
 	bytes4 internal constant SUPPORTS_ERC7739_V1 = 0x77390001;
 
-	function _validateSignatureForOwner(
-		address owner,
-		bytes32 hash,
-		bytes calldata signature
-	) internal view returns (bool) {
-		return
-			owner.isValidSignatureNowCalldata(hash, signature) ||
-			owner.isValidSignatureNowCalldata(hash.toEthSignedMessageHash(), signature);
-	}
-
 	function _erc1271IsValidSignatureWithSender(
 		address sender,
 		bytes32 hash,
@@ -45,7 +36,7 @@ abstract contract ERC1271 is EIP712 {
 		// The returned number MAY be increased in future ERC7739 versions.
 		unchecked {
 			if (signature.length == uint256(0)) {
-				if (uint256(hash) == (~signature.length / 0xffff) * 0x7739) return SUPPORTS_ERC7739;
+				if (uint256(hash) == (~signature.length / 0xffff) * 0x7739) return SUPPORTS_ERC7739_V1;
 			}
 		}
 
@@ -60,7 +51,9 @@ abstract contract ERC1271 is EIP712 {
 			}
 		}
 
-		bool success = _erc1271IsValidSignature(sender, hash, signature);
+		bool success = _erc1271IsValidSignatureViaSafeCaller(sender, hash, signature) ||
+			_erc1271IsValidSignatureViaNestedEIP712(hash, signature) ||
+			_erc1271IsValidSignatureViaRPC(hash, signature);
 
 		assembly ("memory-safe") {
 			// `success ? bytes4(keccak256("isValidSignature(bytes32,bytes)")) : 0xffffffff`.
@@ -69,19 +62,10 @@ abstract contract ERC1271 is EIP712 {
 		}
 	}
 
-	function _erc1271Signer() internal view virtual returns (address);
-
 	function _erc1271CallerIsSafe(address sender) internal view virtual returns (bool flag) {
 		assembly ("memory-safe") {
-			flag := eq(sender, MULTICALLER_WITH_SIGNER)
+			flag := or(eq(sender, caller()), eq(sender, MULTICALLER_WITH_SIGNER))
 		}
-	}
-
-	function _erc1271IsValidSignatureNowCalldata(
-		bytes32 hash,
-		bytes calldata signature
-	) internal view virtual returns (bool) {
-		return _validateSignatureForOwner(_erc1271Signer(), hash, signature);
 	}
 
 	function _erc1271UnwrapSignature(bytes calldata signature) internal view virtual returns (bytes calldata result) {
@@ -100,16 +84,10 @@ abstract contract ERC1271 is EIP712 {
 		}
 	}
 
-	function _erc1271IsValidSignature(
-		address sender,
+	function _erc1271IsValidSignatureNowCalldata(
 		bytes32 hash,
 		bytes calldata signature
-	) internal view virtual returns (bool) {
-		return
-			_erc1271IsValidSignatureViaSafeCaller(sender, hash, signature) ||
-			_erc1271IsValidSignatureViaNestedEIP712(hash, signature) ||
-			_erc1271IsValidSignatureViaRPC(hash, signature);
-	}
+	) internal view virtual returns (bool);
 
 	function _erc1271IsValidSignatureViaSafeCaller(
 		address sender,
@@ -126,24 +104,16 @@ abstract contract ERC1271 is EIP712 {
 		uint256 t = uint256(uint160(address(this)));
 
 		if (t != uint256(0)) {
-			(
-				,
-				string memory name,
-				string memory version,
-				uint256 chainId,
-				address verifyingContract,
-				bytes32 salt,
-
-			) = eip712Domain();
+			(string memory name, string memory version) = IERC7579Account(msg.sender).accountId().parse();
 
 			assembly ("memory-safe") {
 				t := mload(0x40)
 				// Skip 2 words for the `typedDataSignTypehash` and `contents` struct hash.
 				mstore(add(t, 0x40), keccak256(add(name, 0x20), mload(name)))
 				mstore(add(t, 0x60), keccak256(add(version, 0x20), mload(version)))
-				mstore(add(t, 0x80), chainId)
-				mstore(add(t, 0xa0), verifyingContract)
-				mstore(add(t, 0xc0), salt)
+				mstore(add(t, 0x80), chainid())
+				mstore(add(t, 0xa0), shr(0x60, shl(0x60, caller())))
+				mstore(add(t, 0xc0), 0x00)
 				mstore(0x40, add(t, 0xe0))
 			}
 		}
@@ -247,6 +217,28 @@ abstract contract ERC1271 is EIP712 {
 			}
 
 			result = _erc1271IsValidSignatureNowCalldata(hash, signature);
+		}
+	}
+
+	function _hashTypedData(bytes32 structHash) internal view virtual returns (bytes32 digest) {
+		(string memory name, string memory version) = IERC7579Account(msg.sender).accountId().parse();
+
+		assembly ("memory-safe") {
+			let ptr := mload(0x40)
+
+			mstore(ptr, DOMAIN_TYPEHASH)
+			mstore(add(ptr, 0x20), keccak256(add(name, 0x20), mload(name)))
+			mstore(add(ptr, 0x40), keccak256(add(version, 0x20), mload(version)))
+			mstore(add(ptr, 0x60), chainid())
+			mstore(add(ptr, 0x80), shr(0x60, shl(0x60, caller())))
+			digest := keccak256(ptr, 0xa0) // domain separator
+
+			mstore(0x00, 0x1901000000000000)
+			mstore(0x1a, digest)
+			mstore(0x3a, structHash)
+			digest := keccak256(0x18, 0x42) // hash typed data
+
+			mstore(0x3a, 0x00)
 		}
 	}
 }

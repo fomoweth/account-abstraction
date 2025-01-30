@@ -4,11 +4,12 @@ pragma solidity ^0.8.28;
 import {strings} from "stringutils/strings.sol";
 
 /// @title AccountIdLib
+/// @notice Provides function for parsing the full account name and version
 
 library AccountIdLib {
 	using strings for *;
 
-	function parseAccountId(string memory accountId) internal pure returns (string memory name, string memory version) {
+	function parse(string memory accountId) internal pure returns (string memory name, string memory version) {
 		strings.slice memory id = accountId.toSlice();
 		strings.slice memory delim = ".".toSlice();
 

@@ -6,20 +6,28 @@ import {IHook} from "src/interfaces/IERC7579Modules.sol";
 import {CalldataDecoder} from "src/libraries/CalldataDecoder.sol";
 import {CustomRevert} from "src/libraries/CustomRevert.sol";
 import {ModuleLib} from "src/libraries/ModuleLib.sol";
-import {ERC1271} from "src/utils/ERC1271.sol";
 import {CallType} from "src/types/ExecutionMode.sol";
-import {RegistryAdapter} from "./RegistryAdapter.sol";
 
 /// @title AccountModule
 
-abstract contract AccountModule is ERC1271, RegistryAdapter {
+abstract contract AccountModule {
 	using CalldataDecoder for bytes;
 	using CustomRevert for bytes4;
 	using ModuleLib for address;
 
-	/// @dev keccak256(bytes("ModuleEnableMode(address module,uint256 moduleType,bytes32 userOpHash,bytes32 initDataHash)"));
-	bytes32 private constant MODULE_ENABLE_MODE_TYPE_HASH =
-		0xbe844ccefa05559a48680cb7fe805b2ec58df122784191aed18f9f315c763e1b;
+	uint256 internal constant MODULE_TYPE_VALIDATOR = 1;
+	uint256 internal constant MODULE_TYPE_EXECUTOR = 2;
+	uint256 internal constant MODULE_TYPE_FALLBACK = 3;
+	uint256 internal constant MODULE_TYPE_HOOK = 4;
+	uint256 internal constant MODULE_TYPE_POLICY = 5;
+	uint256 internal constant MODULE_TYPE_SIGNER = 6;
+	uint256 internal constant MODULE_TYPE_STATELESS_VALIDATOR = 7;
+
+	modifier initializeModules() {
+		_initializeModules();
+		_;
+		if (!_hasValidators()) ModuleLib.NoValidatorInstalled.selector.revertWith();
+	}
 
 	modifier onlyExecutorModule() {
 		if (!msg.sender.isExecutorInstalled()) ModuleLib.InvalidModule.selector.revertWith(msg.sender);
@@ -56,8 +64,8 @@ abstract contract AccountModule is ERC1271, RegistryAdapter {
 		return ModuleLib.getExecutorsList().paginate(cursor, size);
 	}
 
-	function getFallbackHandler(bytes4 selector) public view returns (CallType callType, address handler) {
-		return ModuleLib.getFallbackHandler(selector);
+	function getFallback(bytes4 selector) public view returns (CallType callType, address handler) {
+		return ModuleLib.getFallback(selector);
 	}
 
 	function getActiveHook() external view returns (address hook) {
@@ -69,30 +77,14 @@ abstract contract AccountModule is ERC1271, RegistryAdapter {
 		ModuleLib.getExecutorsList().initialize();
 	}
 
-	function _enableMode(
-		bytes32 userOpHash,
-		bytes calldata data
-	) internal virtual withHook returns (bytes calldata userOpSignature) {
-		address module;
-		uint256 moduleTypeId;
-		bytes calldata initData;
-		bytes calldata signature;
-		(module, moduleTypeId, initData, signature, userOpSignature) = data.decodeEnableModeData();
-		_checkEnableModeSignature(_buildEnableModeHash(module, moduleTypeId, userOpHash, initData), signature);
-
-		_installModule(moduleTypeId, module, initData);
-	}
-
 	function _installModule(uint256 moduleTypeId, address module, bytes calldata data) internal virtual {
-		if (moduleTypeId == ModuleLib.MODULE_TYPE_MULTI) {
-			module.installMultiType(data);
-		} else if (moduleTypeId == ModuleLib.MODULE_TYPE_VALIDATOR) {
+		if (moduleTypeId == MODULE_TYPE_VALIDATOR) {
 			module.installValidator(data);
-		} else if (moduleTypeId == ModuleLib.MODULE_TYPE_EXECUTOR) {
+		} else if (moduleTypeId == MODULE_TYPE_EXECUTOR) {
 			module.installExecutor(data);
-		} else if (moduleTypeId == ModuleLib.MODULE_TYPE_FALLBACK) {
-			module.installFallbackHandler(data);
-		} else if (moduleTypeId == ModuleLib.MODULE_TYPE_HOOK) {
+		} else if (moduleTypeId == MODULE_TYPE_FALLBACK) {
+			module.installFallback(data);
+		} else if (moduleTypeId == MODULE_TYPE_HOOK) {
 			module.installHook(data);
 		} else {
 			ModuleLib.InvalidModuleTypeId.selector.revertWith(moduleTypeId);
@@ -100,13 +92,13 @@ abstract contract AccountModule is ERC1271, RegistryAdapter {
 	}
 
 	function _uninstallModule(uint256 moduleTypeId, address module, bytes calldata data) internal virtual {
-		if (moduleTypeId == ModuleLib.MODULE_TYPE_VALIDATOR) {
+		if (moduleTypeId == MODULE_TYPE_VALIDATOR) {
 			module.uninstallValidator(data);
-		} else if (moduleTypeId == ModuleLib.MODULE_TYPE_EXECUTOR) {
+		} else if (moduleTypeId == MODULE_TYPE_EXECUTOR) {
 			module.uninstallExecutor(data);
-		} else if (moduleTypeId == ModuleLib.MODULE_TYPE_FALLBACK) {
-			module.uninstallFallbackHandler(data);
-		} else if (moduleTypeId == ModuleLib.MODULE_TYPE_HOOK) {
+		} else if (moduleTypeId == MODULE_TYPE_FALLBACK) {
+			module.uninstallFallback(data);
+		} else if (moduleTypeId == MODULE_TYPE_HOOK) {
 			module.uninstallHook(data);
 		} else {
 			ModuleLib.InvalidModuleTypeId.selector.revertWith(moduleTypeId);
@@ -118,13 +110,13 @@ abstract contract AccountModule is ERC1271, RegistryAdapter {
 		address module,
 		bytes calldata additionalContext
 	) internal view virtual returns (bool) {
-		if (moduleTypeId == ModuleLib.MODULE_TYPE_VALIDATOR) {
+		if (moduleTypeId == MODULE_TYPE_VALIDATOR) {
 			return module.isValidatorInstalled();
-		} else if (moduleTypeId == ModuleLib.MODULE_TYPE_EXECUTOR) {
+		} else if (moduleTypeId == MODULE_TYPE_EXECUTOR) {
 			return module.isExecutorInstalled();
-		} else if (moduleTypeId == ModuleLib.MODULE_TYPE_FALLBACK) {
-			return module.isFallbackHandlerInstalled(additionalContext.decodeSelector());
-		} else if (moduleTypeId == ModuleLib.MODULE_TYPE_HOOK) {
+		} else if (moduleTypeId == MODULE_TYPE_FALLBACK) {
+			return module.isFallbackInstalled(additionalContext.decodeSelector());
+		} else if (moduleTypeId == MODULE_TYPE_HOOK) {
 			return module.isHookInstalled();
 		}
 
@@ -135,53 +127,20 @@ abstract contract AccountModule is ERC1271, RegistryAdapter {
 		return !ModuleLib.getValidatorsList().isEmpty();
 	}
 
-	function _checkEnableModeSignature(bytes32 structHash, bytes calldata signature) internal view {
-		address validator = signature.decodeAddress();
-		if (!validator.isValidatorInstalled()) ModuleLib.InvalidModule.selector.revertWith(validator);
-
-		bytes32 eip712Digest = _hashTypedData(structHash);
-
+	function _checkModuleTypeSupport(uint256 moduleTypeId) internal pure virtual {
 		assembly ("memory-safe") {
-			signature.offset := add(signature.offset, 0x14)
-			signature.length := sub(signature.length, 0x14)
-
-			let ptr := mload(0x40)
-
-			mstore(ptr, 0xf551e2ee00000000000000000000000000000000000000000000000000000000) // isValidSignatureWithSender(address,bytes32,bytes)
-			mstore(add(ptr, 0x04), and(address(), 0xffffffffffffffffffffffffffffffffffffffff))
-			mstore(add(ptr, 0x24), eip712Digest)
-			calldatacopy(add(ptr, 0x44), signature.offset, signature.length)
-
-			if iszero(
-				and(
-					eq(mload(0x00), EIP1271_SUCCESS),
-					staticcall(gas(), validator, ptr, add(signature.length, 0x44), 0x00, 0x20)
-				)
-			) {
-				mstore(0x00, 0x82b3d6e5) // InvalidEnableModeSignature()
-				revert(0x1c, 0x04)
+			// MODULE_TYPE_VALIDATOR: 0x01
+			// MODULE_TYPE_EXECUTOR: 0x02
+			// MODULE_TYPE_FALLBACK: 0x03
+			// MODULE_TYPE_HOOK: 0x04
+			// MODULE_TYPE_POLICY: 0x05
+			// MODULE_TYPE_SIGNER: 0x06
+			// MODULE_TYPE_STATELESS_VALIDATOR: 0x07
+			if or(iszero(moduleTypeId), gt(moduleTypeId, MODULE_TYPE_HOOK)) {
+				mstore(0x00, 0x41c38b30) // UnsupportedModuleType(uint256)
+				mstore(0x20, moduleTypeId)
+				revert(0x1c, 0x24)
 			}
-		}
-	}
-
-	function _buildEnableModeHash(
-		address module,
-		uint256 moduleTypeId,
-		bytes32 userOpHash,
-		bytes calldata data
-	) internal pure returns (bytes32 digest) {
-		assembly ("memory-safe") {
-			let ptr := mload(0x40)
-			mstore(0x40, add(add(ptr, 0x80), data.length))
-
-			mstore(ptr, MODULE_ENABLE_MODE_TYPE_HASH)
-			mstore(add(ptr, 0x20), and(module, 0xffffffffffffffffffffffffffffffffffffffff))
-			mstore(add(ptr, 0x40), moduleTypeId)
-			mstore(add(ptr, 0x60), userOpHash)
-			calldatacopy(add(ptr, 0x80), data.offset, data.length)
-			mstore(add(ptr, 0x80), keccak256(add(ptr, 0x80), data.length))
-
-			digest := keccak256(ptr, 0xa0)
 		}
 	}
 }

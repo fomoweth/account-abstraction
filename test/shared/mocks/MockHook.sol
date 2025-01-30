@@ -20,25 +20,25 @@ contract MockHook is IHook, ModuleBase {
 	}
 
 	function onInstall(bytes calldata data) public payable {
-		if (isInitialized(msg.sender)) revert AlreadyInitialized(msg.sender);
+		if (_isInitialized(msg.sender)) revert AlreadyInitialized(msg.sender);
 		data;
 		isInstalled[msg.sender] = true;
 	}
 
 	function onUninstall(bytes calldata) public payable {
-		if (!isInitialized(msg.sender)) revert NotInitialized(msg.sender);
+		if (!_isInitialized(msg.sender)) revert NotInitialized(msg.sender);
 		isInstalled[msg.sender] = false;
 	}
 
-	function isInitialized(address account) public view returns (bool) {
+	function _isInitialized(address account) internal view virtual override returns (bool) {
 		return isInstalled[account];
 	}
 
-	function name() public pure returns (string memory) {
+	function name() public pure virtual override returns (string memory) {
 		return "MockHook";
 	}
 
-	function version() public pure returns (string memory) {
+	function version() public pure virtual override returns (string memory) {
 		return "1.0.0";
 	}
 

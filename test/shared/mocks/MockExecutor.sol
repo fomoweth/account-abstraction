@@ -26,7 +26,7 @@ contract MockExecutor is IExecutor, ModuleBase {
 		uint256 value,
 		bytes calldata callData
 	) public returns (bytes[] memory results) {
-		if (!isInitialized(address(account))) revert NotInitialized(address(account));
+		if (!_isInitialized(address(account))) revert NotInitialized(address(account));
 		return
 			account.executeFromExecutor(ExecutionModeLib.encodeTrySingle(), abi.encodePacked(target, value, callData));
 	}
@@ -35,7 +35,7 @@ contract MockExecutor is IExecutor, ModuleBase {
 		SmartAccount account,
 		Execution[] calldata executions
 	) public returns (bytes[] memory results) {
-		if (!isInitialized(address(account))) revert NotInitialized(address(account));
+		if (!_isInitialized(address(account))) revert NotInitialized(address(account));
 		return account.executeFromExecutor(ExecutionModeLib.encodeBatch(), abi.encode(executions));
 	}
 
@@ -43,17 +43,17 @@ contract MockExecutor is IExecutor, ModuleBase {
 		SmartAccount account,
 		Execution[] calldata executions
 	) public returns (bytes[] memory results) {
-		if (!isInitialized(address(account))) revert NotInitialized(address(account));
+		if (!_isInitialized(address(account))) revert NotInitialized(address(account));
 		return account.executeFromExecutor(ExecutionModeLib.encodeTryBatch(), abi.encode(executions));
 	}
 
 	function executeDelegate(SmartAccount account, bytes calldata callData) public returns (bytes[] memory results) {
-		if (!isInitialized(address(account))) revert NotInitialized(address(account));
+		if (!_isInitialized(address(account))) revert NotInitialized(address(account));
 		return account.executeFromExecutor(ExecutionModeLib.encodeDelegate(), callData);
 	}
 
 	function tryExecuteDelegate(SmartAccount account, bytes calldata callData) public returns (bytes[] memory results) {
-		if (!isInitialized(address(account))) revert NotInitialized(address(account));
+		if (!_isInitialized(address(account))) revert NotInitialized(address(account));
 		return account.executeFromExecutor(ExecutionModeLib.encodeTryDelegate(), callData);
 	}
 
@@ -64,7 +64,7 @@ contract MockExecutor is IExecutor, ModuleBase {
 		uint256 value,
 		bytes calldata callData
 	) public returns (bytes[] memory results) {
-		if (!isInitialized(address(account))) revert NotInitialized(address(account));
+		if (!_isInitialized(address(account))) revert NotInitialized(address(account));
 
 		(CallType callType, ) = ExecutionModeLib.decodeBasic(mode);
 
@@ -84,26 +84,26 @@ contract MockExecutor is IExecutor, ModuleBase {
 	}
 
 	function onInstall(bytes calldata data) public payable {
-		if (isInitialized(msg.sender)) revert AlreadyInitialized(msg.sender);
+		if (_isInitialized(msg.sender)) revert AlreadyInitialized(msg.sender);
 		data;
 		isInstalled[msg.sender] = true;
 	}
 
 	function onUninstall(bytes calldata) public payable {
-		if (!isInitialized(msg.sender)) revert NotInitialized(msg.sender);
+		if (!_isInitialized(msg.sender)) revert NotInitialized(msg.sender);
 		isInstalled[msg.sender] = false;
 	}
 
-	function isInitialized(address account) public view returns (bool) {
-		return isInstalled[account];
-	}
-
-	function name() public pure returns (string memory) {
+	function name() public pure virtual override returns (string memory) {
 		return "MockExecutor";
 	}
 
-	function version() public pure returns (string memory) {
+	function version() public pure virtual override returns (string memory) {
 		return "1.0.0";
+	}
+
+	function _isInitialized(address account) internal view virtual override returns (bool) {
+		return isInstalled[account];
 	}
 
 	function isModuleType(uint256 moduleTypeId) public pure virtual returns (bool) {

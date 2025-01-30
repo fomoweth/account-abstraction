@@ -26,9 +26,12 @@ abstract contract Signers is CommonBase {
 	address payable internal BOB_ADDRESS;
 	address payable internal COOPER_ADDRESS;
 
-	address[] internal ATTESTERS;
+	address[] internal ATTESTER_ADDRESSES;
 	uint256 internal ATTESTERS_COUNT = 2;
 	uint8 internal THRESHOLD = 1;
+
+	address[] internal SENDER_ADDRESSES;
+	uint256 internal SENDERS_COUNT = 3;
 
 	uint256 internal constant INITIAL_VALUE = 1000 ether;
 
@@ -54,7 +57,9 @@ abstract contract Signers is CommonBase {
 		COOPER = createSigner("COOPER", INITIAL_VALUE);
 		COOPER_ADDRESS = COOPER.addr;
 
-		ATTESTERS = createSignerAddresses("ATTESTER", ATTESTERS_COUNT, true, INITIAL_VALUE);
+		ATTESTER_ADDRESSES = createSignerAddresses("ATTESTER", ATTESTERS_COUNT, true, INITIAL_VALUE);
+
+		SENDER_ADDRESSES = createSignerAddresses("SENDER", SENDERS_COUNT, true, INITIAL_VALUE);
 	}
 
 	function createSigner(string memory name, uint256 value) internal virtual returns (Signer memory s) {
