@@ -8,7 +8,6 @@ import {CallType} from "src/types/ExecutionMode.sol";
 
 library CalldataDecoder {
 	uint256 internal constant LENGTH_MASK = 0xffffffff;
-	uint256 internal constant LENGTH_MASK_AND_WORD_ALIGN = 0xffffffe0;
 
 	function decodeSelector(bytes calldata data) internal pure returns (bytes4 selector) {
 		assembly ("memory-safe") {
@@ -18,10 +17,6 @@ library CalldataDecoder {
 			}
 
 			selector := calldataload(data.offset)
-			if iszero(selector) {
-				mstore(0x00, 0x7352d91c) // InvalidSelector()
-				revert(0x1c, 0x04)
-			}
 		}
 	}
 
@@ -31,6 +26,39 @@ library CalldataDecoder {
 		assembly ("memory-safe") {
 			selectors.length := length
 			selectors.offset := offset
+		}
+	}
+
+	function decodeSelectorAndCalldata(
+		bytes calldata data
+	) internal pure returns (bytes4 selector, bytes calldata callData) {
+		assembly ("memory-safe") {
+			if lt(data.length, 0x04) {
+				mstore(0x00, 0x3b99b53d) // SliceOutOfBounds()
+				revert(0x1c, 0x04)
+			}
+
+			selector := calldataload(data.offset)
+			callData.offset := add(data.offset, 0x04)
+			callData.length := sub(data.length, 0x04)
+		}
+	}
+
+	function decodeSelectorsAndCallTypes(
+		bytes calldata data
+	) internal pure returns (bytes4[] calldata selectors, CallType[] calldata callTypes) {
+		assembly ("memory-safe") {
+			let offset := data.offset
+			let ptr := add(offset, and(calldataload(offset), LENGTH_MASK))
+
+			selectors.length := and(calldataload(ptr), LENGTH_MASK)
+			selectors.offset := add(ptr, 0x20)
+			offset := add(offset, 0x20)
+
+			ptr := add(data.offset, and(calldataload(offset), LENGTH_MASK))
+			callTypes.length := and(calldataload(ptr), LENGTH_MASK)
+			callTypes.offset := add(ptr, 0x20)
+			offset := add(offset, 0x20)
 		}
 	}
 
@@ -109,25 +137,7 @@ library CalldataDecoder {
 		}
 	}
 
-	function decodeMultiTypeInitData(
-		bytes calldata data
-	) internal pure returns (uint256[] calldata moduleTypeIds, bytes[] calldata initData) {
-		assembly ("memory-safe") {
-			let offset := data.offset
-			let baseOffset := offset
-			let dataPointer := add(baseOffset, calldataload(offset))
-
-			moduleTypeIds.offset := add(dataPointer, 0x20)
-			moduleTypeIds.length := calldataload(dataPointer)
-			offset := add(offset, 0x20)
-
-			dataPointer := add(baseOffset, calldataload(offset))
-			initData.offset := add(dataPointer, 0x20)
-			initData.length := calldataload(dataPointer)
-		}
-	}
-
-	function decodeEnableModeData(
+	function decodeEnableMode(
 		bytes calldata data
 	)
 		internal
@@ -140,13 +150,15 @@ library CalldataDecoder {
 			bytes calldata userOpSignature
 		)
 	{
-		uint256 offset;
 		assembly ("memory-safe") {
-			offset := data.offset
-			module := shr(0x60, calldataload(offset))
+			let offset := data.offset
+			let baseOffset := offset
 
+			module := shr(0x60, calldataload(offset))
 			offset := add(offset, 0x14)
+
 			moduleTypeId := calldataload(offset)
+			offset := add(offset, 0x20)
 
 			initData.length := shr(0xe0, calldataload(add(offset, 0x20)))
 			initData.offset := add(offset, 0x24)
@@ -159,8 +171,6 @@ library CalldataDecoder {
 			userOpSignature.offset := add(data.offset, offset)
 			userOpSignature.length := sub(data.length, offset)
 		}
-
-		// userOpSignature = data[offset:];
 	}
 
 	function toLengthOffset(bytes calldata data, uint256 index) internal pure returns (uint256 length, uint256 offset) {
