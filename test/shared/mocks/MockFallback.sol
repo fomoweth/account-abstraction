@@ -13,7 +13,7 @@ contract MockFallback is IFallback, ModuleBase {
 	mapping(address account => bytes4[] selectors) public registeredSelectors;
 
 	function onInstall(bytes calldata data) public payable {
-		if (isInitialized(msg.sender)) revert AlreadyInitialized(msg.sender);
+		if (_isInitialized(msg.sender)) revert AlreadyInitialized(msg.sender);
 
 		bytes4[] calldata selectors = data.decodeSelectors(0);
 		uint256 length = selectors.length;
@@ -24,7 +24,7 @@ contract MockFallback is IFallback, ModuleBase {
 	}
 
 	function onUninstall(bytes calldata) public payable {
-		if (!isInitialized(msg.sender)) revert NotInitialized(msg.sender);
+		if (!_isInitialized(msg.sender)) revert NotInitialized(msg.sender);
 		delete registeredSelectors[msg.sender];
 	}
 
@@ -35,7 +35,7 @@ contract MockFallback is IFallback, ModuleBase {
 		}
 	}
 
-	function isInitialized(address account) public view returns (bool) {
+	function _isInitialized(address account) internal view virtual override returns (bool) {
 		return registeredSelectors[account].length != 0;
 	}
 
@@ -53,11 +53,11 @@ contract MockFallback is IFallback, ModuleBase {
 		callTypes[1] = ExecutionModeLib.CALLTYPE_SINGLE;
 	}
 
-	function name() public pure returns (string memory) {
+	function name() public pure virtual override returns (string memory) {
 		return "MockFallback";
 	}
 
-	function version() public pure returns (string memory) {
+	function version() public pure virtual override returns (string memory) {
 		return "1.0.0";
 	}
 

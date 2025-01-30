@@ -3,13 +3,12 @@ pragma solidity ^0.8.28;
 
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 import {ISmartAccountFactory} from "src/interfaces/factories/ISmartAccountFactory.sol";
-import {ERC7739Validator} from "src/modules/validators/ERC7739Validator.sol";
+import {K1Validator} from "src/modules/validators/K1Validator.sol";
 import {Bootstrap, BootstrapConfig} from "src/Bootstrap.sol";
 import {MetaFactory} from "src/factories/MetaFactory.sol";
 import {SmartAccountFactory} from "src/factories/SmartAccountFactory.sol";
 import {SmartAccount} from "src/SmartAccount.sol";
 
-import {MockMultiModule} from "test/shared/mocks/MockMultiModule.sol";
 import {MockExecutor} from "test/shared/mocks/MockExecutor.sol";
 import {MockFallback} from "test/shared/mocks/MockFallback.sol";
 import {MockHook} from "test/shared/mocks/MockHook.sol";
@@ -42,11 +41,10 @@ abstract contract Deployers is Configured, Common, Signers {
 
 	Bootstrap internal BOOTSTRAP;
 
-	MockMultiModule internal MULTI_MODULE;
-	ERC7739Validator internal VALIDATOR;
-	MockExecutor internal EXECUTOR;
-	MockFallback internal FALLBACK;
-	MockHook internal HOOK;
+	K1Validator internal K1_VALIDATOR;
+	MockExecutor internal MOCK_EXECUTOR;
+	MockFallback internal MOCK_FALLBACK;
+	MockHook internal MOCK_HOOK;
 
 	bytes32 internal constant DEFAULT_RESOLVER_UID = 0xdbca873b13c783c0c9c6ddfc4280e505580bf6cc3dac83f8a0f7b44acaafca4f;
 	bytes32 internal constant DEFAULT_SCHEMA_UID = 0x93d46fcca4ef7d66a413c7bde08bb1ff14bacbd04c4069bb24cd7c21729d7bf1;
@@ -68,38 +66,6 @@ abstract contract Deployers is Configured, Common, Signers {
 		deployModules();
 	}
 
-	function deployAccountImplementation() internal virtual impersonate(DEPLOYER_ADDRESS) {
-		ACCOUNT_IMPLEMENTATION = SmartAccount(
-			payable(create("SmartAccount Implementation", type(SmartAccount).creationCode))
-		);
-	}
-
-	function deployFactories() internal virtual impersonate(DEPLOYER_ADDRESS) {
-		META_FACTORY = MetaFactory(create("MetaFactory", type(MetaFactory).creationCode, abi.encode(DEPLOYER_ADDRESS)));
-
-		ACCOUNT_FACTORY = SmartAccountFactory(
-			create("SmartAccountFactory", type(SmartAccountFactory).creationCode, abi.encode(ACCOUNT_IMPLEMENTATION))
-		);
-	}
-
-	function deployRegistry() internal virtual impersonate(DEPLOYER_ADDRESS) {
-		MOCK_REGISTRY = MockRegistry(create("MockRegistry", type(MockRegistry).creationCode));
-	}
-
-	function deployModules() internal virtual impersonate(DEPLOYER_ADDRESS) {
-		BOOTSTRAP = Bootstrap(create("Bootstrap", type(Bootstrap).creationCode));
-
-		MULTI_MODULE = MockMultiModule(create("MockMultiModule", type(MockMultiModule).creationCode));
-
-		VALIDATOR = ERC7739Validator(create("ERC7739Validator", type(ERC7739Validator).creationCode));
-
-		EXECUTOR = MockExecutor(payable(create("MockExecutor", type(MockExecutor).creationCode)));
-
-		FALLBACK = MockFallback(create("MockFallback", type(MockFallback).creationCode));
-
-		HOOK = MockHook(create("MockHook", type(MockHook).creationCode));
-	}
-
 	function deployAccount(
 		string memory name,
 		Signer memory signer,
@@ -109,12 +75,13 @@ abstract contract Deployers is Configured, Common, Signers {
 		(address payable account, bytes memory initCode) = getAccountAndInitCode(signer, salt);
 
 		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
-		userOps[0] = signer.buildUserOpWithInitCode(account, initCode, address(VALIDATOR));
+		userOps[0] = signer.buildUserOpWithInitCode(account, initCode, address(K1_VALIDATOR));
 
 		ENTRYPOINT.depositTo{value: value}(account);
 		ENTRYPOINT.handleOps(userOps, payable(signer.addr));
 
-		vm.assertTrue(VALIDATOR.getOwner(account) == signer.addr);
+		vm.assertEq(K1_VALIDATOR.getAccountOwner(account), signer.addr);
+		vm.assertEq(K1_VALIDATOR.getAuthorizedSenders(account), SENDER_ADDRESSES);
 		vm.label(account, name);
 
 		return SmartAccount(account);
@@ -130,12 +97,13 @@ abstract contract Deployers is Configured, Common, Signers {
 		(address payable account, bytes memory initCode) = getAccountAndInitCode(signer, salt, factory);
 
 		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
-		userOps[0] = signer.buildUserOpWithInitCode(account, initCode, address(VALIDATOR));
+		userOps[0] = signer.buildUserOpWithInitCode(account, initCode, address(K1_VALIDATOR));
 
 		ENTRYPOINT.depositTo{value: value}(account);
 		ENTRYPOINT.handleOps(userOps, payable(signer.addr));
 
-		vm.assertTrue(VALIDATOR.getOwner(account) == signer.addr);
+		vm.assertEq(K1_VALIDATOR.getAccountOwner(account), signer.addr);
+		vm.assertEq(K1_VALIDATOR.getAuthorizedSenders(account), SENDER_ADDRESSES);
 		vm.label(account, name);
 
 		return SmartAccount(account);
@@ -146,24 +114,24 @@ abstract contract Deployers is Configured, Common, Signers {
 		bytes32 salt
 	) internal view virtual returns (address payable account, bytes memory initCode) {
 		BootstrapConfig[] memory validators = BootstrapUtils.build(
-			address(VALIDATOR),
-			abi.encode(signer.addr),
+			address(K1_VALIDATOR),
+			abi.encode(signer.addr, SENDER_ADDRESSES),
 			MODULE_TYPE_VALIDATOR
 		);
 
 		BootstrapConfig[] memory executors = BootstrapUtils.build(
-			address(EXECUTOR),
+			address(MOCK_EXECUTOR),
 			emptyBytes(),
 			MODULE_TYPE_EXECUTOR
 		);
 
 		BootstrapConfig[] memory fallbacks = BootstrapUtils.build(
-			address(FALLBACK),
+			address(MOCK_FALLBACK),
 			emptyBytes(),
 			MODULE_TYPE_FALLBACK
 		);
 
-		BootstrapConfig memory hook = BootstrapUtils.get(address(HOOK), emptyBytes(), MODULE_TYPE_HOOK);
+		BootstrapConfig memory hook = BootstrapUtils.get(address(MOCK_HOOK), emptyBytes(), MODULE_TYPE_HOOK);
 
 		bytes memory data = BOOTSTRAP.getInitializeCalldata(
 			validators,
@@ -171,7 +139,7 @@ abstract contract Deployers is Configured, Common, Signers {
 			fallbacks,
 			hook,
 			address(MOCK_REGISTRY),
-			ATTESTERS,
+			ATTESTER_ADDRESSES,
 			THRESHOLD
 		);
 
@@ -187,24 +155,24 @@ abstract contract Deployers is Configured, Common, Signers {
 		address factory
 	) internal view virtual returns (address payable account, bytes memory initCode) {
 		BootstrapConfig[] memory validators = BootstrapUtils.build(
-			address(VALIDATOR),
-			abi.encode(signer.addr),
+			address(K1_VALIDATOR),
+			abi.encode(signer.addr, SENDER_ADDRESSES),
 			MODULE_TYPE_VALIDATOR
 		);
 
 		BootstrapConfig[] memory executors = BootstrapUtils.build(
-			address(EXECUTOR),
+			address(MOCK_EXECUTOR),
 			emptyBytes(),
 			MODULE_TYPE_EXECUTOR
 		);
 
 		BootstrapConfig[] memory fallbacks = BootstrapUtils.build(
-			address(FALLBACK),
+			address(MOCK_FALLBACK),
 			emptyBytes(),
 			MODULE_TYPE_FALLBACK
 		);
 
-		BootstrapConfig memory hook = BootstrapUtils.get(address(HOOK), emptyBytes(), MODULE_TYPE_HOOK);
+		BootstrapConfig memory hook = BootstrapUtils.get(address(MOCK_HOOK), emptyBytes(), MODULE_TYPE_HOOK);
 
 		bytes memory data = BOOTSTRAP.getInitializeCalldata(
 			validators,
@@ -212,7 +180,7 @@ abstract contract Deployers is Configured, Common, Signers {
 			fallbacks,
 			hook,
 			address(MOCK_REGISTRY),
-			ATTESTERS,
+			ATTESTER_ADDRESSES,
 			THRESHOLD
 		);
 
@@ -222,12 +190,45 @@ abstract contract Deployers is Configured, Common, Signers {
 		initCode = abi.encodePacked(factory, callData);
 	}
 
-	function create(
-		string memory name,
-		bytes memory creationCode,
-		bytes memory constructorArgs
-	) internal virtual returns (address instance) {
-		return create(name, abi.encodePacked(creationCode, constructorArgs));
+	function deployAccountImplementation() internal virtual impersonate(DEPLOYER_ADDRESS) {
+		ACCOUNT_IMPLEMENTATION = SmartAccount(
+			payable(create("SmartAccount Implementation", type(SmartAccount).creationCode))
+		);
+	}
+
+	function deployFactories() internal virtual impersonate(DEPLOYER_ADDRESS) {
+		META_FACTORY = MetaFactory(
+			create(
+				"MetaFactory",
+				bytes.concat(abi.encodePacked(type(MetaFactory).creationCode), abi.encode(DEPLOYER_ADDRESS))
+			)
+		);
+
+		ACCOUNT_FACTORY = SmartAccountFactory(
+			create(
+				"SmartAccountFactory",
+				bytes.concat(
+					abi.encodePacked(type(SmartAccountFactory).creationCode),
+					abi.encode(ACCOUNT_IMPLEMENTATION)
+				)
+			)
+		);
+	}
+
+	function deployRegistry() internal virtual impersonate(DEPLOYER_ADDRESS) {
+		MOCK_REGISTRY = MockRegistry(create("MockRegistry", type(MockRegistry).creationCode));
+	}
+
+	function deployModules() internal virtual impersonate(DEPLOYER_ADDRESS) {
+		BOOTSTRAP = Bootstrap(create("Bootstrap", type(Bootstrap).creationCode));
+
+		K1_VALIDATOR = K1Validator(create("K1Validator", type(K1Validator).creationCode));
+
+		MOCK_EXECUTOR = MockExecutor(payable(create("MockExecutor", type(MockExecutor).creationCode)));
+
+		MOCK_FALLBACK = MockFallback(create("MockFallback", type(MockFallback).creationCode));
+
+		MOCK_HOOK = MockHook(create("MockHook", type(MockHook).creationCode));
 	}
 
 	function create(string memory name, bytes memory bytecode) internal virtual returns (address instance) {
@@ -243,15 +244,6 @@ abstract contract Deployers is Configured, Common, Signers {
 				revert(0x1c, 0x04)
 			}
 		}
-	}
-
-	function create2(
-		string memory name,
-		bytes memory creationCode,
-		bytes memory constructorArgs,
-		bytes32 salt
-	) internal virtual returns (address instance) {
-		return create2(name, abi.encodePacked(creationCode, constructorArgs), salt);
 	}
 
 	function create2(
