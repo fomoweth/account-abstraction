@@ -45,7 +45,7 @@ contract Bootstrap is IBootstrap, RegistryAdapter {
 		length = fallbacks.length;
 		for (uint256 i; i < length; ) {
 			module = fallbacks[i].module;
-			if (module != address(0)) module.installFallbackHandler(fallbacks[i].data);
+			if (module != address(0)) module.installFallback(fallbacks[i].data);
 
 			unchecked {
 				i = i + 1;

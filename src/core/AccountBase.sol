@@ -2,7 +2,6 @@
 pragma solidity ^0.8.28;
 
 import {IEntryPoint} from "account-abstraction/interfaces/IEntryPoint.sol";
-import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 
 /// @title AccountBase
 /// @notice Implements ERC-4337 and ERC-7579 standards for account management and access control
@@ -51,9 +50,10 @@ abstract contract AccountBase {
 		}
 	}
 
-	function withdrawDepositTo(address recipient, uint256 amount) external payable {
+	function withdrawDepositTo(address recipient, uint256 amount) external payable onlyEntryPointOrSelf {
 		assembly ("memory-safe") {
-			if iszero(shl(0x60, recipient)) {
+			recipient := shr(0x60, shl(0x60, recipient))
+			if iszero(recipient) {
 				mstore(0x00, 0x9c8d2cd2) // InvalidRecipient()
 				revert(0x1c, 0x04)
 			}
@@ -61,7 +61,7 @@ abstract contract AccountBase {
 			let ptr := mload(0x40)
 
 			mstore(ptr, 0x205c287800000000000000000000000000000000000000000000000000000000) // withdrawTo(address,uint256)
-			mstore(add(ptr, 0x04), and(recipient, 0xffffffffffffffffffffffffffffffffffffffff))
+			mstore(add(ptr, 0x04), recipient)
 			mstore(add(ptr, 0x24), amount)
 
 			if iszero(call(gas(), ENTRYPOINT, 0x00, ptr, 0x44, 0x00, 0x00)) {
@@ -80,12 +80,10 @@ abstract contract AccountBase {
 			let ptr := mload(0x40)
 
 			mstore(ptr, 0x70a0823100000000000000000000000000000000000000000000000000000000) // balanceOf(address)
-			mstore(add(ptr, 0x04), and(address(), 0xffffffffffffffffffffffffffffffffffffffff))
+			mstore(add(ptr, 0x04), shr(0x60, shl(0x60, address())))
 
-			value := mul(
-				mload(0x00),
-				and(gt(returndatasize(), 0x1f), staticcall(gas(), ENTRYPOINT, ptr, 0x24, 0x00, 0x20))
-			)
+			// prettier-ignore
+			value := mul(mload(0x00), and(gt(returndatasize(), 0x1f), staticcall(gas(), ENTRYPOINT, ptr, 0x24, 0x00,0x20)))
 		}
 	}
 
@@ -94,13 +92,11 @@ abstract contract AccountBase {
 			let ptr := mload(0x40)
 
 			mstore(ptr, 0x35567e1a00000000000000000000000000000000000000000000000000000000) // getNonce(address,uint192)
-			mstore(add(ptr, 0x04), and(address(), 0xffffffffffffffffffffffffffffffffffffffff))
-			mstore(add(ptr, 0x24), and(key, 0xffffffffffffffffffffffffffffffffffffffffffffffff))
+			mstore(add(ptr, 0x04), shr(0x60, shl(0x60, address())))
+			mstore(add(ptr, 0x24), key)
 
-			value := mul(
-				mload(0x00),
-				and(gt(returndatasize(), 0x1f), staticcall(gas(), ENTRYPOINT, ptr, 0x44, 0x00, 0x20))
-			)
+			// prettier-ignore
+			value := mul(mload(0x00), and(gt(returndatasize(), 0x1f), staticcall(gas(), ENTRYPOINT, ptr, 0x44, 0x00, 0x20)))
 		}
 	}
 }
