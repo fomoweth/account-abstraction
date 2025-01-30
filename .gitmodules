@@ -16,3 +16,6 @@
 [submodule "lib/solarray"]
 	path = lib/solarray
 	url = https://github.com/sablier-labs/solarray
+[submodule "lib/erc4337-validation"]
+	path = lib/erc4337-validation
+	url = https://github.com/rhinestonewtf/erc4337-validation
