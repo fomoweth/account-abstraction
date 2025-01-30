@@ -60,26 +60,6 @@ library BytesLib {
 		}
 	}
 
-	function toBytes4(bytes calldata data) internal pure returns (bytes4 value) {
-		assembly ("memory-safe") {
-			if lt(data.length, 0x04) {
-				mstore(0x00, 0x3b99b53d) // SliceOutOfBounds()
-				revert(0x1c, 0x04)
-			}
-
-			value := calldataload(data.offset)
-		}
-	}
-
-	function toBytes4Array(bytes calldata data, uint256 index) internal pure returns (bytes4[] calldata res) {
-		(uint256 length, uint256 offset) = toLengthOffset(data, index);
-
-		assembly ("memory-safe") {
-			res.length := length
-			res.offset := offset
-		}
-	}
-
 	function toBytes32(bytes calldata data) internal pure returns (bytes32 value) {
 		assembly ("memory-safe") {
 			if lt(data.length, 0x20) {
