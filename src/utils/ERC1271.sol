@@ -19,11 +19,11 @@ abstract contract ERC1271 {
 
 	address internal constant MULTICALLER_WITH_SIGNER = 0x000000000000D9ECebf3C23529de49815Dac1c4c;
 
-	bytes4 internal constant EIP1271_SUCCESS = 0x1626ba7e;
-	bytes4 internal constant EIP1271_FAILED = 0xFFFFFFFF;
+	bytes4 internal constant ERC1271_SUCCESS = 0x1626ba7e;
+	bytes4 internal constant ERC1271_FAILED = 0xFFFFFFFF;
 
-	bytes4 internal constant SUPPORTS_ERC7739 = 0x77390000;
-	bytes4 internal constant SUPPORTS_ERC7739_V1 = 0x77390001;
+	bytes4 internal constant ERC7739_SUPPORTS = 0x77390000;
+	bytes4 internal constant ERC7739_SUPPORTS_V1 = 0x77390001;
 
 	function _erc1271IsValidSignatureWithSender(
 		address sender,
@@ -36,7 +36,7 @@ abstract contract ERC1271 {
 		// The returned number MAY be increased in future ERC7739 versions.
 		unchecked {
 			if (signature.length == uint256(0)) {
-				if (uint256(hash) == (~signature.length / 0xffff) * 0x7739) return SUPPORTS_ERC7739_V1;
+				if (uint256(hash) == (~signature.length / 0xffff) * 0x7739) return ERC7739_SUPPORTS_V1;
 			}
 		}
 
