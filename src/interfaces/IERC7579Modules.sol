@@ -67,9 +67,7 @@ interface IValidator is IModule {
 
 interface IExecutor is IModule {}
 
-interface IFallback is IModule {
-	function getSupportedCalls() external view returns (bytes4[] memory selectors, CallType[] memory callTypes);
-}
+interface IFallback is IModule {}
 
 interface IHook is IModule {
 	function preCheck(
@@ -79,4 +77,12 @@ interface IHook is IModule {
 	) external payable returns (bytes memory hookData);
 
 	function postCheck(bytes calldata hookData) external payable;
+}
+
+interface IStatelessValidator is IModule {
+	function validateSignatureWithData(
+		bytes32 hash,
+		bytes calldata signature,
+		bytes calldata data
+	) external view returns (bool);
 }

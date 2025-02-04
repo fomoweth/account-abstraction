@@ -10,16 +10,8 @@ abstract contract ModuleBase is IModule {
 
 	address internal constant ENTRYPOINT = 0x0000000071727De22E5E9d8BAf0edAc6f37da032;
 
-	uint256 internal constant MODULE_TYPE_MULTI = 0;
-	uint256 internal constant MODULE_TYPE_VALIDATOR = 1;
-	uint256 internal constant MODULE_TYPE_EXECUTOR = 2;
-	uint256 internal constant MODULE_TYPE_FALLBACK = 3;
-	uint256 internal constant MODULE_TYPE_HOOK = 4;
-	uint256 internal constant MODULE_TYPE_POLICY = 5;
-	uint256 internal constant MODULE_TYPE_SIGNER = 6;
-
-	uint256 internal constant VALIDATION_SUCCESS = 0;
-	uint256 internal constant VALIDATION_FAILED = 1;
+	address internal constant SENTINEL = 0x0000000000000000000000000000000000000001;
+	address internal constant ZERO = 0x0000000000000000000000000000000000000000;
 
 	function isInitialized(address account) external view returns (bool) {
 		return _isInitialized(account);

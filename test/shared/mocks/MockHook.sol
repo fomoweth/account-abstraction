@@ -2,9 +2,12 @@
 pragma solidity ^0.8.28;
 
 import {IHook} from "src/interfaces/IERC7579Modules.sol";
+import {ModuleType, MODULE_TYPE_HOOK} from "src/types/ModuleType.sol";
 import {ModuleBase} from "src/modules/ModuleBase.sol";
 
 contract MockHook is IHook, ModuleBase {
+	event Log(address msgSender, uint256 msgValue, bytes msgData);
+
 	mapping(address account => bool isInstalled) public isInstalled;
 
 	function preCheck(
@@ -12,21 +15,30 @@ contract MockHook is IHook, ModuleBase {
 		uint256 msgValue,
 		bytes calldata msgData
 	) public payable returns (bytes memory hookData) {
-		//
+		hookData = abi.encode(msgSender, msgValue, msgData);
 	}
 
 	function postCheck(bytes calldata hookData) public payable {
-		//
+		address msgSender;
+		uint256 msgValue;
+		bytes calldata msgData;
+		assembly ("memory-safe") {
+			msgSender := shr(0x60, calldataload(hookData.offset))
+			msgValue := calldataload(add(hookData.offset, 0x14))
+			msgData.offset := add(hookData.offset, 0x34)
+			msgData.length := sub(hookData.length, 0x34)
+		}
+
+		emit Log(msgSender, msgValue, msgData);
 	}
 
-	function onInstall(bytes calldata data) public payable {
-		if (_isInitialized(msg.sender)) revert AlreadyInitialized(msg.sender);
-		data;
+	function onInstall(bytes calldata) public payable {
+		require(!_isInitialized(msg.sender), AlreadyInitialized(msg.sender));
 		isInstalled[msg.sender] = true;
 	}
 
 	function onUninstall(bytes calldata) public payable {
-		if (!_isInitialized(msg.sender)) revert NotInitialized(msg.sender);
+		require(_isInitialized(msg.sender), NotInitialized(msg.sender));
 		isInstalled[msg.sender] = false;
 	}
 
@@ -42,7 +54,7 @@ contract MockHook is IHook, ModuleBase {
 		return "1.0.0";
 	}
 
-	function isModuleType(uint256 moduleTypeId) public pure virtual returns (bool) {
+	function isModuleType(ModuleType moduleTypeId) public pure virtual returns (bool) {
 		return moduleTypeId == MODULE_TYPE_HOOK;
 	}
 }
