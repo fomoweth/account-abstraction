@@ -2,7 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {IMetaFactory} from "src/interfaces/factories/IMetaFactory.sol";
-import {StakingAdapter} from "src/utils/StakingAdapter.sol";
+import {StakingAdapter} from "src/core/StakingAdapter.sol";
 
 /// @title MetaFactory
 /// @notice Manages the creation of Modular Smart Accounts compliant with ERC-7579 and ERC-4337 using a factory pattern

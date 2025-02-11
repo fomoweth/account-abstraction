@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {CallType, ExecType, ModeSelector, ModePayload} from "./Types.sol";
-import {ModuleType, PackedModuleTypes} from "./Types.sol";
-import {ValidationData} from "./Types.sol";
+import {CallType, ExecType, ModeSelector, ModePayload} from "./ExecutionMode.sol";
+import {ModuleType, PackedModuleTypes} from "./ModuleType.sol";
+import {ValidationData} from "./ValidationData.sol";
 
 CallType constant CALLTYPE_SINGLE = CallType.wrap(0x00);
 CallType constant CALLTYPE_BATCH = CallType.wrap(0x01);
