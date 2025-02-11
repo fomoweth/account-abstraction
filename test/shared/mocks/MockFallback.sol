@@ -1,56 +1,53 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {IFallback} from "src/interfaces/IERC7579Modules.sol";
-import {CalldataDecoder} from "src/libraries/CalldataDecoder.sol";
-import {ModuleLib} from "src/libraries/ModuleLib.sol";
-import {ExecutionModeLib, CallType} from "src/types/ExecutionMode.sol";
+import {IFallback} from "src/interfaces/modules/IERC7579Modules.sol";
+import {CallType, CALLTYPE_SINGLE, CALLTYPE_STATIC, CALLTYPE_DELEGATE} from "src/types/ExecutionMode.sol";
+import {ModuleType, MODULE_TYPE_EXECUTOR, MODULE_TYPE_FALLBACK} from "src/types/ModuleType.sol";
 import {ModuleBase} from "src/modules/ModuleBase.sol";
 
 contract MockFallback is IFallback, ModuleBase {
-	using CalldataDecoder for bytes;
+	event Log(address sender, bytes callData);
 
-	mapping(address account => bytes4[] selectors) public registeredSelectors;
+	mapping(address account => bool isInstalled) public isInstalled;
 
-	function onInstall(bytes calldata data) public payable {
-		if (_isInitialized(msg.sender)) revert AlreadyInitialized(msg.sender);
-
-		bytes4[] calldata selectors = data.decodeSelectors(0);
-		uint256 length = selectors.length;
-
-		for (uint256 i; i < length; ++i) {
-			registeredSelectors[msg.sender].push(selectors[i]);
-		}
+	function onInstall(bytes calldata) public payable {
+		require(!_isInitialized(msg.sender), AlreadyInitialized(msg.sender));
+		isInstalled[msg.sender] = true;
 	}
 
 	function onUninstall(bytes calldata) public payable {
-		if (!_isInitialized(msg.sender)) revert NotInitialized(msg.sender);
-		delete registeredSelectors[msg.sender];
+		require(_isInitialized(msg.sender), NotInitialized(msg.sender));
+		isInstalled[msg.sender] = false;
 	}
 
-	function register(bytes4[] calldata selectors) public {
-		uint256 length = selectors.length;
-		for (uint256 i; i < length; ++i) {
-			registeredSelectors[msg.sender].push(selectors[i]);
-		}
+	function mockCall(bytes calldata data) public payable virtual {
+		emit Log(msg.sender, data);
+	}
+
+	function mockDelegate(bytes calldata data) public payable virtual {
+		emit Log(msg.sender, data);
+	}
+
+	function mockStatic() public view virtual returns (bytes memory data) {
+		(bytes4[] memory selectors, CallType[] memory callTypes) = getSupportedCalls();
+		data = abi.encode(selectors, callTypes);
 	}
 
 	function _isInitialized(address account) internal view virtual override returns (bool) {
-		return registeredSelectors[account].length != 0;
-	}
-
-	function getRegisteredSelectors(address account) public view returns (bytes4[] memory selectors) {
-		return registeredSelectors[account];
+		return isInstalled[account];
 	}
 
 	function getSupportedCalls() public pure returns (bytes4[] memory selectors, CallType[] memory callTypes) {
-		selectors = new bytes4[](2);
-		selectors[0] = 0x095ea7b3;
-		selectors[1] = this.register.selector;
+		selectors = new bytes4[](3);
+		selectors[0] = this.mockCall.selector;
+		selectors[1] = this.mockDelegate.selector;
+		selectors[2] = this.mockStatic.selector;
 
-		callTypes = new CallType[](2);
-		callTypes[0] = ExecutionModeLib.CALLTYPE_DELEGATE;
-		callTypes[1] = ExecutionModeLib.CALLTYPE_SINGLE;
+		callTypes = new CallType[](3);
+		callTypes[0] = CALLTYPE_SINGLE;
+		callTypes[1] = CALLTYPE_DELEGATE;
+		callTypes[2] = CALLTYPE_STATIC;
 	}
 
 	function name() public pure virtual override returns (string memory) {
@@ -61,7 +58,7 @@ contract MockFallback is IFallback, ModuleBase {
 		return "1.0.0";
 	}
 
-	function isModuleType(uint256 moduleTypeId) public pure virtual returns (bool) {
-		return moduleTypeId == MODULE_TYPE_FALLBACK;
+	function isModuleType(ModuleType moduleTypeId) external pure virtual returns (bool) {
+		return moduleTypeId == MODULE_TYPE_FALLBACK || moduleTypeId == MODULE_TYPE_EXECUTOR;
 	}
 }

@@ -13,7 +13,7 @@ library AccountIdLib {
 		strings.slice memory id = accountId.toSlice();
 		strings.slice memory delim = ".".toSlice();
 
-		name = string(abi.encodePacked(id.split(delim).toString(), " ", id.split(delim).toString()));
+		name = string.concat(id.split(delim).toString(), " ", id.split(delim).toString());
 		version = id.toString();
 	}
 }

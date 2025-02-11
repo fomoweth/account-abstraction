@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {ExecutionMode, CallType, ExecType} from "src/types/ExecutionMode.sol";
+import {ExecutionMode, CallType, ExecType, ModuleType} from "src/types/Types.sol";
 
 interface IERC7579Account {
 	event ModuleInstalled(uint256 moduleTypeId, address module);
@@ -52,17 +52,17 @@ interface IERC7579Account {
 	 * @param initData arbitrary data that may be required on the module during `onInstall`
 	 * initialization.
 	 */
-	function installModule(uint256 moduleTypeId, address module, bytes calldata initData) external payable;
+	function installModule(ModuleType moduleTypeId, address module, bytes calldata initData) external payable;
 
 	/**
 	 * @dev uninstalls a Module of a certain type on the smart account
-	 * @dev Implement Authorization control of your chosing
+	 * @dev Implement Authorization control of your choosing
 	 * @param moduleTypeId the module type ID according the ERC-7579 spec
 	 * @param module the module address
 	 * @param deInitData arbitrary data that may be required on the module during `onUninstall`
 	 * de-initialization.
 	 */
-	function uninstallModule(uint256 moduleTypeId, address module, bytes calldata deInitData) external payable;
+	function uninstallModule(ModuleType moduleTypeId, address module, bytes calldata deInitData) external payable;
 
 	/**
 	 * Function to check if the account supports a certain CallType or ExecType (see ModeLib.sol)
@@ -74,7 +74,7 @@ interface IERC7579Account {
 	 * Function to check if the account supports installation of a certain module type Id
 	 * @param moduleTypeId the module type ID according the ERC-7579 spec
 	 */
-	function supportsModule(uint256 moduleTypeId) external view returns (bool);
+	function supportsModule(ModuleType moduleTypeId) external view returns (bool);
 
 	/**
 	 * Function to check if the account has a certain module installed
@@ -88,7 +88,7 @@ interface IERC7579Account {
 	 *                          are stored in mappings, this param might be needed
 	 */
 	function isModuleInstalled(
-		uint256 moduleTypeId,
+		ModuleType moduleTypeId,
 		address module,
 		bytes calldata additionalContext
 	) external view returns (bool);

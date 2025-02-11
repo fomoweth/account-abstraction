@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import {CALLTYPE_SINGLE, CALLTYPE_BATCH, CALLTYPE_STATIC, CALLTYPE_DELEGATE} from "src/types/Constants.sol";
+import {EXECTYPE_DEFAULT, EXECTYPE_TRY} from "src/types/Constants.sol";
+import {MODE_SELECTOR_DEFAULT, MODE_PAYLOAD_DEFAULT} from "src/types/Constants.sol";
+
 type ExecutionMode is bytes32;
 
 type CallType is bytes1;
@@ -12,59 +16,56 @@ type ModeSelector is bytes4;
 type ModePayload is bytes22;
 
 using ExecutionModeLib for ExecutionMode global;
-using ExecutionModeLib for CallType global;
-using ExecutionModeLib for ExecType global;
-
 using {eqCallType as ==, neqCallType as !=} for CallType global;
 using {eqExecType as ==, neqExecType as !=} for ExecType global;
 using {eqModeSelector as ==, neqModeSelector as !=} for ModeSelector global;
 using {eqModePayload as ==, neqModePayload as !=} for ModePayload global;
 
-function eqCallType(CallType x, CallType y) pure returns (bool flag) {
+function eqCallType(CallType x, CallType y) pure returns (bool z) {
 	assembly ("memory-safe") {
-		flag := eq(x, y)
+		z := eq(x, y)
 	}
 }
 
-function neqCallType(CallType x, CallType y) pure returns (bool flag) {
+function neqCallType(CallType x, CallType y) pure returns (bool z) {
 	assembly ("memory-safe") {
-		flag := xor(x, y)
+		z := xor(x, y)
 	}
 }
 
-function eqExecType(ExecType x, ExecType y) pure returns (bool flag) {
+function eqExecType(ExecType x, ExecType y) pure returns (bool z) {
 	assembly ("memory-safe") {
-		flag := eq(x, y)
+		z := eq(x, y)
 	}
 }
 
-function neqExecType(ExecType x, ExecType y) pure returns (bool flag) {
+function neqExecType(ExecType x, ExecType y) pure returns (bool z) {
 	assembly ("memory-safe") {
-		flag := xor(x, y)
+		z := xor(x, y)
 	}
 }
 
-function eqModeSelector(ModeSelector x, ModeSelector y) pure returns (bool flag) {
+function eqModeSelector(ModeSelector x, ModeSelector y) pure returns (bool z) {
 	assembly ("memory-safe") {
-		flag := eq(x, y)
+		z := eq(x, y)
 	}
 }
 
-function neqModeSelector(ModeSelector x, ModeSelector y) pure returns (bool flag) {
+function neqModeSelector(ModeSelector x, ModeSelector y) pure returns (bool z) {
 	assembly ("memory-safe") {
-		flag := xor(x, y)
+		z := xor(x, y)
 	}
 }
 
-function eqModePayload(ModePayload x, ModePayload y) pure returns (bool flag) {
+function eqModePayload(ModePayload x, ModePayload y) pure returns (bool z) {
 	assembly ("memory-safe") {
-		flag := eq(x, y)
+		z := eq(x, y)
 	}
 }
 
-function neqModePayload(ModePayload x, ModePayload y) pure returns (bool flag) {
+function neqModePayload(ModePayload x, ModePayload y) pure returns (bool z) {
 	assembly ("memory-safe") {
-		flag := xor(x, y)
+		z := xor(x, y)
 	}
 }
 
@@ -72,21 +73,6 @@ function neqModePayload(ModePayload x, ModePayload y) pure returns (bool flag) {
 /// @notice Provides functions to encode and decode execution mode
 
 library ExecutionModeLib {
-	error UnsupportedCallType(CallType callType);
-	error UnsupportedExecType(ExecType execType);
-
-	CallType internal constant CALLTYPE_SINGLE = CallType.wrap(0x00);
-	CallType internal constant CALLTYPE_BATCH = CallType.wrap(0x01);
-	CallType internal constant CALLTYPE_STATIC = CallType.wrap(0xFE);
-	CallType internal constant CALLTYPE_DELEGATE = CallType.wrap(0xFF);
-
-	ExecType internal constant EXECTYPE_DEFAULT = ExecType.wrap(0x00);
-	ExecType internal constant EXECTYPE_TRY = ExecType.wrap(0x01);
-
-	bytes4 internal constant MODE_SELECTOR_OFFSET = 0xeda86f9b; // bytes4(keccak256("default.mode.offset"))
-	ModeSelector internal constant MODE_SELECTOR_DEFAULT = ModeSelector.wrap(bytes4(0));
-	ModePayload internal constant MODE_PAYLOAD_DEFAULT = ModePayload.wrap(bytes22(0));
-
 	function encode(
 		CallType callType,
 		ExecType execType,
@@ -104,17 +90,53 @@ library ExecutionModeLib {
 		ExecutionMode mode
 	) internal pure returns (CallType callType, ExecType execType, ModeSelector selector, ModePayload payload) {
 		assembly ("memory-safe") {
-			callType := mode
-			execType := shl(0x08, mode)
-			selector := shl(0x30, mode)
+			callType := shl(0xf8, shr(0xf8, mode))
+			execType := shl(0xf8, shr(0xf8, shl(0x08, mode)))
+			selector := shl(0xe0, shr(0xe0, shl(0x30, mode)))
 			payload := shl(0x50, mode)
 		}
 	}
 
-	function decodeBasic(ExecutionMode mode) internal pure returns (CallType callType, ExecType execType) {
+	function parseTypes(ExecutionMode mode) internal pure returns (CallType callType, ExecType execType) {
+		assembly ("memory-safe") {
+			callType := shl(0xf8, shr(0xf8, mode))
+			execType := shl(0xf8, shr(0xf8, shl(0x08, mode)))
+
+			if iszero(or(iszero(callType), or(eq(callType, shl(0xf8, 0x01)), eq(callType, shl(0xf8, 0xFF))))) {
+				mstore(0x00, 0xb96fcfe4) // UnsupportedCallType(bytes1)
+				mstore(0x20, callType)
+				revert(0x1c, 0x24)
+			}
+
+			if iszero(or(iszero(execType), eq(execType, shl(0xf8, 0x01)))) {
+				mstore(0x00, 0x1187dc06) // UnsupportedExecType(bytes1)
+				mstore(0x20, execType)
+				revert(0x1c, 0x24)
+			}
+		}
+	}
+
+	function parseCallType(ExecutionMode mode) internal pure returns (CallType callType) {
 		assembly ("memory-safe") {
 			callType := mode
+		}
+	}
+
+	function parseExecType(ExecutionMode mode) internal pure returns (ExecType execType) {
+		assembly ("memory-safe") {
 			execType := shl(0x08, mode)
+		}
+	}
+
+	function parseSelector(ExecutionMode mode) internal pure returns (ModeSelector selector) {
+		assembly ("memory-safe") {
+			selector := shl(0x30, mode)
+		}
+	}
+
+	function parsePayload(ExecutionMode mode) internal pure returns (ModePayload payload) {
+		assembly ("memory-safe") {
+			payload := shl(0x50, mode)
 		}
 	}
 
@@ -144,29 +166,5 @@ library ExecutionModeLib {
 
 	function encodeCustom(CallType callType, ExecType execType) internal pure returns (ExecutionMode mode) {
 		return encode(callType, execType, MODE_SELECTOR_DEFAULT, MODE_PAYLOAD_DEFAULT);
-	}
-
-	function getCallType(ExecutionMode mode) internal pure returns (CallType callType) {
-		assembly ("memory-safe") {
-			callType := mode
-		}
-	}
-
-	function getExecType(ExecutionMode mode) internal pure returns (ExecType execType) {
-		assembly ("memory-safe") {
-			execType := shl(0x08, mode)
-		}
-	}
-
-	function getSelector(ExecutionMode mode) internal pure returns (ModeSelector selector) {
-		assembly ("memory-safe") {
-			selector := shl(0x30, mode)
-		}
-	}
-
-	function getPayload(ExecutionMode mode) internal pure returns (ModePayload payload) {
-		assembly ("memory-safe") {
-			payload := shl(0x50, mode)
-		}
 	}
 }

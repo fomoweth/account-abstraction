@@ -2,7 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
-import {CallType} from "src/types/ExecutionMode.sol";
+import {ModuleType} from "src/types/Types.sol";
 
 interface IModule {
 	error AlreadyInitialized(address account);
@@ -32,7 +32,7 @@ interface IModule {
 	 *
 	 * MUST return true if the module is of the given type and false otherwise
 	 */
-	function isModuleType(uint256 moduleTypeId) external view returns (bool);
+	function isModuleType(ModuleType moduleTypeId) external view returns (bool);
 
 	/**
 	 * @dev Returns if the module was already initialized for a provided smartaccount
@@ -67,6 +67,8 @@ interface IValidator is IModule {
 
 interface IExecutor is IModule {}
 
+interface IFallback is IModule {}
+
 interface IHook is IModule {
 	function preCheck(
 		address msgSender,
@@ -77,6 +79,10 @@ interface IHook is IModule {
 	function postCheck(bytes calldata hookData) external payable;
 }
 
-interface IFallback is IModule {
-	function getSupportedCalls() external view returns (bytes4[] memory selectors, CallType[] memory callTypes);
+interface IStatelessValidator is IModule {
+	function validateSignatureWithData(
+		bytes32 hash,
+		bytes calldata signature,
+		bytes calldata data
+	) external view returns (bool);
 }
