@@ -12,20 +12,19 @@ abstract contract StakingAdapter is IStakingAdapter, Ownable {
 		_initializeOwner(initialOwner);
 	}
 
-	function balanceOf(address entryPoint, address account) public view virtual returns (uint256 deposit) {
+	function balanceOf(address ep, address account) public view virtual returns (uint256 deposit) {
 		assembly ("memory-safe") {
 			let ptr := mload(0x40)
 
 			mstore(ptr, 0x70a0823100000000000000000000000000000000000000000000000000000000) // balanceOf(address)
 			mstore(add(ptr, 0x04), shr(0x60, shl(0x60, account)))
 
-			// prettier-ignore
-			deposit := mul(mload(0x00), and(gt(returndatasize(), 0x1f), staticcall(gas(), entryPoint, ptr, 0x24, 0x00,0x20)))
+			deposit := mul(mload(0x00), and(gt(returndatasize(), 0x1f), staticcall(gas(), ep, ptr, 0x24, 0x00, 0x20)))
 		}
 	}
 
 	function getDepositInfo(
-		address entryPoint,
+		address ep,
 		address account
 	)
 		public
@@ -39,7 +38,7 @@ abstract contract StakingAdapter is IStakingAdapter, Ownable {
 			mstore(ptr, 0x5287ce1200000000000000000000000000000000000000000000000000000000) // getDepositInfo(address)
 			mstore(add(ptr, 0x04), shr(0x60, shl(0x60, account)))
 
-			if iszero(staticcall(gas(), entryPoint, ptr, 0x24, add(ptr, 0x24), 0xa0)) {
+			if iszero(staticcall(gas(), ep, ptr, 0x24, add(ptr, 0x24), 0xa0)) {
 				returndatacopy(ptr, 0x00, returndatasize())
 				revert(ptr, returndatasize())
 			}
@@ -52,21 +51,26 @@ abstract contract StakingAdapter is IStakingAdapter, Ownable {
 		}
 	}
 
-	function depositTo(address entryPoint, address account) external payable virtual onlyOwner {
+	function depositTo(address ep, address recipient) external payable virtual {
 		assembly ("memory-safe") {
+			if iszero(shl(0x60, recipient)) {
+				mstore(0x00, 0x9c8d2cd2) // InvalidRecipient()
+				revert(0x1c, 0x04)
+			}
+
 			let ptr := mload(0x40)
 
 			mstore(ptr, 0xb760faf900000000000000000000000000000000000000000000000000000000) // depositTo(address)
-			mstore(add(ptr, 0x04), shr(0x60, shl(0x60, account)))
+			mstore(add(ptr, 0x04), shr(0x60, shl(0x60, recipient)))
 
-			if iszero(call(gas(), entryPoint, callvalue(), ptr, 0x24, 0x00, 0x00)) {
+			if iszero(mul(extcodesize(ep), call(gas(), ep, callvalue(), ptr, 0x24, 0x00, 0x00))) {
 				returndatacopy(ptr, 0x00, returndatasize())
 				revert(ptr, returndatasize())
 			}
 		}
 	}
 
-	function withdrawTo(address entryPoint, address recipient, uint256 amount) external payable virtual onlyOwner {
+	function withdrawTo(address ep, address recipient, uint256 amount) external payable virtual onlyOwner {
 		assembly ("memory-safe") {
 			if iszero(shl(0x60, recipient)) {
 				mstore(0x00, 0x9c8d2cd2) // InvalidRecipient()
@@ -79,41 +83,41 @@ abstract contract StakingAdapter is IStakingAdapter, Ownable {
 			mstore(add(ptr, 0x04), shr(0x60, shl(0x60, recipient)))
 			mstore(add(ptr, 0x24), amount)
 
-			if iszero(call(gas(), entryPoint, 0x00, ptr, 0x44, 0x00, 0x00)) {
+			if iszero(mul(extcodesize(ep), call(gas(), ep, 0x00, ptr, 0x44, 0x00, 0x00))) {
 				returndatacopy(ptr, 0x00, returndatasize())
 				revert(ptr, returndatasize())
 			}
 		}
 	}
 
-	function addStake(address entryPoint, uint32 unstakeDelaySec) external payable virtual onlyOwner {
+	function addStake(address ep, uint32 unstakeDelaySec) external payable virtual onlyOwner {
 		assembly ("memory-safe") {
 			let ptr := mload(0x40)
 
 			mstore(ptr, 0x0396cb6000000000000000000000000000000000000000000000000000000000) // addStake(uint32)
 			mstore(add(ptr, 0x04), and(unstakeDelaySec, 0xffffffff))
 
-			if iszero(call(gas(), entryPoint, callvalue(), ptr, 0x24, 0x00, 0x00)) {
+			if iszero(mul(extcodesize(ep), call(gas(), ep, callvalue(), ptr, 0x24, 0x00, 0x00))) {
 				returndatacopy(ptr, 0x00, returndatasize())
 				revert(ptr, returndatasize())
 			}
 		}
 	}
 
-	function unlockStake(address entryPoint) external payable virtual onlyOwner {
+	function unlockStake(address ep) external payable virtual onlyOwner {
 		assembly ("memory-safe") {
 			let ptr := mload(0x40)
 
 			mstore(ptr, 0xbb9fe6bf00000000000000000000000000000000000000000000000000000000) // unlockStake()
 
-			if iszero(call(gas(), entryPoint, 0x00, ptr, 0x04, 0x00, 0x00)) {
+			if iszero(mul(extcodesize(ep), call(gas(), ep, 0x00, ptr, 0x04, 0x00, 0x00))) {
 				returndatacopy(ptr, 0x00, returndatasize())
 				revert(ptr, returndatasize())
 			}
 		}
 	}
 
-	function withdrawStake(address entryPoint, address recipient) external payable virtual onlyOwner {
+	function withdrawStake(address ep, address recipient) external payable virtual onlyOwner {
 		assembly ("memory-safe") {
 			if iszero(shl(0x60, recipient)) {
 				mstore(0x00, 0x9c8d2cd2) // InvalidRecipient()
@@ -125,7 +129,7 @@ abstract contract StakingAdapter is IStakingAdapter, Ownable {
 			mstore(ptr, 0xc23a5cea00000000000000000000000000000000000000000000000000000000) // withdrawStake(address)
 			mstore(add(ptr, 0x04), shr(0x60, shl(0x60, recipient)))
 
-			if iszero(call(gas(), entryPoint, 0x00, ptr, 0x24, 0x00, 0x00)) {
+			if iszero(mul(extcodesize(ep), call(gas(), ep, 0x00, ptr, 0x24, 0x00, 0x00))) {
 				returndatacopy(ptr, 0x00, returndatasize())
 				revert(ptr, returndatasize())
 			}

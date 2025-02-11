@@ -9,7 +9,7 @@ interface IStakingAdapter {
 		address account
 	) external view returns (uint256 deposit, bool staked, uint112 stake, uint32 unstakeDelaySec, uint48 withdrawTime);
 
-	function depositTo(address entryPoint, address account) external payable;
+	function depositTo(address entryPoint, address recipient) external payable;
 
 	function withdrawTo(address entryPoint, address recipient, uint256 amount) external payable;
 

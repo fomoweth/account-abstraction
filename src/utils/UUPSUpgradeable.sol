@@ -5,7 +5,7 @@ pragma solidity ^0.8.28;
 /// @dev Implementation from https://github.com/Vectorized/solady/blob/main/src/utils/UUPSUpgradeable.sol
 
 abstract contract UUPSUpgradeable {
-	/// @dev keccak256(bytes("Upgraded(address)"))
+	/// @dev keccak256("Upgraded(address)")
 	uint256 private constant UPGRADED_TOPIC = 0xbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b;
 
 	/// @dev uint256(keccak256("eip1967.proxy.implementation")) - 1
