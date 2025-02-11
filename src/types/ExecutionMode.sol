@@ -16,9 +16,6 @@ type ModeSelector is bytes4;
 type ModePayload is bytes22;
 
 using ExecutionModeLib for ExecutionMode global;
-using ExecutionModeLib for CallType global;
-using ExecutionModeLib for ExecType global;
-
 using {eqCallType as ==, neqCallType as !=} for CallType global;
 using {eqExecType as ==, neqExecType as !=} for ExecType global;
 using {eqModeSelector as ==, neqModeSelector as !=} for ModeSelector global;
@@ -119,6 +116,30 @@ library ExecutionModeLib {
 		}
 	}
 
+	function parseCallType(ExecutionMode mode) internal pure returns (CallType callType) {
+		assembly ("memory-safe") {
+			callType := mode
+		}
+	}
+
+	function parseExecType(ExecutionMode mode) internal pure returns (ExecType execType) {
+		assembly ("memory-safe") {
+			execType := shl(0x08, mode)
+		}
+	}
+
+	function parseSelector(ExecutionMode mode) internal pure returns (ModeSelector selector) {
+		assembly ("memory-safe") {
+			selector := shl(0x30, mode)
+		}
+	}
+
+	function parsePayload(ExecutionMode mode) internal pure returns (ModePayload payload) {
+		assembly ("memory-safe") {
+			payload := shl(0x50, mode)
+		}
+	}
+
 	function encodeSingle() internal pure returns (ExecutionMode mode) {
 		return encodeCustom(CALLTYPE_SINGLE, EXECTYPE_DEFAULT);
 	}
@@ -145,29 +166,5 @@ library ExecutionModeLib {
 
 	function encodeCustom(CallType callType, ExecType execType) internal pure returns (ExecutionMode mode) {
 		return encode(callType, execType, MODE_SELECTOR_DEFAULT, MODE_PAYLOAD_DEFAULT);
-	}
-
-	function parseCallType(ExecutionMode mode) internal pure returns (CallType callType) {
-		assembly ("memory-safe") {
-			callType := mode
-		}
-	}
-
-	function parseExecType(ExecutionMode mode) internal pure returns (ExecType execType) {
-		assembly ("memory-safe") {
-			execType := shl(0x08, mode)
-		}
-	}
-
-	function parseSelector(ExecutionMode mode) internal pure returns (ModeSelector selector) {
-		assembly ("memory-safe") {
-			selector := shl(0x30, mode)
-		}
-	}
-
-	function parsePayload(ExecutionMode mode) internal pure returns (ModePayload payload) {
-		assembly ("memory-safe") {
-			payload := shl(0x50, mode)
-		}
 	}
 }

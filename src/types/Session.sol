@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {FALLBACK_ACTION_ID, FALLBACK_ACTION_ID_SMART_SESSION_CALL, RETRY_WITH_FALLBACK} from "./Constants.sol";
-
 type PermissionId is bytes32;
 
 type ActionId is bytes32;
