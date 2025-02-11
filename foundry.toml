@@ -4,16 +4,23 @@ out = "out"
 libs = ["lib"]
 solc = "0.8.28"
 evm_version = "cancun"
+bytecode_hash = "none"
+cbor_metadata = false
 via_ir = true
 optimizer = true
 optimizer_runs = 1000000
-gas_reports = ["*"]
+names = true
+sizes = true
+gas_reports = ["Vortex", "VortexFactory", "AccountFactory", "RegistryFactory", "MetaFactory"]
 fs_permissions = [
     { access = "read", path = "./out/"},
     { access = "read", path = "./config/"}
 ]
 
-[profile.default.rpc_endpoints]
+[fuzz]
+runs = 32
+
+[rpc_endpoints]
 ethereum = "${RPC_ETHEREUM}"
 sepolia = "${RPC_SEPOLIA}"
 optimism = "${RPC_OPTIMISM}"
