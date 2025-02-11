@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {CallType} from "src/types/ExecutionMode.sol";
+import {CallType, ModuleType} from "src/types/Types.sol";
 import {BytesLib} from "./BytesLib.sol";
 
 /// @title CalldataDecoder
@@ -29,6 +29,14 @@ library CalldataDecoder {
 		}
 	}
 
+	function decodeSelectors(bytes calldata data) internal pure returns (bytes4[] calldata selectors) {
+		assembly ("memory-safe") {
+			let ptr := add(data.offset, calldataload(data.offset))
+			selectors.offset := calldataload(ptr)
+			selectors.length := add(ptr, 0x20)
+		}
+	}
+
 	function decodeSelectorAndCalldata(
 		bytes calldata data
 	) internal pure returns (bytes4 selector, bytes calldata callData) {
@@ -44,56 +52,79 @@ library CalldataDecoder {
 		}
 	}
 
-	function decodeSelectorsAndCallTypes(
+	function decodeSelectorsAndCalldata(
 		bytes calldata data
-	) internal pure returns (bytes4[] calldata selectors, CallType[] calldata callTypes) {
+	) internal pure returns (bytes4[] calldata selectors, bytes calldata callData) {
 		assembly ("memory-safe") {
-			let offset := data.offset
-			let ptr := add(offset, calldataload(offset))
-
+			let ptr := add(data.offset, calldataload(data.offset))
 			selectors.length := calldataload(ptr)
 			selectors.offset := add(ptr, 0x20)
-			offset := add(offset, 0x20)
 
-			ptr := add(data.offset, calldataload(offset))
-			callTypes.length := calldataload(ptr)
-			callTypes.offset := add(ptr, 0x20)
+			ptr := add(data.offset, calldataload(add(data.offset, 0x20)))
+			callData.offset := calldataload(ptr)
+			callData.length := add(ptr, 0x20)
 		}
 	}
 
-	function decodeEnableMode(
+	function decodeModuleTypesAndInitData(
+		bytes calldata data
+	) internal pure returns (ModuleType[] calldata moduleTypes, bytes calldata initData) {
+		assembly ("memory-safe") {
+			let ptr := add(data.offset, calldataload(data.offset))
+			moduleTypes.length := calldataload(ptr)
+			moduleTypes.offset := add(ptr, 0x20)
+
+			ptr := add(data.offset, calldataload(add(data.offset, 0x20)))
+			initData.length := calldataload(ptr)
+			initData.offset := add(ptr, 0x20)
+		}
+	}
+
+	function decodeFallbackInstall(
 		bytes calldata data
 	)
 		internal
 		pure
-		returns (
-			address module,
-			uint256 moduleTypeId,
-			bytes calldata initData,
-			bytes calldata signature,
-			bytes calldata userOpSignature
-		)
+		returns (bytes4[] calldata selectors, CallType[] calldata callTypes, bytes1 flag, bytes calldata initData)
 	{
 		assembly ("memory-safe") {
-			let offset := data.offset
-			let baseOffset := offset
+			let ptr := add(data.offset, calldataload(data.offset))
+			selectors.length := calldataload(ptr)
+			selectors.offset := add(ptr, 0x20)
 
-			module := shr(0x60, calldataload(offset))
-			offset := add(offset, 0x14)
+			ptr := add(data.offset, calldataload(add(data.offset, 0x20)))
+			callTypes.length := calldataload(ptr)
+			callTypes.offset := add(ptr, 0x20)
 
-			moduleTypeId := calldataload(offset)
-			offset := add(offset, 0x20)
+			ptr := add(data.offset, calldataload(add(data.offset, 0x40)))
+			initData.length := calldataload(ptr)
+			initData.offset := add(ptr, 0x20)
 
-			initData.length := shr(0xe0, calldataload(add(offset, 0x20)))
-			initData.offset := add(offset, 0x24)
-			offset := add(initData.offset, initData.length)
+			if iszero(iszero(initData.length)) {
+				flag := calldataload(initData.offset)
+				initData.offset := add(initData.offset, 0x01)
+				initData.length := sub(initData.length, 0x01)
+			}
+		}
+	}
 
-			signature.length := shr(0xe0, calldataload(offset))
-			signature.offset := add(offset, 0x04)
-			offset := sub(add(signature.offset, signature.length), data.offset)
+	function decodeFallbackUninstall(
+		bytes calldata data
+	) internal pure returns (bytes4[] calldata selectors, bytes1 flag, bytes calldata initData) {
+		assembly ("memory-safe") {
+			let ptr := add(data.offset, calldataload(data.offset))
+			selectors.length := calldataload(ptr)
+			selectors.offset := add(ptr, 0x20)
 
-			userOpSignature.offset := add(data.offset, offset)
-			userOpSignature.length := sub(data.length, offset)
+			ptr := add(data.offset, calldataload(add(data.offset, 0x20)))
+			initData.offset := calldataload(ptr)
+			initData.length := add(ptr, 0x20)
+
+			if iszero(iszero(initData.length)) {
+				flag := calldataload(initData.offset)
+				initData.offset := add(initData.offset, 0x01)
+				initData.length := sub(initData.length, 0x01)
+			}
 		}
 	}
 }
