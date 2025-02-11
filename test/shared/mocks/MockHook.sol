@@ -29,7 +29,7 @@ contract MockHook is IHook, ModuleBase {
 			msgData.length := sub(hookData.length, 0x34)
 		}
 
-		emit Log(msgSender, msgValue, msgData);
+		// emit Log(msgSender, msgValue, msgData);
 	}
 
 	function onInstall(bytes calldata) public payable {
