@@ -29,9 +29,6 @@ contract AccountModule is RegistryAdapter {
 	bytes32 internal constant FALLBACKS_STORAGE_SLOT =
 		0x2500be8b097cabc8fbfb1f2a0e1495cf45ecf83bbba382f7125760d2d2920d00;
 
-	/// @dev keccak256(abi.encode(uint256(keccak256("eip7579.module.hook")) - 1)) & ~bytes32(uint256(0xff))
-	bytes32 internal constant HOOK_STORAGE_SLOT = 0x760749b14f6fffa690caa6394428717e7f6ee733c320f509d16c7f240a8d3200;
-
 	/// @dev keccak256(abi.encode(uint256(keccak256("eip7579.account.modules")) - 1)) & ~bytes32(uint256(0xff))
 	bytes32 internal constant MODULES_STORAGE_SLOT = 0xd5c15c7f662d752f82270246f0c46945931f1cea1e031d18e20309be7f4e2d00;
 
@@ -323,39 +320,6 @@ contract AccountModule is RegistryAdapter {
 			? _isModuleInstalled(moduleTypeId, module)
 			: _isModuleInstalled(moduleTypeId, module) && _isFallbackInstalled(module, data.decodeSelector());
 	}
-
-	// function _isModuleInstalled(
-	// 	ModuleType moduleTypeId,
-	// 	address module,
-	// 	bytes calldata data
-	// ) internal view virtual returns (bool result) {
-	// 	// assembly ("memory-safe") {
-	// 	// 	if and(moduleTypeId, or(lt(moduleTypeId, 0x05), eq(moduleTypeId, 0x07))) {
-	// 	// 		switch moduleTypeId
-	// 	// 		case 0x03 {
-	// 	// 			mstore(0x00, shl(0xe0, shr(0xe0, calldataload(data.offset))))
-	// 	// 			mstore(0x20, FALLBACKS_STORAGE_SLOT)
-	// 	// 			result := eq(module, shr(0x60, shl(0x60, sload(keccak256(0x00, 0x40)))))
-	// 	// 		}
-	// 	// 		case 0x04 {
-	// 	// 			mstore(0x00, shr(0x60, shl(0x60, ENTRYPOINT)))
-	// 	// 			mstore(0x20, MODULES_STORAGE_SLOT)
-	// 	// 			result := eq(module, shr(0x60, shl(0x60, sload(keccak256(0x00, 0x40)))))
-	// 	// 		}
-	// 	// 		default {
-	// 	// 			mstore(0x00, shr(0x60, shl(0x60, module)))
-	// 	// 			mstore(0x20, MODULES_STORAGE_SLOT)
-	// 	// 			result := iszero(iszero(shr(0x60, shl(0x60, sload(keccak256(0x00, 0x40))))))
-	// 	// 		}
-	// 	// 	}
-	// 	// }
-
-	// 	if (moduleTypeId == MODULE_TYPE_FALLBACK) {
-	// 		result = _isModuleInstalled(moduleTypeId, module) && _isFallbackInstalled(module, data.decodeSelector());
-	// 	} else {
-	// 		result = _isModuleInstalled(moduleTypeId, module);
-	// 	}
-	// }
 
 	function _isModuleInstalled(ModuleType moduleTypeId, address module) internal view virtual returns (bool result) {
 		assembly ("memory-safe") {
