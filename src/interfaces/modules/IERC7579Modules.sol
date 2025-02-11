@@ -2,7 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
-import {CallType, ModuleType} from "src/types/Types.sol";
+import {ModuleType} from "src/types/Types.sol";
 
 interface IModule {
 	error AlreadyInitialized(address account);

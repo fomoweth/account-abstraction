@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {IFallback} from "src/interfaces/IERC7579Modules.sol";
+import {IFallback} from "src/interfaces/modules/IERC7579Modules.sol";
 import {CallType, CALLTYPE_SINGLE, CALLTYPE_STATIC, CALLTYPE_DELEGATE} from "src/types/ExecutionMode.sol";
 import {ModuleType, MODULE_TYPE_EXECUTOR, MODULE_TYPE_FALLBACK} from "src/types/ModuleType.sol";
 import {ModuleBase} from "src/modules/ModuleBase.sol";

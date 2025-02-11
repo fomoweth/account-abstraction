@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {IExecutor} from "src/interfaces/IERC7579Modules.sol";
+import {IExecutor} from "src/interfaces/modules/IERC7579Modules.sol";
 import {IERC7579Account} from "src/interfaces/IERC7579Account.sol";
 import {ExecutionLib, Execution} from "src/libraries/ExecutionLib.sol";
 import {ExecutionModeLib} from "src/types/ExecutionMode.sol";

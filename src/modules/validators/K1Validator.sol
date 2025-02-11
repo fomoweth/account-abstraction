@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import {IK1Validator} from "src/interfaces/modules/IK1Validator.sol";
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 import {SignatureCheckerLib} from "solady/utils/SignatureCheckerLib.sol";
 import {BytesLib} from "src/libraries/BytesLib.sol";
@@ -12,15 +13,11 @@ import {HybridValidatorBase} from "./HybridValidatorBase.sol";
 /// @notice Verifies user operation signatures for smart accounts
 /// @dev Modified from https://github.com/erc7579/erc7739Validator/blob/main/src/SampleK1ValidatorWithERC7739.sol
 
-contract K1Validator is HybridValidatorBase, ERC1271 {
+contract K1Validator is IK1Validator, HybridValidatorBase, ERC1271 {
 	using BytesLib for bytes;
 	using EnumerableSet4337 for EnumerableSet4337.AddressSet;
 	using SignatureCheckerLib for address;
 	using SignatureCheckerLib for bytes32;
-
-	error InvalidSender();
-	error SenderAlreadyExists(address sender);
-	error SenderNotExists(address sender);
 
 	mapping(address account => address owner) internal _accountOwners;
 

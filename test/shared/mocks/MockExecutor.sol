@@ -1,21 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {IExecutor} from "src/interfaces/IERC7579Modules.sol";
+import {IExecutor} from "src/interfaces/modules/IERC7579Modules.sol";
 import {IERC7579Account} from "src/interfaces/IERC7579Account.sol";
-import {ExecutionLib} from "src/libraries/ExecutionLib.sol";
+import {ExecutionLib, Execution} from "src/libraries/ExecutionLib.sol";
 import {CALLTYPE_SINGLE, CALLTYPE_BATCH, CALLTYPE_DELEGATE, MODULE_TYPE_EXECUTOR} from "src/types/Constants.sol";
 import {ExecutionModeLib, ExecutionMode, CallType, ExecType} from "src/types/ExecutionMode.sol";
 import {ModuleType} from "src/types/ModuleType.sol";
 import {ModuleBase} from "src/modules/ModuleBase.sol";
 
 contract MockExecutor is IExecutor, ModuleBase {
-	struct Execution {
-		address target;
-		uint256 value;
-		bytes callData;
-	}
-
 	mapping(address account => bool isInstalled) public isInstalled;
 
 	function executeViaAccount(
@@ -113,6 +107,46 @@ contract MockExecutor is IExecutor, ModuleBase {
 		}
 
 		return IERC7579Account(account).executeFromExecutor(mode, executionCalldata);
+	}
+
+	function _executeFromExecutor(
+		address account,
+		ExecutionMode mode,
+		bytes calldata executionCallData
+	) internal virtual returns (bytes[] memory results) {
+		require(!_isInitialized(msg.sender), AlreadyInitialized(msg.sender));
+
+		assembly ("memory-safe") {
+			let ptr := mload(0x40)
+
+			mstore(ptr, 0xd691c96400000000000000000000000000000000000000000000000000000000) // executeFromExecutor(bytes32,bytes)
+			mstore(add(ptr, 0x04), mode)
+			mstore(add(ptr, 0x24), executionCallData.length)
+			calldatacopy(add(ptr, 0x44), executionCallData.offset, executionCallData.length)
+
+			let success := call(gas(), account, callvalue(), ptr, add(executionCallData.length, 0x44), 0x00, 0x00)
+
+			returndatacopy(ptr, 0x00, returndatasize())
+			// prettier-ignore
+			if iszero(success) { revert(ptr, returndatasize()) }
+
+			mstore(0x40, add(results, returndatasize()))
+
+			let length := div(sub(returndatasize(), 0x40), 0x20)
+			let offset := add(results, 0x20)
+			let guard := add(offset, shl(0x05, length))
+			ptr := sub(add(ptr, 0x40), offset)
+			mstore(results, length)
+
+			// prettier-ignore
+			for { } 0x01 { } {
+				mstore(offset, mload(add(ptr, offset)))
+				offset := add(offset, 0x20)
+				if eq(offset, guard) { break }
+			}
+
+			mstore(0x40, guard)
+		}
 	}
 
 	function onInstall(bytes calldata) public payable {

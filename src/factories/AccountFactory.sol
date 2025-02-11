@@ -60,8 +60,8 @@ contract AccountFactory is IAccountFactory {
 					}
 
 					if iszero(call(gas(), account, 0x00, add(data, 0x20), mload(data), codesize(), 0x00)) {
-						returndatacopy(mload(0x40), 0x00, returndatasize())
-						revert(mload(0x40), returndatasize())
+						returndatacopy(ptr, 0x00, returndatasize())
+						revert(ptr, returndatasize())
 					}
 
 					log3(codesize(), 0x00, ACCOUNT_CREATED_TOPIC, account, salt)

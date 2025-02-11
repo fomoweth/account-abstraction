@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {IHook} from "src/interfaces/IERC7579Modules.sol";
+import {IHook} from "src/interfaces/modules/IERC7579Modules.sol";
 import {ModuleType, MODULE_TYPE_HOOK} from "src/types/ModuleType.sol";
 import {ModuleBase} from "src/modules/ModuleBase.sol";
 
