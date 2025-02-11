@@ -95,7 +95,7 @@ contract Vortex is IVortex, Account, EIP712, UUPSUpgradeable {
 			// MODULE_TYPE_POLICY: 0x05
 			// MODULE_TYPE_SIGNER: 0x06
 			// MODULE_TYPE_STATELESS_VALIDATOR: 0x07
-			result := and(moduleTypeId, or(lt(moduleTypeId, 0x05), eq(moduleTypeId, 0x07)))
+			result := and(iszero(iszero(moduleTypeId)), or(lt(moduleTypeId, 0x05), eq(moduleTypeId, 0x07)))
 		}
 	}
 

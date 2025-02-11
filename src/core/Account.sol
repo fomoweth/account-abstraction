@@ -2,7 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {IEntryPoint, PackedUserOperation} from "account-abstraction/interfaces/IEntryPoint.sol";
-import {IValidator} from "src/interfaces/IERC7579Modules.sol";
+import {IValidator} from "src/interfaces/modules/IERC7579Modules.sol";
 import {BytesLib} from "src/libraries/BytesLib.sol";
 import {ExecutionLib} from "src/libraries/ExecutionLib.sol";
 import {CALLTYPE_SINGLE, CALLTYPE_BATCH, CALLTYPE_DELEGATE, MODULE_TYPE_VALIDATOR, MODULE_TYPE_EXECUTOR} from "src/types/Constants.sol";
@@ -128,7 +128,7 @@ abstract contract Account is AccountModule {
 		address target,
 		uint256 value,
 		bytes calldata callData
-	) internal returns (bytes memory returnData) {
+	) internal virtual returns (bytes memory returnData) {
 		assembly ("memory-safe") {
 			let success
 			let ptr := mload(0x40)

@@ -314,11 +314,11 @@ contract AccountModule is RegistryAdapter {
 	function _isModuleInstalled(
 		ModuleType moduleTypeId,
 		address module,
-		bytes calldata data
+		bytes calldata additionalContext
 	) internal view virtual returns (bool result) {
 		result = moduleTypeId != MODULE_TYPE_FALLBACK
 			? _isModuleInstalled(moduleTypeId, module)
-			: _isModuleInstalled(moduleTypeId, module) && _isFallbackInstalled(module, data.decodeSelector());
+			: _isModuleInstalled(moduleTypeId, module) && _isFallbackInstalled(module, additionalContext);
 	}
 
 	function _isModuleInstalled(ModuleType moduleTypeId, address module) internal view virtual returns (bool result) {
@@ -327,12 +327,24 @@ contract AccountModule is RegistryAdapter {
 			case 0x04 {
 				mstore(0x00, shr(0x60, shl(0x60, ENTRYPOINT)))
 				mstore(0x20, MODULES_STORAGE_SLOT)
-				result := eq(module, shr(0x60, shl(0x60, sload(keccak256(0x00, 0x40)))))
+
+				let configuration := sload(keccak256(0x00, 0x40))
+
+				result := and(
+					eq(module, shr(0x60, shl(0x60, configuration))),
+					eq(moduleTypeId, shr(0xf8, configuration))
+				)
 			}
 			default {
 				mstore(0x00, shr(0x60, shl(0x60, module)))
 				mstore(0x20, MODULES_STORAGE_SLOT)
-				result := iszero(iszero(shr(0x60, shl(0x60, sload(keccak256(0x00, 0x40))))))
+
+				let configuration := sload(keccak256(0x00, 0x40))
+
+				result := and(
+					iszero(iszero(shr(0x60, shl(0x60, configuration)))),
+					eq(moduleTypeId, shr(0xf8, configuration))
+				)
 			}
 		}
 	}
@@ -426,11 +438,28 @@ contract AccountModule is RegistryAdapter {
 		}
 	}
 
-	function _isFallbackInstalled(address handler, bytes4 selector) internal view virtual returns (bool result) {
+	function _isFallbackInstalled(address handler, bytes calldata data) internal view virtual returns (bool result) {
 		assembly ("memory-safe") {
-			mstore(0x00, shl(0xe0, shr(0xe0, selector)))
+			mstore(0x00, shl(0xe0, shr(0xe0, calldataload(data.offset))))
 			mstore(0x20, FALLBACKS_STORAGE_SLOT)
-			result := eq(handler, shr(0x60, shl(0x60, sload(keccak256(0x00, 0x40)))))
+
+			switch data.length
+			case 0x04 {
+				result := eq(handler, shr(0x60, shl(0x60, sload(keccak256(0x00, 0x40)))))
+			}
+			case 0x05 {
+				let callType := calldataload(add(data.offset, 0x04))
+				let configuration := sload(keccak256(0x00, 0x40))
+
+				result := and(
+					eq(handler, shr(0x60, shl(0x60, configuration))),
+					eq(callType, shl(0xf8, shr(0xf8, configuration)))
+				)
+			}
+			default {
+				mstore(0x00, 0xdfe93090) // InvalidDataLength()
+				revert(0x1c, 0x04)
+			}
 		}
 	}
 
