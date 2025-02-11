@@ -6,8 +6,6 @@ import {ModuleTypeLib, ModuleType, PackedModuleTypes} from "src/types/ModuleType
 import {SolArray} from "test/shared/utils/SolArray.sol";
 import {Constants} from "test/shared/env/Constants.sol";
 
-// forge test --match-path test/types/ModuleType.t.sol -vvv
-
 contract ModuleTypeTest is Test, Constants {
 	using ModuleTypeLib for ModuleType[];
 
@@ -43,7 +41,7 @@ contract ModuleTypeTest is Test, Constants {
 		assertEq(ids.length, packed.numberOfTypes());
 
 		for (uint256 i; i < moduleTypes.length; ++i) {
-			assertEq(ModuleType.unwrap(ids[i]), ModuleType.unwrap(moduleTypes[i]));
+			assertTrue(ids[i] == moduleTypes[i]);
 		}
 	}
 }

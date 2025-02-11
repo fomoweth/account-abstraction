@@ -5,8 +5,6 @@ import {Test} from "forge-std/Test.sol";
 import {ExecutionModeLib, ExecutionMode, CallType, ExecType, ModeSelector, ModePayload} from "src/types/ExecutionMode.sol";
 import {Constants} from "test/shared/env/Constants.sol";
 
-// forge test --match-path test/types/ExecutionMode.t.sol -vvv
-
 contract ExecutionModeTest is Test, Constants {
 	function setUp() public virtual {}
 

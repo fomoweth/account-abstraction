@@ -35,12 +35,38 @@ abstract contract Common is Constants {
 		}
 	}
 
+	function addressToBytes32(address input) internal pure virtual returns (bytes32 output) {
+		return bytes32(bytes20(input));
+	}
+
 	function bytes32ToAddress(bytes32 input) internal pure virtual returns (address output) {
 		return address(uint160(uint256(input)));
 	}
 
-	function addressToBytes32(address input) internal pure virtual returns (bytes32 output) {
-		return bytes32(bytes20(input));
+	function bytes32ToString(bytes32 target) internal pure returns (string memory) {
+		bytes memory buffer = new bytes(32);
+		uint8 count;
+
+		unchecked {
+			for (uint8 i; i < 32; ++i) {
+				bytes1 char = target[i];
+
+				if (char != 0) {
+					buffer[count] = char;
+					++count;
+				}
+			}
+		}
+
+		bytes memory trimmed = new bytes(count);
+
+		unchecked {
+			for (uint8 i; i < count; ++i) {
+				trimmed[i] = buffer[i];
+			}
+		}
+
+		return string(trimmed);
 	}
 
 	function isContract(address target) internal view virtual returns (bool res) {
