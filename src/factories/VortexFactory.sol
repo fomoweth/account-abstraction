@@ -8,6 +8,7 @@ import {BootstrapLib} from "src/libraries/BootstrapLib.sol";
 import {Calldata} from "src/libraries/Calldata.sol";
 import {MODULE_TYPE_VALIDATOR, MODULE_TYPE_HOOK, MODULE_TYPE_STATELESS_VALIDATOR} from "src/types/Constants.sol";
 import {ModuleType} from "src/types/Types.sol";
+import {Vortex} from "src/Vortex.sol";
 import {IAccountFactory, AccountFactory} from "./AccountFactory.sol";
 
 /// @title VortexFactory

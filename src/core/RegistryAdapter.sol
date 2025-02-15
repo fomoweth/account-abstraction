@@ -28,7 +28,6 @@ abstract contract RegistryAdapter {
 	function _configureRegistry(address registry, address[] calldata attesters, uint8 threshold) internal virtual {
 		assembly ("memory-safe") {
 			registry := shr(0x60, shl(0x60, registry))
-
 			sstore(REGISTRY_SLOT, registry)
 			log2(0x00, 0x00, REGISTRY_CONFIGURED_TOPIC, registry)
 
@@ -51,8 +50,13 @@ abstract contract RegistryAdapter {
 
 	function _checkRegistry(address module, ModuleType moduleTypeId) internal view virtual {
 		assembly ("memory-safe") {
-			let registry := sload(REGISTRY_SLOT)
-			if registry {
+			// prettier-ignore
+			for { } 0x01 { } {
+				if and(eq(module, 0x01), eq(moduleTypeId, 0x04)) { break }
+
+				let registry := sload(REGISTRY_SLOT)
+				if iszero(registry) { break }
+
 				let ptr := mload(0x40)
 
 				mstore(ptr, 0x96fb721700000000000000000000000000000000000000000000000000000000) // check(address,uint256)
@@ -63,6 +67,8 @@ abstract contract RegistryAdapter {
 					returndatacopy(ptr, 0x00, returndatasize())
 					revert(ptr, returndatasize())
 				}
+
+				break
 			}
 		}
 	}

@@ -6,8 +6,8 @@ import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOper
 import {AccountIdLib} from "src/libraries/AccountIdLib.sol";
 import {Errors} from "src/libraries/Errors.sol";
 import {ExecutionLib} from "src/libraries/ExecutionLib.sol";
-import {CALLTYPE_DELEGATE, EXECTYPE_DEFAULT} from "src/types/Constants.sol";
-import {ExecutionMode, CallType, ModuleType, PackedModuleTypes} from "src/types/Types.sol";
+import {CALLTYPE_DELEGATE, EXECTYPE_DEFAULT, MODULE_TYPE_VALIDATOR, MODULE_TYPE_FALLBACK} from "src/types/Constants.sol";
+import {ExecutionMode, CallType, ModuleType, PackedModuleTypes, ValidationData} from "src/types/Types.sol";
 import {EIP712} from "src/utils/EIP712.sol";
 import {UUPSUpgradeable} from "src/utils/UUPSUpgradeable.sol";
 import {Account} from "src/core/Account.sol";
@@ -16,32 +16,33 @@ import {Account} from "src/core/Account.sol";
 
 contract Vortex is IVortex, Account, EIP712, UUPSUpgradeable {
 	using AccountIdLib for string;
+	using ExecutionLib for address;
 	using ExecutionLib for bytes;
 
-	function initializeAccount(bytes calldata data) external payable virtual {
-		require(_rootValidator() == ZERO, Errors.InvalidInitialization());
-		data.executeDelegate(EXECTYPE_DEFAULT);
-		require(_rootValidator() != ZERO, Errors.InvalidInitialization());
+	constructor() {
+		// prevents from initializing the implementation
+		_setRootValidator(SENTINEL);
 	}
 
-	function execute(
-		ExecutionMode mode,
-		bytes calldata executionCalldata
-	) external payable virtual onlyEntryPoint withHook {
+	function initializeAccount(bytes calldata data) external payable {
+		require(_rootValidator() == address(0), Errors.InvalidInitialization());
+		data.executeDelegate(EXECTYPE_DEFAULT);
+		require(_rootValidator() != address(0), Errors.InvalidInitialization());
+	}
+
+	function execute(ExecutionMode mode, bytes calldata executionCalldata) external payable onlyEntryPoint withHook {
 		_execute(mode, executionCalldata);
 	}
 
 	function executeFromExecutor(
 		ExecutionMode mode,
 		bytes calldata executionCalldata
-	) external payable virtual onlyExecutor withHook returns (bytes[] memory results) {
+	) external payable onlyExecutor withHook returns (bytes[] memory returnData) {
 		return _execute(mode, executionCalldata);
 	}
 
-	function executeUserOp(
-		PackedUserOperation calldata userOp,
-		bytes32
-	) external payable virtual onlyEntryPoint withHook {
+	function executeUserOp(PackedUserOperation calldata userOp, bytes32) external payable onlyEntryPoint withHook {
+		// address(this).callDelegate(userOp.callData[4:]);
 		_execute(CALLTYPE_DELEGATE, address(this), 0, userOp.callData[4:]);
 	}
 
@@ -49,15 +50,12 @@ contract Vortex is IVortex, Account, EIP712, UUPSUpgradeable {
 		PackedUserOperation calldata userOp,
 		bytes32 userOpHash,
 		uint256 missingAccountFunds
-	) external payable virtual onlyEntryPoint payPrefund(missingAccountFunds) returns (uint256 validationData) {
-		return _validateUserOp(_parseValidator(userOp.nonce), userOp, userOpHash);
+	) external payable onlyEntryPoint payPrefund(missingAccountFunds) returns (ValidationData validationData) {
+		return _validateUserOp(_parseNonce(userOp.nonce), userOp, userOpHash);
 	}
 
-	function isValidSignature(
-		bytes32 hash,
-		bytes calldata signature
-	) external view virtual returns (bytes4 magicValue) {
-		(address validator, bytes calldata innerSignature) = _decodeSignature(signature);
+	function isValidSignature(bytes32 hash, bytes calldata signature) external view returns (bytes4 magicValue) {
+		(address validator, bytes calldata innerSignature) = _parseSignature(signature);
 
 		return _isValidSignature(validator, hash, innerSignature);
 	}
@@ -66,7 +64,7 @@ contract Vortex is IVortex, Account, EIP712, UUPSUpgradeable {
 		ModuleType moduleTypeId,
 		address module,
 		bytes calldata data
-	) external payable virtual onlyEntryPointOrSelf withHook withRegistry(module, moduleTypeId) {
+	) external payable onlyEntryPointOrSelf withHook {
 		_installModule(moduleTypeId, module, data);
 	}
 
@@ -74,7 +72,7 @@ contract Vortex is IVortex, Account, EIP712, UUPSUpgradeable {
 		ModuleType moduleTypeId,
 		address module,
 		bytes calldata data
-	) external payable virtual onlyEntryPointOrSelf withHook {
+	) external payable onlyEntryPointOrSelf withHook {
 		_uninstallModule(moduleTypeId, module, data);
 	}
 
@@ -82,8 +80,25 @@ contract Vortex is IVortex, Account, EIP712, UUPSUpgradeable {
 		ModuleType moduleTypeId,
 		address module,
 		bytes calldata additionalContext
-	) external view virtual returns (bool) {
-		return _isModuleInstalled(moduleTypeId, module, additionalContext);
+	) public view virtual returns (bool result) {
+		result = moduleTypeId != MODULE_TYPE_FALLBACK
+			? _isModuleInstalled(moduleTypeId, module)
+			: _isModuleInstalled(moduleTypeId, module) && _isFallbackInstalled(module, additionalContext);
+	}
+
+	function configureRootValidator(
+		address validator,
+		bytes calldata data
+	) external payable onlyEntryPointOrSelf withHook {
+		_configureRootValidator(validator, data);
+	}
+
+	function configureRegistry(
+		address newRegistry,
+		address[] calldata attesters,
+		uint8 threshold
+	) external payable onlyEntryPointOrSelf {
+		_configureRegistry(newRegistry, attesters, threshold);
 	}
 
 	function supportsModule(ModuleType moduleTypeId) public pure virtual returns (bool result) {
@@ -112,43 +127,16 @@ contract Vortex is IVortex, Account, EIP712, UUPSUpgradeable {
 		}
 	}
 
-	function configureRootValidator(
-		address newValidator,
-		bytes calldata data
-	) external payable virtual onlyEntryPointOrSelf {
-		_configureRootValidator(newValidator, data);
-	}
-
-	function configureRegistry(
-		address newRegistry,
-		address[] calldata attesters,
-		uint8 threshold
-	) external payable virtual onlyEntryPointOrSelf {
-		_configureRegistry(newRegistry, attesters, threshold);
-	}
-
-	function rootValidator() external view virtual returns (address) {
-		return _rootValidator();
-	}
-
-	function registry() external view virtual returns (address) {
-		return _registry();
-	}
-
-	function hook() external view virtual returns (address) {
-		return _hook(ENTRYPOINT);
-	}
-
-	function getConfiguration(address module) external view virtual returns (ModuleType, PackedModuleTypes, address) {
-		return _getConfiguration(module);
-	}
-
-	function fallbackHandler(bytes4 selector) external view virtual returns (CallType, address) {
-		return _fallbackHandler(selector);
-	}
-
 	function accountId() public pure virtual returns (string memory) {
 		return "fomoweth.vortex.1.0.0";
+	}
+
+	function DOMAIN_SEPARATOR() external view returns (bytes32) {
+		return _domainSeparator();
+	}
+
+	function hashTypedData(bytes32 structHash) external view returns (bytes32) {
+		return _hashTypedData(structHash);
 	}
 
 	function _authorizeUpgrade(address newImplementation) internal virtual override onlyEntryPointOrSelf withHook {}

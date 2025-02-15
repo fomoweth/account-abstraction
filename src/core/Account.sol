@@ -1,44 +1,20 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {IEntryPoint, PackedUserOperation} from "account-abstraction/interfaces/IEntryPoint.sol";
+import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 import {IValidator} from "src/interfaces/modules/IERC7579Modules.sol";
 import {BytesLib} from "src/libraries/BytesLib.sol";
 import {ExecutionLib} from "src/libraries/ExecutionLib.sol";
 import {CALLTYPE_SINGLE, CALLTYPE_BATCH, CALLTYPE_DELEGATE, MODULE_TYPE_VALIDATOR, MODULE_TYPE_EXECUTOR} from "src/types/Constants.sol";
-import {ExecutionMode, CallType, ExecType} from "src/types/Types.sol";
+import {ExecutionMode, CallType, ExecType, ModuleType, PackedModuleTypes, ValidationData} from "src/types/Types.sol";
+import {AccountBase} from "./AccountBase.sol";
 import {AccountModule} from "./AccountModule.sol";
 
 /// @title Account
 
-abstract contract Account is AccountModule {
+abstract contract Account is AccountBase, AccountModule {
 	using BytesLib for bytes;
 	using ExecutionLib for bytes;
-
-	modifier onlyEntryPoint() {
-		_checkEntryPoint();
-		_;
-	}
-
-	modifier onlyEntryPointOrSelf() {
-		_checkEntryPointOrSelf();
-		_;
-	}
-
-	modifier onlyExecutor() {
-		_checkModule(msg.sender, MODULE_TYPE_EXECUTOR);
-		_;
-	}
-
-	modifier onlyValidator(address validator) {
-		_checkModule(validator, MODULE_TYPE_VALIDATOR);
-		_;
-	}
-
-	modifier payPrefund(uint256 missingAccountFunds) {
-		_;
-		_payPrefund(missingAccountFunds);
-	}
 
 	modifier withHook() {
 		address hook = _hook(msg.sender);
@@ -51,64 +27,42 @@ abstract contract Account is AccountModule {
 		}
 	}
 
-	function entryPoint() external pure virtual returns (IEntryPoint) {
-		return IEntryPoint(ENTRYPOINT);
+	function registry() external view returns (address) {
+		return _registry();
 	}
 
-	function addDeposit() external payable virtual {
+	function rootValidator() external view returns (address validator) {
+		return _rootValidator();
+	}
+
+	function globalHook() external view returns (address) {
+		return _hook(ENTRYPOINT);
+	}
+
+	function fallbackHandler(bytes4 selector) external view returns (CallType callType, address handler) {
 		assembly ("memory-safe") {
-			let ptr := mload(0x40)
+			mstore(0x00, selector)
+			mstore(0x20, FALLBACKS_STORAGE_SLOT)
 
-			mstore(ptr, 0xb760faf900000000000000000000000000000000000000000000000000000000) // depositTo(address)
-			mstore(add(ptr, 0x04), shr(0x60, shl(0x60, address())))
-
-			if iszero(call(gas(), ENTRYPOINT, callvalue(), ptr, 0x24, codesize(), 0x00)) {
-				revert(codesize(), 0x00)
+			let configuration := sload(keccak256(0x00, 0x40))
+			if configuration {
+				callType := shl(0xf8, shr(0xf8, configuration))
+				handler := shr(0x60, shl(0x60, configuration))
 			}
 		}
 	}
 
-	function withdrawTo(address recipient, uint256 amount) external payable virtual onlyEntryPointOrSelf {
+	function getConfiguration(
+		address module
+	) external view returns (ModuleType moduleTypeId, PackedModuleTypes packedTypes, address hook) {
 		assembly ("memory-safe") {
-			let ptr := mload(0x40)
+			mstore(0x00, shr(0x60, shl(0x60, module)))
+			mstore(0x20, MODULES_STORAGE_SLOT)
 
-			mstore(ptr, 0x205c287800000000000000000000000000000000000000000000000000000000) // withdrawTo(address,uint256)
-			mstore(add(ptr, 0x04), shr(0x60, shl(0x60, recipient)))
-			mstore(add(ptr, 0x24), amount)
-
-			if iszero(call(gas(), ENTRYPOINT, 0x00, ptr, 0x44, codesize(), 0x00)) {
-				returndatacopy(ptr, 0x00, returndatasize())
-				revert(ptr, returndatasize())
-			}
-		}
-	}
-
-	function getDeposit() external view virtual returns (uint256 deposit) {
-		assembly ("memory-safe") {
-			let ptr := mload(0x40)
-
-			mstore(ptr, 0x70a0823100000000000000000000000000000000000000000000000000000000) // balanceOf(address)
-			mstore(add(ptr, 0x04), shr(0x60, shl(0x60, address())))
-
-			// prettier-ignore
-			deposit := mul(mload(0x00), and(gt(returndatasize(), 0x1f), staticcall(gas(), ENTRYPOINT, ptr, 0x24, 0x00,0x20)))
-		}
-	}
-
-	function getNonce() external view virtual returns (uint256 nonce) {
-		return getNonce(0);
-	}
-
-	function getNonce(uint192 key) public view virtual returns (uint256 nonce) {
-		assembly ("memory-safe") {
-			let ptr := mload(0x40)
-
-			mstore(ptr, 0x35567e1a00000000000000000000000000000000000000000000000000000000) // getNonce(address,uint192)
-			mstore(add(ptr, 0x04), shr(0x60, shl(0x60, address())))
-			mstore(add(ptr, 0x24), shr(0x40, shl(0x40, key)))
-
-			// prettier-ignore
-			nonce := mul(mload(0x00), and(gt(returndatasize(), 0x1f), staticcall(gas(), ENTRYPOINT, ptr, 0x44, 0x00, 0x20)))
+			let configuration := sload(keccak256(0x00, 0x40))
+			moduleTypeId := shr(0xf8, configuration)
+			packedTypes := shr(0xe0, shl(0x08, configuration))
+			hook := shr(0x60, shl(0x60, configuration))
 		}
 	}
 
@@ -171,7 +125,7 @@ abstract contract Account is AccountModule {
 		address validator,
 		PackedUserOperation calldata userOp,
 		bytes32 userOpHash
-	) internal virtual onlyValidator(validator) returns (uint256 validationData) {
+	) internal virtual onlyValidator(validator) returns (ValidationData validationData) {
 		return IValidator(validator).validateUserOp(userOp, userOpHash);
 	}
 
@@ -202,7 +156,7 @@ abstract contract Account is AccountModule {
 		}
 	}
 
-	function _decodeSignature(
+	function _parseSignature(
 		bytes calldata signature
 	) internal view virtual returns (address validator, bytes calldata innerSignature) {
 		(validator, innerSignature) = signature.length != 0
@@ -210,7 +164,7 @@ abstract contract Account is AccountModule {
 			: (_rootValidator(), signature);
 	}
 
-	function _parseValidator(uint256 nonce) internal pure virtual returns (address validator) {
+	function _parseNonce(uint256 nonce) internal pure virtual returns (address validator) {
 		assembly ("memory-safe") {
 			validator := shr(0x60, nonce)
 		}
@@ -289,34 +243,6 @@ abstract contract Account is AccountModule {
 		}
 	}
 
-	function _payPrefund(uint256 missingAccountFunds) internal virtual {
-		assembly ("memory-safe") {
-			if missingAccountFunds {
-				pop(call(gas(), caller(), missingAccountFunds, codesize(), 0x00, codesize(), 0x00))
-			}
-		}
-	}
-
-	function _checkEntryPoint() internal view virtual {
-		assembly ("memory-safe") {
-			if xor(caller(), ENTRYPOINT) {
-				mstore(0x00, 0x8e4a23d6) // Unauthorized(address)
-				mstore(0x20, shr(0x60, shl(0x60, caller())))
-				revert(0x1c, 0x24)
-			}
-		}
-	}
-
-	function _checkEntryPointOrSelf() internal view virtual {
-		assembly ("memory-safe") {
-			if and(xor(caller(), ENTRYPOINT), xor(caller(), address())) {
-				mstore(0x00, 0x8e4a23d6) // Unauthorized(address)
-				mstore(0x20, shr(0x60, shl(0x60, caller())))
-				revert(0x1c, 0x24)
-			}
-		}
-	}
-
 	function _fallback() internal virtual {
 		assembly ("memory-safe") {
 			function allocate(length) -> ptr {
@@ -330,6 +256,7 @@ abstract contract Account is AccountModule {
 			mstore(0x20, FALLBACKS_STORAGE_SLOT)
 
 			let configuration := sload(keccak256(0x00, 0x40))
+
 			let callType := shl(0xf8, shr(0xf8, configuration))
 			let handler := shr(0x60, shl(0x60, configuration))
 
@@ -356,7 +283,8 @@ abstract contract Account is AccountModule {
 			let hook := shr(0x60, shl(0x60, configuration))
 			let hookData
 
-			if or(iszero(hook), xor(moduleTypeId, 0x03)) {
+			// MODULE_TYPE_FALLBACK: 0x03
+			if or(xor(moduleTypeId, 0x03), iszero(hook)) {
 				mstore(0x00, 0x026d9639) // ModuleNotInstalled(address)
 				mstore(0x20, handler)
 				revert(0x1c, 0x24)

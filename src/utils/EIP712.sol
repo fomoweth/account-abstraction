@@ -29,14 +29,9 @@ abstract contract EIP712 {
 		);
 	}
 
-	function DOMAIN_SEPARATOR() external view virtual returns (bytes32) {
-		return _domainSeparator();
-	}
-
 	function eip712Domain()
 		external
 		view
-		virtual
 		returns (
 			bytes1 fields,
 			string memory name,
@@ -56,10 +51,6 @@ abstract contract EIP712 {
 			pop(salt)
 			pop(extensions)
 		}
-	}
-
-	function hashTypedData(bytes32 structHash) external view virtual returns (bytes32) {
-		return _hashTypedData(structHash);
 	}
 
 	function _domainSeparator() internal view virtual returns (bytes32 separator) {
