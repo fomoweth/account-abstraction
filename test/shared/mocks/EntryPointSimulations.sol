@@ -20,6 +20,8 @@ address constant ENTRYPOINT = 0x0000000071727De22E5E9d8BAf0edAc6f37da032;
 contract EntryPointSimulations is IEntryPointSimulations, StakeManager, NonceManager, ReentrancyGuard, ERC165 {
 	using UserOperationLib for PackedUserOperation;
 
+	AggregatorStakeInfo private NOT_AGGREGATED = AggregatorStakeInfo(address(0), StakeInfo(0, 0));
+
 	uint256 private constant INNER_GAS_OVERHEAD = 10000;
 
 	// Marker for inner call revert on out of gas
@@ -29,35 +31,28 @@ contract EntryPointSimulations is IEntryPointSimulations, StakeManager, NonceMan
 	uint256 private constant REVERT_REASON_MAX_LEN = 2048;
 	uint256 private constant PENALTY_PERCENT = 10;
 
-	// Phase 0: account creation
-	// Phase 1: validation
-	// Phase 2: execution
-	mapping(address account => mapping(uint256 phase => uint256 gas)) internal gasConsumed;
+	SenderCreator private immutable _senderCreator = initSenderCreator();
 
-	function setGasConsumed(address account, uint256 phase, uint256 gas) internal {
-		gasConsumed[account][phase] = gas;
-	}
-
-	function getGasConsumed(address account, uint256 phase) public view returns (uint256) {
-		return gasConsumed[account][phase];
-	}
-
-	IEntryPoint.AggregatorStakeInfo private NOT_AGGREGATED =
-		IEntryPoint.AggregatorStakeInfo(address(0), IStakeManager.StakeInfo(0, 0));
-
-	SenderCreator private _senderCreator;
-
-	function initSenderCreator() internal virtual {
+	function initSenderCreator() internal virtual returns (SenderCreator) {
 		address createdObj = address(uint160(uint256(keccak256(abi.encodePacked(hex"d694", ENTRYPOINT, hex"01")))));
-		_senderCreator = SenderCreator(createdObj);
+		return SenderCreator(createdObj);
 	}
 
 	function senderCreator() internal view virtual returns (SenderCreator) {
 		return _senderCreator;
 	}
 
-	constructor() {
-		initSenderCreator();
+	// Phase 0: account creation
+	// Phase 1: validation
+	// Phase 2: execution
+	mapping(address account => mapping(uint256 phase => uint256 gas)) internal gasConsumed;
+
+	function setGasConsumed(address account, uint256 phase, uint256 gas) internal virtual {
+		gasConsumed[account][phase] = gas;
+	}
+
+	function getGasConsumed(address account, uint256 phase) public view virtual returns (uint256) {
+		return gasConsumed[account][phase];
 	}
 
 	function simulateValidation(PackedUserOperation calldata userOp) external returns (ValidationResult memory) {
@@ -117,9 +112,6 @@ contract EntryPointSimulations is IEntryPointSimulations, StakeManager, NonceMan
 	}
 
 	function _simulationOnlyValidations(PackedUserOperation calldata userOp) internal virtual {
-		//initialize senderCreator(). we can't rely on constructor
-		// initSenderCreator();
-
 		try this._validateSenderAndPaymaster(userOp.initCode, userOp.sender, userOp.paymasterAndData) {} catch Error(
 			string memory revertReason
 		) {

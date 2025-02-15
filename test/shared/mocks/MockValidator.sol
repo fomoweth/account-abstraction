@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 import {SignatureCheckerLib} from "solady/utils/SignatureCheckerLib.sol";
 import {BytesLib} from "src/libraries/BytesLib.sol";
+import {ValidationData} from "src/types/Types.sol";
 import {ERC1271} from "src/utils/ERC1271.sol";
 import {HybridValidatorBase} from "src/modules/validators/HybridValidatorBase.sol";
 
@@ -21,7 +22,7 @@ contract MockValidator is HybridValidatorBase, ERC1271 {
 
 	function onUninstall(bytes calldata) external payable {
 		require(_isInitialized(msg.sender), NotInitialized(msg.sender));
-		_setAccountOwner(ZERO);
+		_setAccountOwner(address(0));
 	}
 
 	function transferOwnership(address owner) external {
@@ -40,7 +41,7 @@ contract MockValidator is HybridValidatorBase, ERC1271 {
 	function validateUserOp(
 		PackedUserOperation calldata userOp,
 		bytes32 userOpHash
-	) external payable returns (uint256 validation) {
+	) external payable returns (ValidationData validation) {
 		bool isValid = _validateSignatureForOwner(_getAccountOwner(msg.sender), userOpHash, userOp.signature);
 
 		assembly ("memory-safe") {
@@ -73,7 +74,7 @@ contract MockValidator is HybridValidatorBase, ERC1271 {
 	}
 
 	function _isInitialized(address account) internal view virtual override returns (bool) {
-		return _getAccountOwner(account) != ZERO;
+		return _getAccountOwner(account) != address(0);
 	}
 
 	function _erc1271IsValidSignatureNowCalldata(

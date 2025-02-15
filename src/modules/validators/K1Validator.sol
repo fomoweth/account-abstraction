@@ -6,6 +6,7 @@ import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOper
 import {SignatureCheckerLib} from "solady/utils/SignatureCheckerLib.sol";
 import {BytesLib} from "src/libraries/BytesLib.sol";
 import {EnumerableSet4337} from "src/libraries/EnumerableSet4337.sol";
+import {ValidationData} from "src/types/Types.sol";
 import {ERC1271} from "src/utils/ERC1271.sol";
 import {HybridValidatorBase} from "./HybridValidatorBase.sol";
 
@@ -34,7 +35,7 @@ contract K1Validator is IK1Validator, HybridValidatorBase, ERC1271 {
 		require(_isInitialized(msg.sender), NotInitialized(msg.sender));
 
 		_safeSenders.removeAll(msg.sender);
-		_setAccountOwner(ZERO);
+		_setAccountOwner(address(0));
 	}
 
 	function transferOwnership(address owner) external {
@@ -65,7 +66,7 @@ contract K1Validator is IK1Validator, HybridValidatorBase, ERC1271 {
 	function validateUserOp(
 		PackedUserOperation calldata userOp,
 		bytes32 userOpHash
-	) external payable returns (uint256 validation) {
+	) external payable returns (ValidationData validation) {
 		bool isValid = _validateSignatureForOwner(_getAccountOwner(msg.sender), userOpHash, userOp.signature);
 
 		assembly ("memory-safe") {
@@ -98,7 +99,7 @@ contract K1Validator is IK1Validator, HybridValidatorBase, ERC1271 {
 	}
 
 	function _isInitialized(address account) internal view virtual override returns (bool) {
-		return _getAccountOwner(account) != ZERO;
+		return _getAccountOwner(account) != address(0);
 	}
 
 	function _erc1271IsValidSignatureNowCalldata(
@@ -134,7 +135,7 @@ contract K1Validator is IK1Validator, HybridValidatorBase, ERC1271 {
 	}
 
 	function _addSafeSender(address sender) internal virtual {
-		require(sender != ZERO, InvalidSender());
+		require(sender != address(0), InvalidSender());
 		require(_safeSenders.add(msg.sender, sender), SenderAlreadyExists(sender));
 	}
 
