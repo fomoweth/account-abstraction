@@ -30,18 +30,14 @@ library ExecutionLib {
 		ExecType execType
 	) internal returns (bytes[] memory returnData) {
 		Execution[] calldata executions = decodeBatch(executionCalldata);
-		Execution calldata execution;
+		Execution calldata exec;
 
 		uint256 length = executions.length;
 		returnData = new bytes[](length);
 
 		for (uint256 i; i < length; ) {
-			execution = executions[i];
-			returnData[i] = _validateExecution(
-				i,
-				execType,
-				_call(execution.target, execution.value, execution.callData)
-			);
+			exec = executions[i];
+			returnData[i] = _validateExecution(i, execType, _call(exec.target, exec.value, exec.callData));
 
 			unchecked {
 				i = i + 1;
@@ -54,6 +50,7 @@ library ExecutionLib {
 		ExecType execType
 	) internal returns (bytes[] memory returnData) {
 		(address target, bytes calldata callData) = decodeDelegate(executionCalldata);
+
 		returnData = new bytes[](1);
 		returnData[0] = _validateExecution(0, execType, _delegatecall(target, callData));
 	}
@@ -97,8 +94,10 @@ library ExecutionLib {
 					let q := calldataload(add(c, 0x40))
 					let o := add(c, q)
 
-					if or(shr(0x40, or(calldataload(o), or(p, q))),
-						or(gt(add(c, 0x40), e), gt(add(o, calldataload(o)), e))) {
+					if or(
+						shr(0x40, or(calldataload(o), or(p, q))),
+						or(gt(add(c, 0x40), e), gt(add(o, calldataload(o)), e))
+					) {
 						mstore(0x00, 0x3b99b53d) // SliceOutOfBounds()
 						revert(0x1c, 0x04)
 					}
@@ -133,6 +132,18 @@ library ExecutionLib {
 
 	function encodeDelegate(address target, bytes memory callData) internal pure returns (bytes memory) {
 		return abi.encodePacked(target, callData);
+	}
+
+	function call(address target, uint256 value, bytes memory data) internal returns (bytes memory returndata) {
+		return _validateCall(_call(target, value, data));
+	}
+
+	function callDelegate(address target, bytes memory data) internal returns (bytes memory returndata) {
+		return _validateCall(_delegatecall(target, data));
+	}
+
+	function callStatic(address target, bytes memory data) internal view returns (bytes memory returndata) {
+		return _validateCall(_staticcall(target, data));
 	}
 
 	function _call(address target, uint256 value, bytes memory data) private returns (bool success) {
@@ -177,5 +188,25 @@ library ExecutionLib {
 		}
 
 		if (!success) emit TryExecuteUnsuccessful(index, returnData);
+	}
+
+	function _validateCall(bool success) private pure returns (bytes memory returndata) {
+		assembly ("memory-safe") {
+			returndata := mload(0x40)
+
+			if iszero(success) {
+				if iszero(returndatasize()) {
+					mstore(0x00, 0xacfdb444) // ExecutionFailed()
+					revert(0x1c, 0x04)
+				}
+
+				returndatacopy(returndata, 0x00, returndatasize())
+				revert(returndata, returndatasize())
+			}
+
+			mstore(0x40, add(add(returndata, 0x20), returndatasize()))
+			mstore(returndata, returndatasize())
+			returndatacopy(add(returndata, 0x20), 0x00, returndatasize())
+		}
 	}
 }
