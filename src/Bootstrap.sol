@@ -23,11 +23,9 @@ contract Bootstrap is IBootstrap, AccountModule {
 		_configureRootValidator(rootValidator.module, rootValidator.data);
 		_installModule(MODULE_TYPE_HOOK, hook.module, hook.data);
 
-		address module;
 		uint256 length = validators.length;
 		for (uint256 i; i < length; ) {
-			if ((module = validators[i].module) == ZERO) break;
-			_installModule(MODULE_TYPE_VALIDATOR, module, validators[i].data);
+			_installModule(MODULE_TYPE_VALIDATOR, validators[i].module, validators[i].data);
 
 			unchecked {
 				i = i + 1;
@@ -36,8 +34,7 @@ contract Bootstrap is IBootstrap, AccountModule {
 
 		length = executors.length;
 		for (uint256 i; i < length; ) {
-			if ((module = executors[i].module) == ZERO) break;
-			_installModule(MODULE_TYPE_EXECUTOR, module, executors[i].data);
+			_installModule(MODULE_TYPE_EXECUTOR, executors[i].module, executors[i].data);
 
 			unchecked {
 				i = i + 1;
@@ -46,8 +43,7 @@ contract Bootstrap is IBootstrap, AccountModule {
 
 		length = fallbacks.length;
 		for (uint256 i; i < length; ) {
-			if ((module = fallbacks[i].module) == ZERO) break;
-			_installModule(MODULE_TYPE_FALLBACK, module, fallbacks[i].data);
+			_installModule(MODULE_TYPE_FALLBACK, fallbacks[i].module, fallbacks[i].data);
 
 			unchecked {
 				i = i + 1;
