@@ -36,16 +36,20 @@ library Arrays {
 
 	function insertionSort(int256[] memory array) internal pure {
 		_flipSign(array);
-		insertionSort(_castToUint256(array));
+		insertionSort(castToUint256s(array));
 		_flipSign(array);
 	}
 
 	function insertionSort(address[] memory array) internal pure {
-		insertionSort(_castToUint256(array));
+		insertionSort(castToUint256s(array));
 	}
 
 	function insertionSort(bytes32[] memory array) internal pure {
-		insertionSort(_castToUint256(array));
+		insertionSort(castToUint256s(array));
+	}
+
+	function insertionSort(bytes4[] memory array) internal pure {
+		insertionSort(castToUint256s(array));
 	}
 
 	function sort(uint256[] memory array) internal pure {
@@ -123,7 +127,7 @@ library Arrays {
 				if iszero(eq(add(p, 0x20), h)) { sortInner(w, add(p, 0x20), h) }
 				if iszero(eq(p, l)) { sortInner(w, l, p) }
 			}
-			
+
 			for { let n := mload(array) } iszero(lt(n, 2)) { } {
                 let w := not(0x1f)
                 let l := add(array, 0x20)
@@ -154,16 +158,20 @@ library Arrays {
 
 	function sort(int256[] memory array) internal pure {
 		_flipSign(array);
-		sort(_castToUint256(array));
+		sort(castToUint256s(array));
 		_flipSign(array);
 	}
 
 	function sort(address[] memory array) internal pure {
-		sort(_castToUint256(array));
+		sort(castToUint256s(array));
 	}
 
 	function sort(bytes32[] memory array) internal pure {
-		sort(_castToUint256(array));
+		sort(castToUint256s(array));
+	}
+
+	function sort(bytes4[] memory array) internal pure {
+		sort(castToUint256s(array));
 	}
 
 	function uniquifySorted(uint256[] memory array) internal pure {
@@ -190,15 +198,19 @@ library Arrays {
 	}
 
 	function uniquifySorted(int256[] memory array) internal pure {
-		uniquifySorted(_castToUint256(array));
+		uniquifySorted(castToUint256s(array));
 	}
 
 	function uniquifySorted(address[] memory array) internal pure {
-		uniquifySorted(_castToUint256(array));
+		uniquifySorted(castToUint256s(array));
 	}
 
 	function uniquifySorted(bytes32[] memory array) internal pure {
-		uniquifySorted(_castToUint256(array));
+		uniquifySorted(castToUint256s(array));
+	}
+
+	function uniquifySorted(bytes4[] memory array) internal pure {
+		uniquifySorted(castToUint256s(array));
 	}
 
 	function searchSorted(uint256[] memory array, uint256 needle) internal pure returns (bool found, uint256 index) {
@@ -206,15 +218,19 @@ library Arrays {
 	}
 
 	function searchSorted(int256[] memory array, int256 needle) internal pure returns (bool found, uint256 index) {
-		(found, index) = _searchSorted(_castToUint256(array), uint256(needle), 1 << 255);
+		(found, index) = _searchSorted(castToUint256s(array), uint256(needle), 1 << 255);
 	}
 
 	function searchSorted(address[] memory array, address needle) internal pure returns (bool found, uint256 index) {
-		(found, index) = _searchSorted(_castToUint256(array), uint160(needle), 0);
+		(found, index) = _searchSorted(castToUint256s(array), uint160(needle), 0);
 	}
 
 	function searchSorted(bytes32[] memory array, bytes32 needle) internal pure returns (bool found, uint256 index) {
-		(found, index) = _searchSorted(_castToUint256(array), uint256(needle), 0);
+		(found, index) = _searchSorted(castToUint256s(array), uint256(needle), 0);
+	}
+
+	function searchSorted(bytes4[] memory array, bytes4 needle) internal pure returns (bool found, uint256 index) {
+		(found, index) = _searchSorted(castToUint256s(array), uint256((bytes32(needle))), 0);
 	}
 
 	function inSorted(uint256[] memory array, uint256 needle) internal pure returns (bool found) {
@@ -230,6 +246,10 @@ library Arrays {
 	}
 
 	function inSorted(bytes32[] memory array, bytes32 needle) internal pure returns (bool found) {
+		(found, ) = searchSorted(array, needle);
+	}
+
+	function inSorted(bytes4[] memory array, bytes4 needle) internal pure returns (bool found) {
 		(found, ) = searchSorted(array, needle);
 	}
 
@@ -253,15 +273,19 @@ library Arrays {
 	}
 
 	function reverse(int256[] memory array) internal pure {
-		reverse(_castToUint256(array));
+		reverse(castToUint256s(array));
 	}
 
 	function reverse(address[] memory array) internal pure {
-		reverse(_castToUint256(array));
+		reverse(castToUint256s(array));
 	}
 
 	function reverse(bytes32[] memory array) internal pure {
-		reverse(_castToUint256(array));
+		reverse(castToUint256s(array));
+	}
+
+	function reverse(bytes4[] memory array) internal pure {
+		reverse(castToUint256s(array));
 	}
 
 	function copy(uint256[] memory array) internal pure returns (uint256[] memory result) {
@@ -280,15 +304,19 @@ library Arrays {
 	}
 
 	function copy(int256[] memory array) internal pure returns (int256[] memory result) {
-		result = _castToInt256(copy(_castToUint256(array)));
+		result = castToInt256s(copy(castToUint256s(array)));
 	}
 
 	function copy(address[] memory array) internal pure returns (address[] memory result) {
-		result = _castToAddress(copy(_castToUint256(array)));
+		result = castToAddresses(copy(castToUint256s(array)));
 	}
 
 	function copy(bytes32[] memory array) internal pure returns (bytes32[] memory result) {
-		result = _castToBytes32(copy(_castToUint256(array)));
+		result = castToBytes32s(copy(castToUint256s(array)));
+	}
+
+	function copy(bytes4[] memory array) internal pure returns (bytes4[] memory result) {
+		result = castToBytes4s(copy(castToUint256s(array)));
 	}
 
 	function isSorted(uint256[] memory array) internal pure returns (bool result) {
@@ -324,11 +352,15 @@ library Arrays {
 	}
 
 	function isSorted(address[] memory array) internal pure returns (bool result) {
-		result = isSorted(_castToUint256(array));
+		result = isSorted(castToUint256s(array));
 	}
 
 	function isSorted(bytes32[] memory array) internal pure returns (bool result) {
-		result = isSorted(_castToUint256(array));
+		result = isSorted(castToUint256s(array));
+	}
+
+	function isSorted(bytes4[] memory array) internal pure returns (bool result) {
+		result = isSorted(castToUint256s(array));
 	}
 
 	function isSortedAndUniquified(uint256[] memory array) internal pure returns (bool result) {
@@ -364,11 +396,15 @@ library Arrays {
 	}
 
 	function isSortedAndUniquified(address[] memory array) internal pure returns (bool) {
-		return isSortedAndUniquified(_castToUint256(array));
+		return isSortedAndUniquified(castToUint256s(array));
 	}
 
 	function isSortedAndUniquified(bytes32[] memory array) internal pure returns (bool) {
-		return isSortedAndUniquified(_castToUint256(array));
+		return isSortedAndUniquified(castToUint256s(array));
+	}
+
+	function isSortedAndUniquified(bytes4[] memory array) internal pure returns (bool) {
+		return isSortedAndUniquified(castToUint256s(array));
 	}
 
 	function difference(uint256[] memory a, uint256[] memory b) internal pure returns (uint256[] memory c) {
@@ -376,15 +412,19 @@ library Arrays {
 	}
 
 	function difference(int256[] memory a, int256[] memory b) internal pure returns (int256[] memory c) {
-		return _castToInt256(_difference(_castToUint256(a), _castToUint256(b), 1 << 255));
+		return castToInt256s(_difference(castToUint256s(a), castToUint256s(b), 1 << 255));
 	}
 
 	function difference(address[] memory a, address[] memory b) internal pure returns (address[] memory c) {
-		return _castToAddress(_difference(_castToUint256(a), _castToUint256(b), 0));
+		return castToAddresses(_difference(castToUint256s(a), castToUint256s(b), 0));
 	}
 
 	function difference(bytes32[] memory a, bytes32[] memory b) internal pure returns (bytes32[] memory c) {
-		return _castToBytes32(_difference(_castToUint256(a), _castToUint256(b), 0));
+		return castToBytes32s(_difference(castToUint256s(a), castToUint256s(b), 0));
+	}
+
+	function difference(bytes4[] memory a, bytes4[] memory b) internal pure returns (bytes4[] memory c) {
+		return castToBytes4s(_difference(castToUint256s(a), castToUint256s(b), 0));
 	}
 
 	function intersection(uint256[] memory a, uint256[] memory b) internal pure returns (uint256[] memory c) {
@@ -392,15 +432,19 @@ library Arrays {
 	}
 
 	function intersection(int256[] memory a, int256[] memory b) internal pure returns (int256[] memory c) {
-		return _castToInt256(_intersection(_castToUint256(a), _castToUint256(b), 1 << 255));
+		return castToInt256s(_intersection(castToUint256s(a), castToUint256s(b), 1 << 255));
 	}
 
 	function intersection(address[] memory a, address[] memory b) internal pure returns (address[] memory c) {
-		return _castToAddress(_intersection(_castToUint256(a), _castToUint256(b), 0));
+		return castToAddresses(_intersection(castToUint256s(a), castToUint256s(b), 0));
 	}
 
 	function intersection(bytes32[] memory a, bytes32[] memory b) internal pure returns (bytes32[] memory c) {
-		return _castToBytes32(_intersection(_castToUint256(a), _castToUint256(b), 0));
+		return castToBytes32s(_intersection(castToUint256s(a), castToUint256s(b), 0));
+	}
+
+	function intersection(bytes4[] memory a, bytes4[] memory b) internal pure returns (bytes4[] memory c) {
+		return castToBytes4s(_intersection(castToUint256s(a), castToUint256s(b), 0));
 	}
 
 	function union(uint256[] memory a, uint256[] memory b) internal pure returns (uint256[] memory c) {
@@ -408,15 +452,19 @@ library Arrays {
 	}
 
 	function union(int256[] memory a, int256[] memory b) internal pure returns (int256[] memory c) {
-		return _castToInt256(_union(_castToUint256(a), _castToUint256(b), 1 << 255));
+		return castToInt256s(_union(castToUint256s(a), castToUint256s(b), 1 << 255));
 	}
 
 	function union(address[] memory a, address[] memory b) internal pure returns (address[] memory c) {
-		return _castToAddress(_union(_castToUint256(a), _castToUint256(b), 0));
+		return castToAddresses(_union(castToUint256s(a), castToUint256s(b), 0));
 	}
 
 	function union(bytes32[] memory a, bytes32[] memory b) internal pure returns (bytes32[] memory c) {
-		return _castToBytes32(_union(_castToUint256(a), _castToUint256(b), 0));
+		return castToBytes32s(_union(castToUint256s(a), castToUint256s(b), 0));
+	}
+
+	function union(bytes4[] memory a, bytes4[] memory b) internal pure returns (bytes4[] memory c) {
+		return castToBytes4s(_union(castToUint256s(a), castToUint256s(b), 0));
 	}
 
 	function clean(address[] memory array) internal pure {
@@ -427,6 +475,66 @@ library Arrays {
                 array := add(array, 0x20)
                 mstore(array, and(mload(array), addressMask))
             }
+		}
+	}
+
+	function castToBytes4s(bytes32[] memory input) internal pure returns (bytes4[] memory output) {
+		assembly ("memory-safe") {
+			output := input
+		}
+	}
+
+	function castToBytes4s(uint256[] memory input) internal pure returns (bytes4[] memory output) {
+		assembly ("memory-safe") {
+			output := input
+		}
+	}
+
+	function castToUint256s(bytes4[] memory input) internal pure returns (uint256[] memory output) {
+		assembly ("memory-safe") {
+			output := input
+		}
+	}
+
+	function castToBytes32s(bytes4[] memory input) internal pure returns (bytes32[] memory output) {
+		assembly ("memory-safe") {
+			output := input
+		}
+	}
+
+	function castToBytes32s(uint256[] memory input) internal pure returns (bytes32[] memory output) {
+		assembly ("memory-safe") {
+			output := input
+		}
+	}
+
+	function castToUint256s(bytes32[] memory input) internal pure returns (uint256[] memory output) {
+		assembly ("memory-safe") {
+			output := input
+		}
+	}
+
+	function castToInt256s(uint256[] memory input) internal pure returns (int256[] memory output) {
+		assembly ("memory-safe") {
+			output := input
+		}
+	}
+
+	function castToUint256s(int256[] memory input) internal pure returns (uint256[] memory output) {
+		assembly ("memory-safe") {
+			output := input
+		}
+	}
+
+	function castToAddresses(uint256[] memory input) internal pure returns (address[] memory output) {
+		assembly ("memory-safe") {
+			output := input
+		}
+	}
+
+	function castToUint256s(address[] memory input) internal pure returns (uint256[] memory output) {
+		assembly ("memory-safe") {
+			output := input
 		}
 	}
 
@@ -588,42 +696,6 @@ library Arrays {
                 array := add(array, 0x20)
                 mstore(array, add(mload(array), w))
             }
-		}
-	}
-
-	function _castToUint256(int256[] memory input) private pure returns (uint256[] memory output) {
-		assembly ("memory-safe") {
-			output := input
-		}
-	}
-
-	function _castToUint256(address[] memory input) private pure returns (uint256[] memory output) {
-		assembly ("memory-safe") {
-			output := input
-		}
-	}
-
-	function _castToUint256(bytes32[] memory input) private pure returns (uint256[] memory output) {
-		assembly ("memory-safe") {
-			output := input
-		}
-	}
-
-	function _castToInt256(uint256[] memory input) private pure returns (int256[] memory output) {
-		assembly ("memory-safe") {
-			output := input
-		}
-	}
-
-	function _castToAddress(uint256[] memory input) private pure returns (address[] memory output) {
-		assembly ("memory-safe") {
-			output := input
-		}
-	}
-
-	function _castToBytes32(uint256[] memory input) private pure returns (bytes32[] memory output) {
-		assembly ("memory-safe") {
-			output := input
 		}
 	}
 }
