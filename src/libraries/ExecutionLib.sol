@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {ExecType, EXECTYPE_DEFAULT, EXECTYPE_TRY} from "src/types/ExecutionMode.sol";
+import {ExecType} from "src/types/ExecutionMode.sol";
 
 struct Execution {
 	address target;
@@ -18,6 +18,16 @@ library ExecutionLib {
 	function executeSingle(
 		bytes calldata executionCalldata,
 		ExecType execType
+	) internal returns (bytes[] memory returnData) {
+		(address target, uint256 value, bytes calldata callData) = decodeSingle(executionCalldata);
+
+		returnData = new bytes[](1);
+		returnData[0] = _validateExecution(0, execType, _call(target, value, callData));
+	}
+
+	function executeSingle(
+		ExecType execType,
+		bytes calldata executionCalldata
 	) internal returns (bytes[] memory returnData) {
 		(address target, uint256 value, bytes calldata callData) = decodeSingle(executionCalldata);
 
