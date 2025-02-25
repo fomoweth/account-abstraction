@@ -8,7 +8,7 @@ import {BytesLib} from "src/libraries/BytesLib.sol";
 import {EnumerableSet4337} from "src/libraries/EnumerableSet4337.sol";
 import {ValidationData} from "src/types/Types.sol";
 import {ERC1271} from "src/utils/ERC1271.sol";
-import {HybridValidatorBase} from "../base/HybridValidatorBase.sol";
+import {HybridValidatorBase} from "src/modules/base/HybridValidatorBase.sol";
 
 /// @title K1Validator
 /// @notice Verifies user operation signatures for smart accounts
