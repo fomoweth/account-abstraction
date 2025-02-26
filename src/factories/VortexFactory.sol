@@ -5,10 +5,8 @@ import {IVortexFactory} from "src/interfaces/factories/IVortexFactory.sol";
 import {IVortex} from "src/interfaces/IVortex.sol";
 import {IBootstrap, BootstrapConfig} from "src/interfaces/IBootstrap.sol";
 import {BootstrapLib} from "src/libraries/BootstrapLib.sol";
-import {Calldata} from "src/libraries/Calldata.sol";
-import {MODULE_TYPE_VALIDATOR, MODULE_TYPE_HOOK, MODULE_TYPE_STATELESS_VALIDATOR} from "src/types/Constants.sol";
+import {MODULE_TYPE_VALIDATOR, MODULE_TYPE_STATELESS_VALIDATOR} from "src/types/Constants.sol";
 import {ModuleType} from "src/types/Types.sol";
-import {Vortex} from "src/Vortex.sol";
 import {IAccountFactory, AccountFactory} from "./AccountFactory.sol";
 
 /// @title VortexFactory
@@ -16,8 +14,6 @@ import {IAccountFactory, AccountFactory} from "./AccountFactory.sol";
 
 contract VortexFactory is IVortexFactory, AccountFactory {
 	using BootstrapLib for address;
-
-	address internal constant SENTINEL = 0x0000000000000000000000000000000000000001;
 
 	address public immutable K1_VALIDATOR;
 
@@ -106,26 +102,8 @@ contract VortexFactory is IVortexFactory, AccountFactory {
 		moduleTypes[0] = MODULE_TYPE_VALIDATOR;
 		moduleTypes[1] = MODULE_TYPE_STATELESS_VALIDATOR;
 
-		BootstrapConfig memory rootValidator = K1_VALIDATOR.build(
-			MODULE_TYPE_VALIDATOR,
-			moduleTypes,
-			abi.encode(eoaOwner, senders),
-			Calldata.emptyBytes()
-		);
-
-		moduleTypes = new ModuleType[](1);
-		moduleTypes[0] = MODULE_TYPE_HOOK;
-
-		BootstrapConfig memory hook = SENTINEL.build(
-			MODULE_TYPE_HOOK,
-			moduleTypes,
-			Calldata.emptyBytes(),
-			Calldata.emptyBytes()
-		);
-
 		bytes memory initializer = IBootstrap(BOOTSTRAP).getInitializeScopedCalldata(
-			rootValidator,
-			hook,
+			K1_VALIDATOR.build(moduleTypes, abi.encode(eoaOwner, senders), ""),
 			REGISTRY,
 			attesters,
 			threshold

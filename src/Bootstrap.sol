@@ -3,25 +3,24 @@ pragma solidity ^0.8.28;
 
 import {IBootstrap, BootstrapConfig} from "src/interfaces/IBootstrap.sol";
 import {MODULE_TYPE_VALIDATOR, MODULE_TYPE_EXECUTOR, MODULE_TYPE_FALLBACK, MODULE_TYPE_HOOK} from "src/types/Constants.sol";
-import {AccountModule} from "src/core/AccountModule.sol";
+import {ModuleManager} from "src/core/ModuleManager.sol";
 
 /// @title Bootstrap
 /// @notice Provides configuration and initialization for smart accounts
 
-contract Bootstrap is IBootstrap, AccountModule {
+contract Bootstrap is IBootstrap, ModuleManager {
 	function initialize(
 		BootstrapConfig calldata rootValidator,
-		BootstrapConfig calldata hook,
 		BootstrapConfig[] calldata validators,
 		BootstrapConfig[] calldata executors,
 		BootstrapConfig[] calldata fallbacks,
+		BootstrapConfig[] calldata hooks,
 		address registry,
 		address[] calldata attesters,
 		uint8 threshold
 	) external {
 		_configureRegistry(registry, attesters, threshold);
 		_configureRootValidator(rootValidator.module, rootValidator.data);
-		_installModule(MODULE_TYPE_HOOK, hook.module, hook.data);
 
 		uint256 length = validators.length;
 		for (uint256 i; i < length; ) {
@@ -49,26 +48,33 @@ contract Bootstrap is IBootstrap, AccountModule {
 				i = i + 1;
 			}
 		}
+
+		length = hooks.length;
+		for (uint256 i; i < length; ) {
+			_installModule(MODULE_TYPE_HOOK, hooks[i].module, hooks[i].data);
+
+			unchecked {
+				i = i + 1;
+			}
+		}
 	}
 
 	function initializeScoped(
 		BootstrapConfig calldata rootValidator,
-		BootstrapConfig calldata hook,
 		address registry,
 		address[] calldata attesters,
 		uint8 threshold
 	) external {
 		_configureRegistry(registry, attesters, threshold);
 		_configureRootValidator(rootValidator.module, rootValidator.data);
-		_installModule(MODULE_TYPE_HOOK, hook.module, hook.data);
 	}
 
 	function getInitializeCalldata(
 		BootstrapConfig calldata rootValidator,
-		BootstrapConfig calldata hook,
 		BootstrapConfig[] calldata validators,
 		BootstrapConfig[] calldata executors,
 		BootstrapConfig[] calldata fallbacks,
+		BootstrapConfig[] calldata hooks,
 		address registry,
 		address[] calldata attesters,
 		uint8 threshold
@@ -77,21 +83,20 @@ contract Bootstrap is IBootstrap, AccountModule {
 			address(this),
 			abi.encodeCall(
 				this.initialize,
-				(rootValidator, hook, validators, executors, fallbacks, registry, attesters, threshold)
+				(rootValidator, validators, executors, fallbacks, hooks, registry, attesters, threshold)
 			)
 		);
 	}
 
 	function getInitializeScopedCalldata(
 		BootstrapConfig calldata rootValidator,
-		BootstrapConfig calldata hook,
 		address registry,
 		address[] calldata attesters,
 		uint8 threshold
 	) external view returns (bytes memory callData) {
 		callData = abi.encodePacked(
 			address(this),
-			abi.encodeCall(this.initializeScoped, (rootValidator, hook, registry, attesters, threshold))
+			abi.encodeCall(this.initializeScoped, (rootValidator, registry, attesters, threshold))
 		);
 	}
 

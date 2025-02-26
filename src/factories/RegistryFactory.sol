@@ -16,13 +16,12 @@ contract RegistryFactory is IRegistryFactory, AccountFactory, Ownable {
 		0xc14f893b670961f12951ae84c405bc2e99f77d9000a2ae42a34adfa0dbd429b5;
 
 	/// @dev keccak256(abi.encode(uint256(keccak256("eip7579.factory.attesters")) - 1)) & ~bytes32(uint256(0xff))
-	bytes32 private constant ATTESTERS_SLOT = 0x591d670101e679b166bb53529c21081533156f5a77b025e5e95f23dd51cbd500;
+	bytes32 private constant ATTESTERS_STORAGE_SLOT =
+		0x591d670101e679b166bb53529c21081533156f5a77b025e5e95f23dd51cbd500;
 
 	/// @dev keccak256(abi.encode(uint256(keccak256("eip7579.factory.threshold")) - 1)) & ~bytes32(uint256(0xff))
-	bytes32 private constant THRESHOLD_SLOT = 0xbd0973d179e1f52a52f8122a9dbb94f0219248b29ce16d6f17a987d4a467a200;
-
-	address internal constant SENTINEL = 0x0000000000000000000000000000000000000001;
-	address internal constant ZERO = 0x0000000000000000000000000000000000000000;
+	bytes32 private constant THRESHOLD_STORAGE_SLOT =
+		0xbd0973d179e1f52a52f8122a9dbb94f0219248b29ce16d6f17a987d4a467a200;
 
 	address public immutable REGISTRY;
 
@@ -58,10 +57,10 @@ contract RegistryFactory is IRegistryFactory, AccountFactory, Ownable {
 
 		(
 			BootstrapConfig memory rootValidator,
-			BootstrapConfig memory hook,
 			BootstrapConfig[] memory validators,
 			BootstrapConfig[] memory executors,
 			BootstrapConfig[] memory fallbacks,
+			BootstrapConfig[] memory hooks,
 			,
 			,
 
@@ -69,7 +68,7 @@ contract RegistryFactory is IRegistryFactory, AccountFactory, Ownable {
 				initializer,
 				(
 					BootstrapConfig,
-					BootstrapConfig,
+					BootstrapConfig[],
 					BootstrapConfig[],
 					BootstrapConfig[],
 					BootstrapConfig[],
@@ -81,15 +80,9 @@ contract RegistryFactory is IRegistryFactory, AccountFactory, Ownable {
 
 		_checkRegistry(REGISTRY, rootValidator.module, MODULE_TYPE_VALIDATOR, getAttesters());
 
-		if (hook.module != SENTINEL) {
-			_checkRegistry(REGISTRY, hook.module, MODULE_TYPE_HOOK, getAttesters());
-		}
-
-		address module;
 		uint256 length = validators.length;
 		for (uint256 i; i < length; ) {
-			if ((module = validators[i].module) == ZERO) break;
-			_checkRegistry(REGISTRY, module, MODULE_TYPE_VALIDATOR, getAttesters());
+			_checkRegistry(REGISTRY, validators[i].module, MODULE_TYPE_VALIDATOR, getAttesters());
 
 			unchecked {
 				i = i + 1;
@@ -98,8 +91,7 @@ contract RegistryFactory is IRegistryFactory, AccountFactory, Ownable {
 
 		length = executors.length;
 		for (uint256 i; i < length; ) {
-			if ((module = executors[i].module) == ZERO) break;
-			_checkRegistry(REGISTRY, module, MODULE_TYPE_EXECUTOR, getAttesters());
+			_checkRegistry(REGISTRY, executors[i].module, MODULE_TYPE_EXECUTOR, getAttesters());
 
 			unchecked {
 				i = i + 1;
@@ -108,8 +100,16 @@ contract RegistryFactory is IRegistryFactory, AccountFactory, Ownable {
 
 		length = fallbacks.length;
 		for (uint256 i; i < length; ) {
-			if ((module = fallbacks[i].module) == ZERO) break;
-			_checkRegistry(REGISTRY, module, MODULE_TYPE_FALLBACK, getAttesters());
+			_checkRegistry(REGISTRY, fallbacks[i].module, MODULE_TYPE_FALLBACK, getAttesters());
+
+			unchecked {
+				i = i + 1;
+			}
+		}
+
+		length = hooks.length;
+		for (uint256 i; i < length; ) {
+			_checkRegistry(REGISTRY, hooks[i].module, MODULE_TYPE_HOOK, getAttesters());
 
 			unchecked {
 				i = i + 1;
@@ -145,13 +145,13 @@ contract RegistryFactory is IRegistryFactory, AccountFactory, Ownable {
 			}
 
 			// store the threshold
-			sstore(THRESHOLD_SLOT, and(threshold, 0xff))
+			sstore(THRESHOLD_STORAGE_SLOT, and(threshold, 0xff))
 
 			// store the length of attesters array
-			sstore(ATTESTERS_SLOT, attesters.length)
+			sstore(ATTESTERS_STORAGE_SLOT, attesters.length)
 
 			// compute the location of attesters array storage slot
-			mstore(0x00, ATTESTERS_SLOT)
+			mstore(0x00, ATTESTERS_STORAGE_SLOT)
 			let slot := keccak256(0x00, 0x20)
 
 			// attesters and threshold are validated by the registry at this point; therefore, we could skip the validation
@@ -181,13 +181,13 @@ contract RegistryFactory is IRegistryFactory, AccountFactory, Ownable {
 			}
 
 			// store the threshold
-			sstore(THRESHOLD_SLOT, and(threshold, 0xff))
+			sstore(THRESHOLD_STORAGE_SLOT, and(threshold, 0xff))
 
 			// store the length of attesters array
-			sstore(ATTESTERS_SLOT, length)
+			sstore(ATTESTERS_STORAGE_SLOT, length)
 
 			// compute the location of attesters array storage slot
-			mstore(0x00, ATTESTERS_SLOT)
+			mstore(0x00, ATTESTERS_STORAGE_SLOT)
 			let slot := keccak256(0x00, 0x20)
 
 			// construct the call data
@@ -242,7 +242,7 @@ contract RegistryFactory is IRegistryFactory, AccountFactory, Ownable {
 			mstore(add(ptr, 0x04), shr(0x60, shl(0x60, module)))
 			mstore(add(ptr, 0x24), moduleTypeId)
 			mstore(add(ptr, 0x44), 0x80)
-			mstore(add(ptr, 0x64), and(sload(THRESHOLD_SLOT), 0xff))
+			mstore(add(ptr, 0x64), and(sload(THRESHOLD_STORAGE_SLOT), 0xff))
 			mstore(add(ptr, 0x84), length)
 
 			// prettier-ignore
@@ -263,24 +263,24 @@ contract RegistryFactory is IRegistryFactory, AccountFactory, Ownable {
 
 	function getThreshold() public view virtual returns (uint8 threshold) {
 		assembly ("memory-safe") {
-			threshold := sload(THRESHOLD_SLOT)
+			threshold := sload(THRESHOLD_STORAGE_SLOT)
 		}
 	}
 
 	function getAttestersLength() public view virtual returns (uint256 length) {
 		assembly ("memory-safe") {
-			length := sload(ATTESTERS_SLOT)
+			length := sload(ATTESTERS_STORAGE_SLOT)
 		}
 	}
 
 	function getAttesters() public view virtual returns (address[] memory attesters) {
 		assembly ("memory-safe") {
-			mstore(0x00, ATTESTERS_SLOT)
+			mstore(0x00, ATTESTERS_STORAGE_SLOT)
 			let slot := keccak256(0x00, 0x20)
 
 			attesters := mload(0x40)
 
-			let length := sload(ATTESTERS_SLOT)
+			let length := sload(ATTESTERS_STORAGE_SLOT)
 			let offset := add(attesters, 0x20)
 
 			mstore(attesters, length)

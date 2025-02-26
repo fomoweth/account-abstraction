@@ -9,10 +9,10 @@ struct BootstrapConfig {
 interface IBootstrap {
 	function initialize(
 		BootstrapConfig calldata rootValidator,
-		BootstrapConfig calldata hook,
 		BootstrapConfig[] calldata validators,
 		BootstrapConfig[] calldata executors,
 		BootstrapConfig[] calldata fallbacks,
+		BootstrapConfig[] calldata hooks,
 		address registry,
 		address[] calldata attesters,
 		uint8 threshold
@@ -20,7 +20,6 @@ interface IBootstrap {
 
 	function initializeScoped(
 		BootstrapConfig calldata rootValidator,
-		BootstrapConfig calldata hook,
 		address registry,
 		address[] calldata attesters,
 		uint8 threshold
@@ -28,10 +27,10 @@ interface IBootstrap {
 
 	function getInitializeCalldata(
 		BootstrapConfig calldata rootValidator,
-		BootstrapConfig calldata hook,
 		BootstrapConfig[] calldata validators,
 		BootstrapConfig[] calldata executors,
 		BootstrapConfig[] calldata fallbacks,
+		BootstrapConfig[] calldata hooks,
 		address registry,
 		address[] calldata attesters,
 		uint8 threshold
@@ -39,7 +38,6 @@ interface IBootstrap {
 
 	function getInitializeScopedCalldata(
 		BootstrapConfig calldata rootValidator,
-		BootstrapConfig calldata hook,
 		address registry,
 		address[] calldata attesters,
 		uint8 threshold
