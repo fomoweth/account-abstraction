@@ -12,7 +12,7 @@ abstract contract RegistryAdapter {
 		0x7d1c97842846d37d5ecd1884bd61723b85333bfbc4e3daa46882adaf1876afd2;
 
 	/// @dev keccak256(abi.encode(uint256(keccak256("eip7579.account.registry")) - 1)) & ~bytes32(uint256(0xff))
-	bytes32 private constant REGISTRY_SLOT = 0xe5f524a5fbd3033d72d91a5bc47131cee70f90a3764a2c1800c3b0911ca62c00;
+	bytes32 private constant REGISTRY_STORAGE_SLOT = 0xe5f524a5fbd3033d72d91a5bc47131cee70f90a3764a2c1800c3b0911ca62c00;
 
 	modifier withRegistry(address module, ModuleType moduleTypeId) {
 		_checkRegistry(module, moduleTypeId);
@@ -21,14 +21,15 @@ abstract contract RegistryAdapter {
 
 	function _registry() internal view virtual returns (address registry) {
 		assembly ("memory-safe") {
-			registry := sload(REGISTRY_SLOT)
+			registry := sload(REGISTRY_STORAGE_SLOT)
 		}
 	}
 
 	function _configureRegistry(address registry, address[] calldata attesters, uint8 threshold) internal virtual {
 		assembly ("memory-safe") {
 			registry := shr(0x60, shl(0x60, registry))
-			sstore(REGISTRY_SLOT, registry)
+
+			sstore(REGISTRY_STORAGE_SLOT, registry)
 			log2(0x00, 0x00, REGISTRY_CONFIGURED_TOPIC, registry)
 
 			if registry {
@@ -50,13 +51,9 @@ abstract contract RegistryAdapter {
 
 	function _checkRegistry(address module, ModuleType moduleTypeId) internal view virtual {
 		assembly ("memory-safe") {
-			// prettier-ignore
-			for { } 0x01 { } {
-				if and(eq(module, 0x01), eq(moduleTypeId, 0x04)) { break }
+			let registry := sload(REGISTRY_STORAGE_SLOT)
 
-				let registry := sload(REGISTRY_SLOT)
-				if iszero(registry) { break }
-
+			if registry {
 				let ptr := mload(0x40)
 
 				mstore(ptr, 0x96fb721700000000000000000000000000000000000000000000000000000000) // check(address,uint256)
@@ -67,8 +64,6 @@ abstract contract RegistryAdapter {
 					returndatacopy(ptr, 0x00, returndatasize())
 					revert(ptr, returndatasize())
 				}
-
-				break
 			}
 		}
 	}

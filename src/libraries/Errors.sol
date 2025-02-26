@@ -39,7 +39,7 @@ library Errors {
 
 	error InvalidCallType();
 	error InvalidExecType();
-	error InvalidFlagType(bytes1 flag);
+	error InvalidFlag();
 
 	// ERC-7579 Fallback
 	error Forbidden();

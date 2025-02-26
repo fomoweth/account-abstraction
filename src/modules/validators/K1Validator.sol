@@ -21,7 +21,8 @@ contract K1Validator is IK1Validator, HybridValidatorBase, ERC1271 {
 	using SignatureCheckerLib for bytes32;
 
 	/// @dev keccak256(abi.encode(uint256(keccak256("eip7579.module.accountOwners")) - 1)) & ~bytes32(uint256(0xff))
-	bytes32 internal constant ACCOUNT_OWNERS_SLOT = 0x0bbe1ebe3453361add0e00d1239aa291b315d54a2a4ce1b8c20d3c415bb3e300;
+	bytes32 internal constant ACCOUNT_OWNERS_STORAGE_SLOT =
+		0x0bbe1ebe3453361add0e00d1239aa291b315d54a2a4ce1b8c20d3c415bb3e300;
 
 	EnumerableSet4337.AddressSet private _safeSenders;
 
@@ -147,7 +148,7 @@ contract K1Validator is IK1Validator, HybridValidatorBase, ERC1271 {
 	function _setAccountOwner(address owner) internal virtual {
 		assembly ("memory-safe") {
 			mstore(0x00, shr(0x60, shl(0x60, caller())))
-			mstore(0x20, ACCOUNT_OWNERS_SLOT)
+			mstore(0x20, ACCOUNT_OWNERS_STORAGE_SLOT)
 			sstore(keccak256(0x00, 0x40), owner)
 		}
 	}
@@ -155,7 +156,7 @@ contract K1Validator is IK1Validator, HybridValidatorBase, ERC1271 {
 	function _getAccountOwner(address account) internal view virtual returns (address owner) {
 		assembly ("memory-safe") {
 			mstore(0x00, shr(0x60, shl(0x60, account)))
-			mstore(0x20, ACCOUNT_OWNERS_SLOT)
+			mstore(0x20, ACCOUNT_OWNERS_STORAGE_SLOT)
 			owner := sload(keccak256(0x00, 0x40))
 		}
 	}

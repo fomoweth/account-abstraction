@@ -90,6 +90,30 @@ library CalldataDecoder {
 		}
 	}
 
+	function decodeInitDataAndHookData(
+		bytes calldata data
+	) internal pure returns (bytes calldata initData, bytes calldata hookData) {
+		assembly ("memory-safe") {
+			switch data.length
+			case 0x00 {
+				initData.offset := 0x00
+				initData.length := 0x00
+
+				hookData.offset := 0x00
+				hookData.length := 0x00
+			}
+			default {
+				let ptr := add(data.offset, calldataload(data.offset))
+				initData.offset := add(ptr, 0x20)
+				initData.length := calldataload(ptr)
+
+				ptr := add(data.offset, calldataload(add(data.offset, 0x20)))
+				hookData.offset := add(ptr, 0x20)
+				hookData.length := calldataload(ptr)
+			}
+		}
+	}
+
 	function decodeFallbackData(
 		bytes calldata data
 	) internal pure returns (bytes32[] calldata configurations, bytes1 flag, bytes calldata initData) {
@@ -107,6 +131,40 @@ library CalldataDecoder {
 				initData.offset := add(initData.offset, 0x01)
 				initData.length := sub(initData.length, 0x01)
 			}
+		}
+	}
+
+	function decodeEnableModeData(
+		bytes calldata data
+	)
+		internal
+		pure
+		returns (
+			address module,
+			ModuleType moduleTypeId,
+			bytes calldata initData,
+			bytes calldata signature,
+			bytes calldata userOpSignature
+		)
+	{
+		assembly ("memory-safe") {
+			let offset := data.offset
+			module := shr(0x60, calldataload(offset))
+
+			offset := add(offset, 0x14)
+			moduleTypeId := calldataload(offset)
+
+			offset := add(offset, 0x20)
+			initData.length := shr(0xe0, calldataload(offset))
+			initData.offset := add(offset, 0x04)
+
+			offset := add(initData.offset, initData.length)
+			signature.length := shr(0xe0, calldataload(offset))
+			signature.offset := add(offset, 0x04)
+
+			offset := sub(add(signature.offset, signature.length), data.offset)
+			userOpSignature.offset := add(data.offset, offset)
+			userOpSignature.length := sub(data.length, offset)
 		}
 	}
 }

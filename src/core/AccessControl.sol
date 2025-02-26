@@ -30,16 +30,9 @@ abstract contract AccessControl {
 		_;
 	}
 
-	modifier payPrefund(uint256 missingAccountFunds) {
-		_;
-		_payPrefund(missingAccountFunds);
-	}
-
-	function _payPrefund(uint256 missingAccountFunds) internal virtual {
+	function _isEntryPointOrSelf() internal view virtual returns (bool result) {
 		assembly ("memory-safe") {
-			if missingAccountFunds {
-				pop(call(gas(), caller(), missingAccountFunds, codesize(), 0x00, codesize(), 0x00))
-			}
+			result := or(eq(caller(), ENTRYPOINT), eq(caller(), address()))
 		}
 	}
 

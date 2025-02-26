@@ -7,6 +7,11 @@ import {AccessControl} from "./AccessControl.sol";
 /// @title AccountBase
 
 abstract contract AccountBase is IERC4337Account, AccessControl {
+	modifier payPrefund(uint256 missingAccountFunds) {
+		_;
+		_payPrefund(missingAccountFunds);
+	}
+
 	function entryPoint() public pure virtual returns (address) {
 		return ENTRYPOINT;
 	}
@@ -56,6 +61,14 @@ abstract contract AccountBase is IERC4337Account, AccessControl {
 
 			// prettier-ignore
 			nonce := mul(mload(0x00), and(gt(returndatasize(), 0x1f), staticcall(gas(), ENTRYPOINT, ptr, 0x44, 0x00, 0x20)))
+		}
+	}
+
+	function _payPrefund(uint256 missingAccountFunds) internal virtual {
+		assembly ("memory-safe") {
+			if missingAccountFunds {
+				pop(call(gas(), caller(), missingAccountFunds, codesize(), 0x00, codesize(), 0x00))
+			}
 		}
 	}
 }
