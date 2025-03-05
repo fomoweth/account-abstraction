@@ -13,7 +13,7 @@ abstract contract FallbackBase is IFallback, ModuleBase {
 	CallType internal constant CALLTYPE_STATIC = CallType.wrap(0xFE);
 	CallType internal constant CALLTYPE_DELEGATE = CallType.wrap(0xFF);
 
-	uint256 private immutable __self = uint256(uint160(address(this)));
+	uint256 internal immutable __self = uint256(uint160(address(this)));
 
 	modifier onlyDelegated() {
 		uint256 s = __self;
