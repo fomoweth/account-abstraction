@@ -4,22 +4,22 @@ pragma solidity ^0.8.28;
 import {IVortex} from "src/interfaces/IVortex.sol";
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 import {AccountIdLib} from "src/libraries/AccountIdLib.sol";
-import {ExecutionLib} from "src/libraries/ExecutionLib.sol";
-import {MODULE_TYPE_VALIDATOR, MODULE_TYPE_EXECUTOR, MODULE_TYPE_FALLBACK, MODULE_TYPE_HOOK} from "src/types/Constants.sol";
-import {ExecutionMode, CallType, ModuleType, PackedModuleTypes, ValidationData} from "src/types/Types.sol";
-import {EIP712} from "src/utils/EIP712.sol";
-import {UUPSUpgradeable} from "src/utils/UUPSUpgradeable.sol";
-import {Account} from "src/core/Account.sol";
+import {CalldataDecoder} from "src/libraries/CalldataDecoder.sol";
+import {MODULE_TYPE_EXECUTOR, MODULE_TYPE_FALLBACK, MODULE_TYPE_HOOK, VALIDATION_MODE_ENABLE} from "src/types/Constants.sol";
+import {ExecutionMode, CallType, ModuleType, PackedModuleTypes, ValidationData, ValidationMode} from "src/types/Types.sol";
+import {AccountCore} from "src/core/AccountCore.sol";
 
 /// @title Vortex
 
-contract Vortex is IVortex, Account, UUPSUpgradeable {
+contract Vortex is IVortex, AccountCore {
 	using AccountIdLib for string;
-	using ExecutionLib for address;
+	using CalldataDecoder for bytes;
 
 	constructor() {
 		// prevents from initializing the implementation
-		_setRootValidator(SENTINEL);
+		assembly ("memory-safe") {
+			sstore(ROOT_VALIDATOR_STORAGE_SLOT, SENTINEL)
+		}
 	}
 
 	function initializeAccount(bytes calldata data) external payable {
@@ -33,12 +33,20 @@ contract Vortex is IVortex, Account, UUPSUpgradeable {
 	function executeFromExecutor(
 		ExecutionMode mode,
 		bytes calldata executionCalldata
-	) external payable onlyExecutor withHook returns (bytes[] memory returnData) {
+	)
+		external
+		payable
+		onlyExecutor
+		withHook
+		withRegistry(msg.sender, MODULE_TYPE_EXECUTOR)
+		returns (bytes[] memory returnData)
+	{
 		return _handleExecution(mode, executionCalldata);
 	}
 
 	function executeUserOp(PackedUserOperation calldata userOp, bytes32) external payable onlyEntryPoint withHook {
-		address(this).callDelegate(userOp.callData[4:]);
+		(ExecutionMode mode, bytes calldata executionCalldata) = bytes(userOp.callData[4:]).decodeUserOpCalldata();
+		_handleExecution(mode, executionCalldata);
 	}
 
 	function validateUserOp(
@@ -46,11 +54,10 @@ contract Vortex is IVortex, Account, UUPSUpgradeable {
 		bytes32 userOpHash,
 		uint256 missingAccountFunds
 	) external payable onlyEntryPoint payPrefund(missingAccountFunds) returns (ValidationData validationData) {
-		(address validator, bytes1 mode) = _decodeUserOpNonce(userOp);
+		(address validator, ValidationMode mode) = _decodeUserOpNonce(userOp);
 		if (mode == VALIDATION_MODE_ENABLE) {
 			PackedUserOperation memory op = userOp;
-			op.signature = _enableMode(userOpHash, userOp.signature);
-
+			op.signature = _enableModule(userOpHash, userOp.signature);
 			return _validateUserOp(validator, op, userOpHash);
 		} else {
 			return _validateUserOp(validator, userOp, userOpHash);
@@ -82,11 +89,15 @@ contract Vortex is IVortex, Account, UUPSUpgradeable {
 		ModuleType moduleTypeId,
 		address module,
 		bytes calldata additionalContext
-	) external view returns (bool) {
-		return _isModuleInstalled(moduleTypeId, module, additionalContext);
+	) external view returns (bool result) {
+		result = moduleTypeId == MODULE_TYPE_FALLBACK
+			? _isModuleInstalled(moduleTypeId, module) && _isFallbackInstalled(module, additionalContext)
+			: moduleTypeId == MODULE_TYPE_HOOK
+			? _isModuleInstalled(moduleTypeId, module) && _isGlobalHookInstalled(module)
+			: _isModuleInstalled(moduleTypeId, module);
 	}
 
-	function supportsModule(ModuleType moduleTypeId) public pure virtual returns (bool result) {
+	function supportsModule(ModuleType moduleTypeId) external pure returns (bool result) {
 		assembly ("memory-safe") {
 			// MODULE_TYPE_VALIDATOR: 0x01
 			// MODULE_TYPE_EXECUTOR: 0x02
@@ -99,7 +110,7 @@ contract Vortex is IVortex, Account, UUPSUpgradeable {
 		}
 	}
 
-	function supportsExecutionMode(ExecutionMode mode) public pure virtual returns (bool result) {
+	function supportsExecutionMode(ExecutionMode mode) external pure returns (bool result) {
 		assembly ("memory-safe") {
 			let callType := shr(0xf8, mode)
 			let execType := shr(0xf8, shl(0x08, mode))
@@ -149,8 +160,12 @@ contract Vortex is IVortex, Account, UUPSUpgradeable {
 		return _fallbackHandler(selector);
 	}
 
-	function accountId() public pure virtual returns (string memory) {
-		return "fomoweth.vortex.1.0.0";
+	function entryPoint() external pure returns (address) {
+		return ENTRYPOINT;
+	}
+
+	function accountId() external pure returns (string memory) {
+		return ACCOUNT_IMPLEMENTATION_ID;
 	}
 
 	function upgradeToAndCall(
@@ -162,14 +177,6 @@ contract Vortex is IVortex, Account, UUPSUpgradeable {
 
 	function _authorizeUpgrade(address newImplementation) internal virtual override onlyEntryPointOrSelf {}
 
-	function DOMAIN_SEPARATOR() external view returns (bytes32) {
-		return _domainSeparator();
-	}
-
-	function hashTypedData(bytes32 structHash) external view returns (bytes32) {
-		return _hashTypedData(structHash);
-	}
-
 	function _domainNameAndVersion()
 		internal
 		view
@@ -177,7 +184,7 @@ contract Vortex is IVortex, Account, UUPSUpgradeable {
 		override
 		returns (string memory name, string memory version)
 	{
-		return accountId().parse();
+		return ACCOUNT_IMPLEMENTATION_ID.parse();
 	}
 
 	fallback() external payable virtual {

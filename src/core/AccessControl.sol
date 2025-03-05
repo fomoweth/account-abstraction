@@ -39,9 +39,8 @@ abstract contract AccessControl {
 	function _checkEntryPoint() internal view virtual {
 		assembly ("memory-safe") {
 			if xor(caller(), ENTRYPOINT) {
-				mstore(0x00, 0x8e4a23d6) // Unauthorized(address)
-				mstore(0x20, shr(0x60, shl(0x60, caller())))
-				revert(0x1c, 0x24)
+				mstore(0x00, 0x9f03a026) // UnauthorizedCallContext()
+				revert(0x1c, 0x04)
 			}
 		}
 	}
@@ -49,9 +48,8 @@ abstract contract AccessControl {
 	function _checkEntryPointOrSelf() internal view virtual {
 		assembly ("memory-safe") {
 			if and(xor(caller(), ENTRYPOINT), xor(caller(), address())) {
-				mstore(0x00, 0x8e4a23d6) // Unauthorized(address)
-				mstore(0x20, shr(0x60, shl(0x60, caller())))
-				revert(0x1c, 0x24)
+				mstore(0x00, 0x9f03a026) // UnauthorizedCallContext()
+				revert(0x1c, 0x04)
 			}
 		}
 	}

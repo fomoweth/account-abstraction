@@ -7,16 +7,14 @@ import {AccessControl} from "./AccessControl.sol";
 /// @title AccountBase
 
 abstract contract AccountBase is IERC4337Account, AccessControl {
+	string internal constant ACCOUNT_IMPLEMENTATION_ID = "fomoweth.vortex.1.0.0";
+
 	modifier payPrefund(uint256 missingAccountFunds) {
 		_;
 		_payPrefund(missingAccountFunds);
 	}
 
-	function entryPoint() public pure virtual returns (address) {
-		return ENTRYPOINT;
-	}
-
-	function addDeposit() external payable onlyEntryPointOrSelf {
+	function addDeposit() external payable {
 		assembly ("memory-safe") {
 			if iszero(call(gas(), ENTRYPOINT, callvalue(), codesize(), 0x00, codesize(), 0x00)) {
 				revert(codesize(), 0x00)

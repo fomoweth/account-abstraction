@@ -25,29 +25,23 @@ library ExecutionLib {
 		returnData[0] = _validateExecution(0, execType, _call(target, value, callData));
 	}
 
-	function executeSingle(
-		ExecType execType,
-		bytes calldata executionCalldata
-	) internal returns (bytes[] memory returnData) {
-		(address target, uint256 value, bytes calldata callData) = decodeSingle(executionCalldata);
-
-		returnData = new bytes[](1);
-		returnData[0] = _validateExecution(0, execType, _call(target, value, callData));
-	}
-
 	function executeBatch(
 		bytes calldata executionCalldata,
 		ExecType execType
 	) internal returns (bytes[] memory returnData) {
 		Execution[] calldata executions = decodeBatch(executionCalldata);
-		Execution calldata exec;
+		Execution calldata execution;
 
 		uint256 length = executions.length;
 		returnData = new bytes[](length);
 
 		for (uint256 i; i < length; ) {
-			exec = executions[i];
-			returnData[i] = _validateExecution(i, execType, _call(exec.target, exec.value, exec.callData));
+			execution = executions[i];
+			returnData[i] = _validateExecution(
+				i,
+				execType,
+				_call(execution.target, execution.value, execution.callData)
+			);
 
 			unchecked {
 				i = i + 1;
@@ -132,15 +126,22 @@ library ExecutionLib {
 		}
 	}
 
-	function encodeSingle(address target, uint256 value, bytes memory callData) internal pure returns (bytes memory) {
+	function encodeSingle(
+		address target,
+		uint256 value,
+		bytes memory callData
+	) internal pure returns (bytes memory executionCalldata) {
 		return abi.encodePacked(target, value, callData);
 	}
 
-	function encodeBatch(Execution[] memory executions) internal pure returns (bytes memory) {
+	function encodeBatch(Execution[] memory executions) internal pure returns (bytes memory executionCalldata) {
 		return abi.encode(executions);
 	}
 
-	function encodeDelegate(address target, bytes memory callData) internal pure returns (bytes memory) {
+	function encodeDelegate(
+		address target,
+		bytes memory callData
+	) internal pure returns (bytes memory executionCalldata) {
 		return abi.encodePacked(target, callData);
 	}
 

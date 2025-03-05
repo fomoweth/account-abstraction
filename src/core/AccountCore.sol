@@ -3,29 +3,26 @@ pragma solidity ^0.8.28;
 
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 import {CalldataDecoder} from "src/libraries/CalldataDecoder.sol";
-import {Errors} from "src/libraries/Errors.sol";
 import {ExecutionLib} from "src/libraries/ExecutionLib.sol";
 import {CALLTYPE_SINGLE, CALLTYPE_BATCH, CALLTYPE_DELEGATE, EXECTYPE_DEFAULT} from "src/types/Constants.sol";
-import {ExecutionMode, CallType, ExecType, ModuleType, ValidationData} from "src/types/Types.sol";
+import {ExecutionMode, CallType, ExecType, ModuleType, ValidationData, ValidationMode} from "src/types/Types.sol";
 import {EIP712} from "src/utils/EIP712.sol";
+import {UUPSUpgradeable} from "src/utils/UUPSUpgradeable.sol";
 import {AccountBase} from "./AccountBase.sol";
 import {ModuleManager} from "./ModuleManager.sol";
 
-/// @title Account
+/// @title AccountCore
 
-abstract contract Account is AccountBase, EIP712, ModuleManager {
+abstract contract AccountCore is AccountBase, EIP712, ModuleManager, UUPSUpgradeable {
 	using CalldataDecoder for bytes;
 	using ExecutionLib for bytes;
 
-	/// @dev keccak256(bytes("ModuleEnableMode(address module,uint256 moduleType,bytes32 userOpHash,bytes32 initDataHash)"));
-	bytes32 internal constant MODULE_ENABLE_MODE_TYPE_HASH =
-		0xbe844ccefa05559a48680cb7fe805b2ec58df122784191aed18f9f315c763e1b;
+	/// @dev keccak256(bytes("EnableModule(uint256 moduleTypeId,address module,bytes32 initDataHash,bytes32 userOpHash)"));
+	bytes32 internal constant ENABLE_MODULE_TYPEHASH =
+		0xc9285f586ac4794002dd9886bc9d760a4544a5d6a18524daa92803a337338eac;
 
 	bytes4 internal constant ERC1271_SUCCESS = 0x1626ba7e;
 	bytes4 internal constant ERC1271_FAILED = 0xFFFFFFFF;
-
-	bytes1 internal constant VALIDATION_MODE_DEFAULT = 0x00;
-	bytes1 internal constant VALIDATION_MODE_ENABLE = 0x01;
 
 	modifier withHook() {
 		if (_isEntryPointOrSelf()) {
@@ -39,16 +36,28 @@ abstract contract Account is AccountBase, EIP712, ModuleManager {
 			address hook = _getHook(msg.sender);
 			bytes memory context;
 
-			if (hook != address(0)) context = _preCheck(hook, msg.sender, msg.value, msg.data);
+			if (hook != SENTINEL) context = _preCheck(hook, msg.sender, msg.value, msg.data);
 			_;
-			if (hook != address(0)) _postCheck(hook, context);
+			if (hook != SENTINEL) _postCheck(hook, context);
 		}
 	}
 
 	function _initializeAccount(bytes calldata executionCalldata) internal virtual {
-		require(_rootValidator() == address(0), Errors.InvalidInitialization());
+		assembly ("memory-safe") {
+			if iszero(iszero(sload(ROOT_VALIDATOR_STORAGE_SLOT))) {
+				mstore(0x00, 0xf92ee8a9) // InvalidInitialization()
+				revert(0x1c, 0x04)
+			}
+		}
+
 		executionCalldata.executeDelegate(EXECTYPE_DEFAULT);
-		require(_rootValidator() != address(0), Errors.InitializationFailed());
+
+		assembly ("memory-safe") {
+			if iszero(extcodesize(sload(ROOT_VALIDATOR_STORAGE_SLOT))) {
+				mstore(0x00, 0x19b991a8) // InitializationFailed()
+				revert(0x1c, 0x04)
+			}
+		}
 	}
 
 	function _handleExecution(
@@ -62,24 +71,6 @@ abstract contract Account is AccountBase, EIP712, ModuleManager {
 		if (callType == CALLTYPE_DELEGATE) return executionCalldata.executeDelegate(execType);
 	}
 
-	function _enableMode(
-		bytes32 userOpHash,
-		bytes calldata data
-	) internal virtual returns (bytes calldata userOpSignature) {
-		address module;
-		ModuleType moduleType;
-		bytes calldata initData;
-		bytes calldata signature;
-		(module, moduleType, initData, signature, userOpSignature) = data.decodeEnableModeData();
-
-		bytes32 hash = _hashTypedData(_enableModeHash(module, moduleType, userOpHash, initData));
-
-		(address validator, bytes calldata innerSignature) = _decodeSignature(signature);
-		require(_validateSignature(validator, hash, innerSignature) == ERC1271_SUCCESS, Errors.InvalidSignature());
-
-		_installModule(moduleType, module, initData);
-	}
-
 	function _validateUserOp(
 		address validator,
 		PackedUserOperation memory userOp,
@@ -87,6 +78,7 @@ abstract contract Account is AccountBase, EIP712, ModuleManager {
 	) internal virtual onlyValidator(validator) returns (ValidationData validationData) {
 		// 0x97003203: validateUserOp((address,uint256,bytes,bytes,bytes32,uint256,bytes32,bytes,bytes),bytes32)
 		bytes memory data = abi.encodeWithSelector(0x97003203, userOp, userOpHash);
+
 		assembly ("memory-safe") {
 			if iszero(call(gas(), validator, 0x00, add(data, 0x20), mload(data), 0x00, 0x20)) {
 				let ptr := mload(0x40)
@@ -126,6 +118,47 @@ abstract contract Account is AccountBase, EIP712, ModuleManager {
 		}
 	}
 
+	function _enableModule(
+		bytes32 userOpHash,
+		bytes calldata data
+	) internal virtual returns (bytes calldata userOpSignature) {
+		address module;
+		ModuleType moduleType;
+		bytes calldata initData;
+		bytes calldata signature;
+		(module, moduleType, initData, signature, userOpSignature) = data.decodeEnableModuleData();
+
+		bytes32 structHash = _enableModuleHash(module, moduleType, userOpHash, initData);
+		(address validator, bytes calldata innerSignature) = _decodeSignature(signature);
+
+		_checkEnableModuleSignature(validator, hashTypedData(structHash), innerSignature);
+		_installModule(moduleType, module, initData);
+	}
+
+	function _checkEnableModuleSignature(
+		address validator,
+		bytes32 hash,
+		bytes calldata signature
+	) internal view virtual onlyValidator(validator) {
+		assembly ("memory-safe") {
+			let ptr := mload(0x40)
+
+			mstore(ptr, 0xf551e2ee00000000000000000000000000000000000000000000000000000000) // isValidSignatureWithSender(address,bytes32,bytes)
+			mstore(add(ptr, 0x04), shr(0x60, shl(0x60, caller())))
+			mstore(add(ptr, 0x24), hash)
+			mstore(add(ptr, 0x44), 0x60)
+			mstore(add(ptr, 0x64), signature.length)
+			calldatacopy(add(ptr, 0x84), signature.offset, signature.length)
+
+			let success := staticcall(gas(), validator, ptr, add(signature.length, 0x84), 0x00, 0x20)
+
+			if xor(or(mload(0x00), sub(0x00, iszero(success))), ERC1271_SUCCESS) {
+				mstore(0x00, 0x5d33c0e1) // InvalidEnableModuleSignature()
+				revert(0x1c, 0x04)
+			}
+		}
+	}
+
 	function _decodeSignature(
 		bytes calldata signature
 	) internal view virtual returns (address validator, bytes calldata innerSignature) {
@@ -151,7 +184,7 @@ abstract contract Account is AccountBase, EIP712, ModuleManager {
 
 	function _decodeUserOpNonce(
 		PackedUserOperation calldata userOp
-	) internal pure virtual returns (address validator, bytes1 mode) {
+	) internal pure virtual returns (address validator, ValidationMode mode) {
 		assembly ("memory-safe") {
 			let nonce := calldataload(add(userOp, 0x20))
 			mode := shl(0xf8, byte(0x00, nonce))
@@ -159,23 +192,21 @@ abstract contract Account is AccountBase, EIP712, ModuleManager {
 		}
 	}
 
-	function _enableModeHash(
+	function _enableModuleHash(
 		address module,
 		ModuleType moduleTypeId,
 		bytes32 userOpHash,
 		bytes calldata data
-	) internal pure virtual returns (bytes32 digest) {
+	) internal pure virtual returns (bytes32 structHash) {
 		assembly ("memory-safe") {
 			let ptr := mload(0x40)
-
-			mstore(ptr, MODULE_ENABLE_MODE_TYPE_HASH)
-			mstore(add(ptr, 0x20), shr(0x60, shl(0x60, module)))
-			mstore(add(ptr, 0x40), moduleTypeId)
-			mstore(add(ptr, 0x60), userOpHash)
-			calldatacopy(add(ptr, 0x80), data.offset, data.length)
-			mstore(add(ptr, 0x80), keccak256(add(ptr, 0x80), data.length))
-
-			digest := keccak256(ptr, 0xa0)
+			mstore(ptr, ENABLE_MODULE_TYPEHASH)
+			mstore(add(ptr, 0x20), moduleTypeId)
+			mstore(add(ptr, 0x40), shr(0x60, shl(0x60, module)))
+			calldatacopy(add(ptr, 0x60), data.offset, data.length)
+			mstore(add(ptr, 0x60), keccak256(add(ptr, 0x60), data.length))
+			mstore(add(ptr, 0x80), userOpHash)
+			structHash := keccak256(ptr, 0xa0)
 		}
 	}
 
@@ -210,7 +241,6 @@ abstract contract Account is AccountBase, EIP712, ModuleManager {
 		assembly ("memory-safe") {
 			let offset := add(hookData, 0x20)
 			let length := mload(hookData)
-
 			let ptr := mload(0x40)
 
 			mstore(ptr, 0x173bf7da00000000000000000000000000000000000000000000000000000000) // postCheck(bytes)
@@ -357,14 +387,14 @@ abstract contract Account is AccountBase, EIP712, ModuleManager {
 
 			configuration := sload(keccak256(0x00, 0x40))
 
-			let hook := shr(0x60, shl(0x60, configuration))
-			let hookData
-
 			// MODULE_TYPE_FALLBACK: 0x03
 			if xor(shr(0xf8, configuration), 0x03) {
 				mstore(0x00, 0x2125deae) // InvalidModuleType()
 				revert(0x1c, 0x04)
 			}
+
+			let hook := shr(0x60, shl(0x60, configuration))
+			let hookData
 
 			if iszero(hook) {
 				mstore(0x00, 0x026d9639) // ModuleNotInstalled(address)
@@ -395,22 +425,24 @@ abstract contract Account is AccountBase, EIP712, ModuleManager {
 
 			let callData := allocate(calldatasize())
 			calldatacopy(callData, 0x00, calldatasize())
+			mstore(allocate(0x14), shl(0x60, caller()))
 
 			let success
 			switch callType
 			// CALLTYPE_SINGLE
 			case 0x00 {
-				mstore(allocate(0x14), shl(0x60, caller()))
+				// mstore(allocate(0x14), shl(0x60, caller()))
 				success := call(gas(), module, callvalue(), callData, add(calldatasize(), 0x14), codesize(), 0x00)
 			}
 			// CALLTYPE_STATIC
 			case 0xFE {
-				mstore(allocate(0x14), shl(0x60, caller()))
+				// mstore(allocate(0x14), shl(0x60, caller()))
 				success := staticcall(gas(), module, callData, add(calldatasize(), 0x14), codesize(), 0x00)
 			}
 			// CALLTYPE_DELEGATE
 			case 0xFF {
-				success := delegatecall(gas(), module, callData, calldatasize(), codesize(), 0x00)
+				success := delegatecall(gas(), module, callData, add(calldatasize(), 0x14), codesize(), 0x00)
+				// success := delegatecall(gas(), module, callData, calldatasize(), codesize(), 0x00)
 			}
 			default {
 				mstore(0x00, 0xb96fcfe4) // UnsupportedCallType(bytes1)

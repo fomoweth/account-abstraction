@@ -3,10 +3,8 @@ pragma solidity ^0.8.28;
 
 import {Arrays} from "src/libraries/Arrays.sol";
 import {CalldataDecoder} from "src/libraries/CalldataDecoder.sol";
-import {Errors} from "src/libraries/Errors.sol";
 import {MODULE_TYPE_VALIDATOR, MODULE_TYPE_EXECUTOR, MODULE_TYPE_FALLBACK, MODULE_TYPE_HOOK} from "src/types/Constants.sol";
-import {CallType} from "src/types/ExecutionMode.sol";
-import {ModuleTypeLib, ModuleType, PackedModuleTypes} from "src/types/ModuleType.sol";
+import {CallType, ModuleType, PackedModuleTypes} from "src/types/Types.sol";
 import {AccessControl} from "./AccessControl.sol";
 import {RegistryAdapter} from "./RegistryAdapter.sol";
 
@@ -17,7 +15,6 @@ abstract contract ModuleManager is AccessControl, RegistryAdapter {
 	using Arrays for bytes4[];
 	using Arrays for bytes32[];
 	using CalldataDecoder for bytes;
-	using ModuleTypeLib for ModuleType[];
 
 	/// @dev keccak256("ModuleInstalled(uint256,address)")
 	bytes32 private constant MODULE_INSTALLED_TOPIC =
@@ -34,6 +31,13 @@ abstract contract ModuleManager is AccessControl, RegistryAdapter {
 	bytes32 private constant ROOT_VALIDATOR_CONFIGURED_TOPIC =
 		0xdba94517c2e4d2bd67ab2d9e679f0a166a27f8026e070545b1b1f06742459778;
 
+	/// @dev keccak256("SelectorConfigured(address,bytes4,bool)")
+	bytes32 private constant SELECTOR_CONFIGURED_TOPIC =
+		0xf27e6a44b456e1a46611dc7f57371c1d131569d7dbca917ffff74064dd420680;
+
+	/// @dev keccak256(abi.encode(uint256(keccak256("eip7579.account.modules")) - 1)) & ~bytes32(uint256(0xff))
+	bytes32 internal constant MODULES_STORAGE_SLOT = 0xd5c15c7f662d752f82270246f0c46945931f1cea1e031d18e20309be7f4e2d00;
+
 	/// @dev keccak256(abi.encode(uint256(keccak256("eip7579.account.fallbacks")) - 1)) & ~bytes32(uint256(0xff))
 	bytes32 internal constant FALLBACKS_STORAGE_SLOT =
 		0x2500be8b097cabc8fbfb1f2a0e1495cf45ecf83bbba382f7125760d2d2920d00;
@@ -41,9 +45,6 @@ abstract contract ModuleManager is AccessControl, RegistryAdapter {
 	/// @dev keccak256(abi.encode(uint256(keccak256("eip7579.account.globalHooks")) - 1)) & ~bytes32(uint256(0xff))
 	bytes32 internal constant GLOBAL_HOOKS_STORAGE_SLOT =
 		0x28bf1e00ee6cd006e47ac59e39d56c78a824b4f5cdb34d6efeee7e2d8ed72500;
-
-	/// @dev keccak256(abi.encode(uint256(keccak256("eip7579.account.modules")) - 1)) & ~bytes32(uint256(0xff))
-	bytes32 internal constant MODULES_STORAGE_SLOT = 0xd5c15c7f662d752f82270246f0c46945931f1cea1e031d18e20309be7f4e2d00;
 
 	/// @dev keccak256(abi.encode(uint256(keccak256("eip7579.account.rootValidator")) - 1)) & ~bytes32(uint256(0xff))
 	bytes32 internal constant ROOT_VALIDATOR_STORAGE_SLOT =
@@ -53,14 +54,9 @@ abstract contract ModuleManager is AccessControl, RegistryAdapter {
 	bytes1 internal constant FLAG_SKIP = 0x01;
 	bytes1 internal constant FLAG_ENFORCE = 0xFF;
 
-	uint256 internal constant MAX_HOOKS_LENGTH = 32;
-
 	function _configureRootValidator(address validator, bytes calldata data) internal virtual {
 		if (!_isInitialized(validator)) _installModule(MODULE_TYPE_VALIDATOR, validator, data);
-		_setRootValidator(validator);
-	}
 
-	function _setRootValidator(address validator) internal virtual {
 		assembly ("memory-safe") {
 			validator := shr(0x60, shl(0x60, validator))
 			sstore(ROOT_VALIDATOR_STORAGE_SLOT, validator)
@@ -76,9 +72,6 @@ abstract contract ModuleManager is AccessControl, RegistryAdapter {
 
 	function _globalHooks() internal view virtual returns (address[] memory hooks) {
 		assembly ("memory-safe") {
-			mstore(0x00, GLOBAL_HOOKS_STORAGE_SLOT)
-			let slot := keccak256(0x00, 0x20)
-
 			hooks := mload(0x40)
 
 			let offset := add(hooks, 0x20)
@@ -86,6 +79,9 @@ abstract contract ModuleManager is AccessControl, RegistryAdapter {
 
 			mstore(hooks, length)
 			mstore(0x40, add(offset, shl(0x05, length)))
+
+			mstore(0x00, GLOBAL_HOOKS_STORAGE_SLOT)
+			let slot := keccak256(0x00, 0x20)
 
 			// prettier-ignore
 			for { let i } lt(i, length) { i := add(i, 0x01) } {
@@ -97,10 +93,12 @@ abstract contract ModuleManager is AccessControl, RegistryAdapter {
 	function _getHook(address module) internal view virtual returns (address hook) {
 		assembly ("memory-safe") {
 			module := shr(0x60, shl(0x60, module))
+
 			mstore(0x00, module)
 			mstore(0x20, MODULES_STORAGE_SLOT)
 
 			hook := shr(0x60, shl(0x60, sload(keccak256(0x00, 0x40))))
+
 			if iszero(hook) {
 				mstore(0x00, 0x026d9639) // ModuleNotInstalled(address)
 				mstore(0x20, module)
@@ -117,6 +115,7 @@ abstract contract ModuleManager is AccessControl, RegistryAdapter {
 			mstore(0x20, MODULES_STORAGE_SLOT)
 
 			let configuration := sload(keccak256(0x00, 0x40))
+
 			if configuration {
 				moduleTypeId := shr(0xf8, configuration)
 				packedTypes := shr(0xe0, shl(0x08, configuration))
@@ -131,6 +130,7 @@ abstract contract ModuleManager is AccessControl, RegistryAdapter {
 			mstore(0x20, FALLBACKS_STORAGE_SLOT)
 
 			let configuration := sload(keccak256(0x00, 0x40))
+
 			if configuration {
 				callType := shl(0xf8, shr(0xf8, configuration))
 				handler := shr(0x60, shl(0x60, configuration))
@@ -143,38 +143,16 @@ abstract contract ModuleManager is AccessControl, RegistryAdapter {
 		address module,
 		bytes calldata data
 	) internal virtual withRegistry(module, moduleTypeId) {
-		ModuleType[] calldata moduleTypes;
-
-		assembly ("memory-safe") {
-			if or(iszero(moduleTypeId), gt(moduleTypeId, 0x04)) {
-				mstore(0x00, 0x41c38b30) // UnsupportedModuleType(uint256)
-				mstore(0x20, moduleTypeId)
-				revert(0x1c, 0x24)
-			}
-
-			if iszero(module) {
-				mstore(0x00, 0xdd914b28) // InvalidModule()
-				revert(0x1c, 0x04)
-			}
-
-			if iszero(data.length) {
-				mstore(0x00, 0xdfe93090) // InvalidDataLength()
-				revert(0x1c, 0x04)
-			}
-
-			let ptr := add(data.offset, calldataload(data.offset))
-			moduleTypes.length := calldataload(ptr)
-			moduleTypes.offset := add(ptr, 0x20)
-		}
-
-		PackedModuleTypes packedTypes = moduleTypes.encode();
-		require(packedTypes.isType(moduleTypeId) && _checkModuleTypes(module, moduleTypes), Errors.InvalidModuleType());
-
+		PackedModuleTypes packedTypes;
 		address hook;
 		bytes calldata hookData;
+		(packedTypes, data, hook, hookData) = data.decodeInstallModuleData();
+
+		_checkModuleTypes(module, moduleTypeId, packedTypes);
 
 		assembly ("memory-safe") {
 			module := shr(0x60, shl(0x60, module))
+
 			mstore(0x00, module)
 			mstore(0x20, MODULES_STORAGE_SLOT)
 
@@ -186,24 +164,6 @@ abstract contract ModuleManager is AccessControl, RegistryAdapter {
 				revert(0x1c, 0x24)
 			}
 
-			let ptr := add(data.offset, calldataload(add(data.offset, 0x40)))
-			hookData.length := calldataload(ptr)
-			hookData.offset := add(ptr, 0x20)
-
-			if iszero(lt(hookData.length, 0x14)) {
-				hook := shr(0x60, calldataload(hookData.offset))
-				hookData.offset := add(hookData.offset, 0x14)
-				hookData.length := sub(hookData.length, 0x14)
-			}
-
-			ptr := add(data.offset, calldataload(add(data.offset, 0x20)))
-			data.length := calldataload(ptr)
-			data.offset := add(ptr, 0x20)
-
-			if iszero(hook) {
-				hook := SENTINEL
-			}
-
 			sstore(slot, or(or(shl(0xf8, moduleTypeId), shl(0xd8, packedTypes)), hook))
 			log3(0x00, 0x00, HOOK_CONFIGURED_TOPIC, module, hook)
 		}
@@ -213,12 +173,12 @@ abstract contract ModuleManager is AccessControl, RegistryAdapter {
 		}
 
 		if (moduleTypeId == MODULE_TYPE_FALLBACK) {
-			bytes32[] calldata fallbacks;
+			bytes32[] calldata selectors;
 			bytes1 flag;
-			(fallbacks, flag, data) = data.decodeFallbackData();
+			(selectors, flag, data) = data.decodeFallbackData();
 
-			_checkSelectors(_processSelectors(fallbacks), _forbiddenSelectors());
-			_installFallback(module, fallbacks, flag);
+			_checkSelectors(_processSelectors(selectors), _forbiddenSelectors());
+			_installFallback(module, flag, selectors);
 		}
 
 		if (!_isInitialized(module)) _invokeOnInstall(module, moduleTypeId, data);
@@ -228,9 +188,16 @@ abstract contract ModuleManager is AccessControl, RegistryAdapter {
 	function _uninstallModule(ModuleType moduleTypeId, address module, bytes calldata data) internal virtual {
 		address hook;
 		bytes calldata hookData;
+		(data, hookData) = data.decodeUninstallModuleData();
 
 		assembly ("memory-safe") {
 			module := shr(0x60, shl(0x60, module))
+
+			if iszero(extcodesize(module)) {
+				mstore(0x00, 0xdd914b28) // InvalidModule()
+				revert(0x1c, 0x04)
+			}
+
 			mstore(0x00, module)
 			mstore(0x20, MODULES_STORAGE_SLOT)
 
@@ -238,8 +205,6 @@ abstract contract ModuleManager is AccessControl, RegistryAdapter {
 			let configuration := sload(slot)
 
 			hook := shr(0x60, shl(0x60, configuration))
-			hookData.offset := 0x00
-			hookData.length := 0x00
 
 			if iszero(hook) {
 				mstore(0x00, 0x026d9639) // ModuleNotInstalled(address)
@@ -254,16 +219,6 @@ abstract contract ModuleManager is AccessControl, RegistryAdapter {
 
 			sstore(slot, 0x00)
 			log3(0x00, 0x00, HOOK_CONFIGURED_TOPIC, module, 0x00)
-
-			if data.length {
-				let ptr := add(data.offset, calldataload(add(data.offset, 0x20)))
-				hookData.length := calldataload(ptr)
-				hookData.offset := add(ptr, 0x20)
-
-				ptr := add(data.offset, calldataload(data.offset))
-				data.length := calldataload(ptr)
-				data.offset := add(ptr, 0x20)
-			}
 		}
 
 		if (moduleTypeId == MODULE_TYPE_HOOK) {
@@ -271,28 +226,15 @@ abstract contract ModuleManager is AccessControl, RegistryAdapter {
 		}
 
 		if (moduleTypeId == MODULE_TYPE_FALLBACK) {
-			bytes32[] calldata fallbacks;
+			bytes32[] calldata selectors;
 			bytes1 flag;
-			(fallbacks, flag, data) = data.decodeFallbackData();
+			(selectors, flag, data) = data.decodeFallbackData();
 
-			_checkSelectors(_processSelectors(fallbacks), _forbiddenSelectors());
-			_uninstallFallback(fallbacks, flag);
+			_uninstallFallback(module, flag, selectors);
 		}
 
 		if (_isInitialized(module)) _invokeOnUninstall(module, moduleTypeId, data);
 		if (hook != SENTINEL && _isInitialized(hook)) _invokeOnUninstall(hook, MODULE_TYPE_HOOK, hookData);
-	}
-
-	function _isModuleInstalled(
-		ModuleType moduleTypeId,
-		address module,
-		bytes calldata additionalContext
-	) internal view virtual returns (bool result) {
-		result = moduleTypeId == MODULE_TYPE_FALLBACK
-			? _isModuleInstalled(moduleTypeId, module) && _isFallbackInstalled(module, additionalContext)
-			: moduleTypeId == MODULE_TYPE_HOOK
-			? _isModuleInstalled(moduleTypeId, module) && _isHookInstalled(module)
-			: _isModuleInstalled(moduleTypeId, module);
 	}
 
 	function _isModuleInstalled(ModuleType moduleTypeId, address module) internal view virtual returns (bool result) {
@@ -301,6 +243,7 @@ abstract contract ModuleManager is AccessControl, RegistryAdapter {
 			mstore(0x20, MODULES_STORAGE_SLOT)
 
 			let configuration := sload(keccak256(0x00, 0x40))
+
 			if configuration {
 				result := and(
 					iszero(iszero(shr(0x60, shl(0x60, configuration)))),
@@ -312,15 +255,16 @@ abstract contract ModuleManager is AccessControl, RegistryAdapter {
 
 	function _installGlobalHook(address hook) internal virtual {
 		address[] memory hooks = _globalHooks();
-		require(!hooks.inSorted(hook), Errors.ModuleAlreadyInstalled(hook));
+		bool exists = hooks.inSorted(hook);
 
 		assembly ("memory-safe") {
-			let length := mload(hooks)
-			if eq(length, MAX_HOOKS_LENGTH) {
-				mstore(0x00, 0x6a9fe8b3) // ExceededMaxLimit()
-				revert(0x1c, 0x04)
+			if exists {
+				mstore(0x00, 0x5c426a42) // ModuleAlreadyInstalled(address)
+				mstore(0x20, hook)
+				revert(0x1c, 0x24)
 			}
 
+			let length := mload(hooks)
 			mstore(hooks, add(length, 0x01))
 			mstore(add(add(hooks, 0x20), shl(0x05, length)), hook)
 		}
@@ -330,10 +274,15 @@ abstract contract ModuleManager is AccessControl, RegistryAdapter {
 
 	function _uninstallGlobalHook(address hook) internal virtual {
 		address[] memory hooks = _globalHooks();
-		(bool found, uint256 index) = hooks.searchSorted(hook);
-		require(found, Errors.ModuleNotInstalled(hook));
+		(bool exists, uint256 index) = hooks.searchSorted(hook);
 
 		assembly ("memory-safe") {
+			if iszero(exists) {
+				mstore(0x00, 0x026d9639) // ModuleNotInstalled(address)
+				mstore(0x20, hook)
+				revert(0x1c, 0x24)
+			}
+
 			let offset := add(hooks, 0x20)
 			let length := sub(mload(hooks), 0x01)
 			mstore(add(offset, shl(0x05, index)), mload(add(offset, shl(0x05, length))))
@@ -348,12 +297,12 @@ abstract contract ModuleManager is AccessControl, RegistryAdapter {
 		hooks.uniquifySorted();
 
 		assembly ("memory-safe") {
-			mstore(0x00, GLOBAL_HOOKS_STORAGE_SLOT)
-			let slot := keccak256(0x00, 0x20)
-
 			let offset := add(hooks, 0x20)
 			let length := mload(hooks)
 			sstore(GLOBAL_HOOKS_STORAGE_SLOT, length)
+
+			mstore(0x00, GLOBAL_HOOKS_STORAGE_SLOT)
+			let slot := keccak256(0x00, 0x20)
 
 			// prettier-ignore
 			for { let i } lt(i, length) { i := add(i, 0x01) } {
@@ -362,11 +311,11 @@ abstract contract ModuleManager is AccessControl, RegistryAdapter {
 		}
 	}
 
-	function _isHookInstalled(address hook) internal view virtual returns (bool result) {
+	function _isGlobalHookInstalled(address hook) internal view virtual returns (bool result) {
 		return _globalHooks().inSorted(hook);
 	}
 
-	function _installFallback(address handler, bytes32[] calldata configurations, bytes1 flag) internal virtual {
+	function _installFallback(address handler, bytes1 flag, bytes32[] calldata selectors) internal virtual {
 		assembly ("memory-safe") {
 			if iszero(or(iszero(flag), eq(flag, FLAG_ENFORCE))) {
 				mstore(0x00, 0x3ea063d0) // InvalidFlag()
@@ -376,10 +325,10 @@ abstract contract ModuleManager is AccessControl, RegistryAdapter {
 			mstore(0x20, FALLBACKS_STORAGE_SLOT)
 
 			// prettier-ignore
-			for { let i } lt(i, configurations.length) { i := add(i, 0x01) } {
-				let configuration := calldataload(add(configurations.offset, shl(0x05, i)))
-				let callType := shr(0xf8, shl(0x20, configuration))
-				let selector := shl(0xe0, shr(0xe0, configuration))
+			for { let i } lt(i, selectors.length) { i := add(i, 0x01) } {
+				let packed := calldataload(add(selectors.offset, shl(0x05, i)))
+				let callType := shr(0xf8, shl(0x20, packed))
+				let selector := shl(0xe0, shr(0xe0, packed))
 
 				// CALLTYPE_SINGLE: 0x00 | CALLTYPE_STATIC: 0xFE | CALLTYPE_DELEGATE: 0xFF
 				if iszero(or(iszero(callType), or(eq(callType, 0xFE), eq(callType, 0xFF)))) {
@@ -400,11 +349,12 @@ abstract contract ModuleManager is AccessControl, RegistryAdapter {
 				}
 
 				sstore(slot, or(shl(0xf8, callType), shr(0x60, shl(0x60, handler))))
+				log4(0x00, 0x00, SELECTOR_CONFIGURED_TOPIC, handler, selector, 0x01)
 			}
 		}
 	}
 
-	function _uninstallFallback(bytes32[] calldata configurations, bytes1 flag) internal virtual {
+	function _uninstallFallback(address handler, bytes1 flag, bytes32[] calldata selectors) internal virtual {
 		assembly ("memory-safe") {
 			if iszero(or(iszero(flag), eq(flag, FLAG_ENFORCE))) {
 				mstore(0x00, 0x3ea063d0) // InvalidFlag()
@@ -414,8 +364,8 @@ abstract contract ModuleManager is AccessControl, RegistryAdapter {
 			mstore(0x20, FALLBACKS_STORAGE_SLOT)
 
 			// prettier-ignore
-			for { let i } lt(i, configurations.length) { i := add(i, 0x01) } {
-				let selector := shl(0xe0, shr(0xe0, calldataload(add(configurations.offset, shl(0x05, i)))))
+			for { let i } lt(i, selectors.length) { i := add(i, 0x01) } {
+				let selector := shl(0xe0, shr(0xe0, calldataload(add(selectors.offset, shl(0x05, i)))))
 
 				mstore(0x00, selector)
 				let slot := keccak256(0x00, 0x40)
@@ -429,6 +379,7 @@ abstract contract ModuleManager is AccessControl, RegistryAdapter {
 				}
 
 				sstore(slot, 0x00)
+				log4(0x00, 0x00, SELECTOR_CONFIGURED_TOPIC, handler, selector, 0x00)
 			}
 		}
 	}
@@ -532,32 +483,45 @@ abstract contract ModuleManager is AccessControl, RegistryAdapter {
 
 	function _checkModuleTypes(
 		address module,
-		ModuleType[] calldata moduleTypes
-	) internal view virtual returns (bool result) {
+		ModuleType moduleType,
+		PackedModuleTypes packedTypes
+	) internal view virtual {
 		assembly ("memory-safe") {
+			if iszero(extcodesize(module)) {
+				mstore(0x00, 0xdd914b28) // InvalidModule()
+				revert(0x1c, 0x04)
+			}
+
+			if iszero(and(packedTypes, shl(moduleType, 0x01))) {
+				mstore(0x00, 0x2125deae) // InvalidModuleType()
+				revert(0x1c, 0x04)
+			}
+
 			let ptr := mload(0x40)
 
 			mstore(ptr, 0xecd0596100000000000000000000000000000000000000000000000000000000) // isModuleType(uint256)
 
 			// prettier-ignore
-			for { let i } lt(i, moduleTypes.length) { i := add(i, 0x01) } {
-				let moduleType := calldataload(add(moduleTypes.offset, shl(0x05, i)))
+			for { moduleType := 0x00 } lt(moduleType, 0x20) { moduleType := add(moduleType, 0x01) } {
+				if and(packedTypes, shl(moduleType, 0x01)) {
+					if or(iszero(moduleType), gt(moduleType, 0x07)) {
+						mstore(0x00, 0x41c38b30) // UnsupportedModuleType(uint256)
+						mstore(0x20, moduleType)
+						revert(0x1c, 0x24)
+					}
 
-				if or(iszero(moduleType), gt(moduleType, 0x07)) {
-					mstore(0x00, 0x41c38b30) // UnsupportedModuleType(uint256)
-					mstore(0x20, moduleType)
-					revert(0x1c, 0x24)
+					mstore(add(ptr, 0x04), moduleType)
+
+					if iszero(staticcall(gas(), module, ptr, 0x24, 0x00, 0x20)) {
+						returndatacopy(ptr, 0x00, returndatasize())
+						revert(ptr, returndatasize())
+					}
+
+					if iszero(mload(0x00)) {
+						mstore(0x00, 0x2125deae) // InvalidModuleType()
+						revert(0x1c, 0x04)
+					}
 				}
-
-				mstore(add(ptr, 0x04), moduleType)
-
-				if iszero(staticcall(gas(), module, ptr, 0x24, 0x00, 0x20)) {
-					returndatacopy(ptr, 0x00, returndatasize())
-					revert(ptr, returndatasize())
-				}
-
-				result := mload(0x00)
-				if iszero(result) { break }
 			}
 		}
 	}
@@ -620,5 +584,7 @@ abstract contract ModuleManager is AccessControl, RegistryAdapter {
 		selectors[5] = 0xa71763a8; // uninstallModule(uint256,address,bytes)
 		selectors[6] = 0xd691c964; // executeFromExecutor(bytes32,bytes)
 		selectors[7] = 0xe9ae5c53; // execute(bytes32,bytes)
+		// selectors[7] = 0x173bf7da; // postCheck(bytes)
+		// selectors[7] = 0xd68f6025; // preCheck(address,uint256,bytes)
 	}
 }
