@@ -6,7 +6,9 @@ import {IStakingAdapter} from "../IStakingAdapter.sol";
 interface IMetaFactory is IStakingAdapter {
 	function createAccount(bytes calldata data) external payable returns (address payable account);
 
-	function setWhitelist(address factory, bool approval) external;
+	function authorize(address factory) external;
 
-	function isWhitelisted(address factory) external view returns (bool);
+	function revoke(address factory) external;
+
+	function isAuthorized(address factory) external view returns (bool);
 }
