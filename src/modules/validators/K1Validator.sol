@@ -1,35 +1,41 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {IK1Validator} from "src/interfaces/modules/IK1Validator.sol";
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
-import {SignatureCheckerLib} from "solady/utils/SignatureCheckerLib.sol";
-import {BytesLib} from "src/libraries/BytesLib.sol";
 import {EnumerableSet4337} from "src/libraries/EnumerableSet4337.sol";
-import {ValidationData} from "src/types/Types.sol";
-import {ERC1271} from "src/utils/ERC1271.sol";
-import {HybridValidatorBase} from "src/modules/base/HybridValidatorBase.sol";
+import {BytesLib} from "src/libraries/BytesLib.sol";
+import {ModuleType, ValidationData} from "src/types/Types.sol";
+import {ERC7739Validator} from "src/modules/base/ERC7739Validator.sol";
 
 /// @title K1Validator
 /// @notice Verifies user operation signatures for smart accounts
 /// @dev Modified from https://github.com/erc7579/erc7739Validator/blob/main/src/SampleK1ValidatorWithERC7739.sol
 
-contract K1Validator is IK1Validator, HybridValidatorBase, ERC1271 {
+contract K1Validator is ERC7739Validator {
 	using BytesLib for bytes;
 	using EnumerableSet4337 for EnumerableSet4337.AddressSet;
-	using SignatureCheckerLib for address;
-	using SignatureCheckerLib for bytes32;
 
-	/// @dev keccak256(abi.encode(uint256(keccak256("eip7579.module.accountOwners")) - 1)) & ~bytes32(uint256(0xff))
+	error InvalidSafeSender();
+	error SafeSenderAlreadyExists(address sender);
+	error SafeSenderNotExists(address sender);
+
+	event SafeSenderAdded(address indexed account, address indexed sender);
+	event SafeSenderRemoved(address indexed account, address indexed sender);
+
+	/// @dev keccak256("AccountOwnerUpdated(address,address)")
+	bytes32 private constant ACCOUNT_OWNER_UPDATED_TOPIC =
+		0xd85ce777a3f61727a3501a1f3adbbfc9927b5c64326149ba64310037f50bf519;
+
+	/// @dev keccak256(abi.encode(uint256(keccak256("eip7579.validator.accountOwners")) - 1)) & ~bytes32(uint256(0xff))
 	bytes32 internal constant ACCOUNT_OWNERS_STORAGE_SLOT =
-		0x0bbe1ebe3453361add0e00d1239aa291b315d54a2a4ce1b8c20d3c415bb3e300;
+		0x73f50bba1b2b0fd39f326a5de0b3922b4fad09d862eedad31aff9d520dc29a00;
 
 	EnumerableSet4337.AddressSet private _safeSenders;
 
 	function onInstall(bytes calldata data) external payable {
 		require(!_isInitialized(msg.sender), AlreadyInitialized(msg.sender));
-		_setAccountOwner(_checkAccountOwner(data.toAddress(0)));
-		if (data.length > 96) _fillSafeSenders(data.toAddressArray(1));
+		_setAccountOwner(_checkAccountOwner(data.toAddress()));
+		if (data.length > 20) _fillSafeSenders(data[20:]);
 	}
 
 	function onUninstall(bytes calldata) external payable {
@@ -58,7 +64,8 @@ contract K1Validator is IK1Validator, HybridValidatorBase, ERC1271 {
 
 	function removeSafeSender(address sender) external {
 		require(_isInitialized(msg.sender), NotInitialized(msg.sender));
-		require(_safeSenders.remove(msg.sender, sender), SenderNotExists(sender));
+		require(_safeSenders.remove(msg.sender, sender), SafeSenderNotExists(sender));
+		emit SafeSenderRemoved(msg.sender, sender);
 	}
 
 	function getSafeSenders(address account) external view returns (address[] memory senders) {
@@ -67,6 +74,14 @@ contract K1Validator is IK1Validator, HybridValidatorBase, ERC1271 {
 
 	function isSafeSender(address account, address sender) public view returns (bool) {
 		return _safeSenders.contains(account, sender);
+	}
+
+	function isValidSignatureWithSender(
+		address sender,
+		bytes32 hash,
+		bytes calldata signature
+	) external view returns (bytes4 magicValue) {
+		return _erc1271IsValidSignatureWithSender(sender, hash, _erc1271UnwrapSignature(signature));
 	}
 
 	function validateUserOp(
@@ -78,14 +93,6 @@ contract K1Validator is IK1Validator, HybridValidatorBase, ERC1271 {
 		assembly ("memory-safe") {
 			validation := iszero(isValid)
 		}
-	}
-
-	function isValidSignatureWithSender(
-		address sender,
-		bytes32 hash,
-		bytes calldata signature
-	) external view returns (bytes4 magicValue) {
-		return _erc1271IsValidSignatureWithSender(sender, hash, _erc1271UnwrapSignature(signature));
 	}
 
 	function validateSignatureWithData(
@@ -104,6 +111,10 @@ contract K1Validator is IK1Validator, HybridValidatorBase, ERC1271 {
 		return "1.0.0";
 	}
 
+	function isModuleType(ModuleType moduleTypeId) external pure returns (bool) {
+		return moduleTypeId == TYPE_VALIDATOR || moduleTypeId == TYPE_STATELESS_VALIDATOR;
+	}
+
 	function _isInitialized(address account) internal view returns (bool) {
 		return _getAccountOwner(account) != address(0);
 	}
@@ -116,40 +127,34 @@ contract K1Validator is IK1Validator, HybridValidatorBase, ERC1271 {
 	}
 
 	function _erc1271CallerIsSafe(address sender) internal view virtual override returns (bool) {
-		return super._erc1271CallerIsSafe(sender) || _safeSenders.contains(msg.sender, sender);
+		return super._erc1271CallerIsSafe(sender) || isSafeSender(msg.sender, sender);
 	}
 
-	function _validateSignatureForOwner(
-		address owner,
-		bytes32 hash,
-		bytes calldata signature
-	) internal view virtual returns (bool) {
-		return
-			owner.isValidSignatureNowCalldata(hash, signature) ||
-			owner.isValidSignatureNowCalldata(hash.toEthSignedMessageHash(), signature);
-	}
+	function _fillSafeSenders(bytes calldata data) internal virtual {
+		unchecked {
+			uint256 offset;
+			uint256 length = data.length;
+			require(length % 20 == 0, InvalidDataLength());
 
-	function _fillSafeSenders(address[] calldata senders) internal virtual {
-		uint256 length = senders.length;
-		for (uint256 i; i < length; ) {
-			_addSafeSender(senders[i]);
-
-			unchecked {
-				i = i + 1;
+			while (true) {
+				_addSafeSender(bytes(data[offset:]).toAddress());
+				if ((offset += 20) == length) break;
 			}
 		}
 	}
 
 	function _addSafeSender(address sender) internal virtual {
-		require(sender != address(0), InvalidSender());
-		require(_safeSenders.add(msg.sender, sender), SenderAlreadyExists(sender));
+		require(sender != address(0), InvalidSafeSender());
+		require(_safeSenders.add(msg.sender, sender), SafeSenderAlreadyExists(sender));
+		emit SafeSenderAdded(msg.sender, sender);
 	}
 
-	function _setAccountOwner(address owner) internal virtual {
+	function _setAccountOwner(address newOwner) internal virtual {
 		assembly ("memory-safe") {
 			mstore(0x00, shr(0x60, shl(0x60, caller())))
 			mstore(0x20, ACCOUNT_OWNERS_STORAGE_SLOT)
-			sstore(keccak256(0x00, 0x40), owner)
+			sstore(keccak256(0x00, 0x40), newOwner)
+			log3(0x00, 0x00, ACCOUNT_OWNER_UPDATED_TOPIC, caller(), newOwner)
 		}
 	}
 
@@ -161,15 +166,15 @@ contract K1Validator is IK1Validator, HybridValidatorBase, ERC1271 {
 		}
 	}
 
-	function _checkAccountOwner(address owner) internal view virtual returns (address) {
+	function _checkAccountOwner(address newOwner) internal view virtual returns (address) {
 		assembly ("memory-safe") {
-			owner := shr(0x60, shl(0x60, owner))
-			if or(iszero(owner), iszero(iszero(extcodesize(owner)))) {
+			newOwner := shr(0x60, shl(0x60, newOwner))
+			if or(iszero(newOwner), iszero(iszero(extcodesize(newOwner)))) {
 				mstore(0x00, 0x36b1fa3a) // InvalidAccountOwner()
 				revert(0x1c, 0x04)
 			}
 		}
 
-		return owner;
+		return newOwner;
 	}
 }
