@@ -7,7 +7,9 @@ type ModuleType is uint256;
 
 type PackedModuleTypes is uint32;
 
+using ModuleTypeLib for ModuleType global;
 using ModuleTypeLib for PackedModuleTypes global;
+
 using { eqModuleType as ==, neqModuleType as !=  } for ModuleType global;
 using { eqPackedModuleTypes as ==, neqPackedModuleTypes as !=  } for PackedModuleTypes global;
 
@@ -39,17 +41,17 @@ function neqPackedModuleTypes(PackedModuleTypes x, PackedModuleTypes y) pure ret
 /// @notice Provides functions for handling module type and packed module types
 
 library ModuleTypeLib {
-	function isType(PackedModuleTypes packedTypes, ModuleType moduleType) internal pure returns (bool res) {
+	function isType(PackedModuleTypes packedTypes, ModuleType moduleType) internal pure returns (bool result) {
 		assembly ("memory-safe") {
-			res := and(packedTypes, shl(moduleType, 0x01))
+			result := and(packedTypes, shl(moduleType, 0x01))
 		}
 	}
 
 	function numberOfTypes(PackedModuleTypes packedTypes) internal pure returns (uint256 count) {
 		assembly ("memory-safe") {
 			// prettier-ignore
-			for { let i } lt(i, 0x20) { i := add(i, 0x01) } {
-				if and(packedTypes, shl(i, 0x01)) {
+			for { let moduleType } lt(moduleType, 0x20) { moduleType := add(moduleType, 0x01) } {
+				if and(packedTypes, shl(moduleType, 0x01)) {
 					count := add(count, 0x01)
 				}
 			}
@@ -57,23 +59,21 @@ library ModuleTypeLib {
 	}
 
 	function decode(PackedModuleTypes packedTypes) internal pure returns (ModuleType[] memory moduleTypes) {
-		// prettier-ignore
 		assembly ("memory-safe") {
 			moduleTypes := mload(0x40)
-			mstore(moduleTypes, 0x07)
+			let offset := add(moduleTypes, 0x20)
+			let length
 
-			let ptr := add(moduleTypes, 0x20)
-			let offset
-
-			for { let i } lt(i, 0x20) { i := add(i, 0x01) } {
-				if and(packedTypes, shl(i, 0x01)) {
-					mstore(add(ptr, mul(offset, 0x20)), i)
-					offset := add(offset, 0x01)
+			// prettier-ignore
+			for { let moduleType } lt(moduleType, 0x20) { moduleType := add(moduleType, 0x01) } {
+				if and(packedTypes, shl(moduleType, 0x01)) {
+					mstore(add(offset, shl(0x05, length)), moduleType)
+					length := add(length, 0x01)
 				}
 			}
 
-			mstore(moduleTypes, offset)
-			mstore(0x40, add(moduleTypes, mul(add(offset, 0x01), 0x20)))
+			mstore(moduleTypes, length)
+			mstore(0x40, add(moduleTypes, shl(0x05, add(length, 0x01))))
 		}
 	}
 
@@ -86,9 +86,8 @@ library ModuleTypeLib {
 			for { } 0x01 { } {
 				let moduleType := mload(offset)
 				if or(gt(moduleType, 0x1f), and(packedTypes, shl(moduleType, 0x01))) {
-					mstore(0x00, 0x098312d2) // InvalidModuleTypeId(uint256)
-					mstore(0x20, moduleType)
-					revert(0x1c, 0x24)
+					mstore(0x00, 0x2125deae) // InvalidModuleType()
+					revert(0x1c, 0x04)
 				}
 
 				packedTypes := or(packedTypes, shl(moduleType, 0x01))
@@ -96,5 +95,10 @@ library ModuleTypeLib {
 				if iszero(lt(offset, guard)) { break }
 			}
 		}
+	}
+
+	function arrayify(ModuleType moduleTypeId) internal pure returns (ModuleType[] memory moduleTypeIds) {
+		moduleTypeIds = new ModuleType[](1);
+		moduleTypeIds[0] = moduleTypeId;
 	}
 }

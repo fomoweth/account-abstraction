@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {CallType, ExecType, ModeSelector, ModePayload} from "./ExecutionMode.sol";
 import {ModuleType, PackedModuleTypes} from "./ModuleType.sol";
 import {ValidationData} from "./ValidationData.sol";
+import {ValidationMode} from "./ValidationMode.sol";
 
 CallType constant CALLTYPE_SINGLE = CallType.wrap(0x00);
 CallType constant CALLTYPE_BATCH = CallType.wrap(0x01);
@@ -27,3 +28,6 @@ ModuleType constant MODULE_TYPE_STATELESS_VALIDATOR = ModuleType.wrap(0x07);
 
 ValidationData constant VALIDATION_SUCCESS = ValidationData.wrap(0x00);
 ValidationData constant VALIDATION_FAILED = ValidationData.wrap(0x01);
+
+ValidationMode constant VALIDATION_MODE_DEFAULT = ValidationMode.wrap(0x00);
+ValidationMode constant VALIDATION_MODE_ENABLE = ValidationMode.wrap(0x01);
