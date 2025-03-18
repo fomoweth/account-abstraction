@@ -19,11 +19,14 @@ contract MockValidator is ERC7739Validator {
 
 	function onInstall(bytes calldata data) external payable {
 		require(!_isInitialized(msg.sender), AlreadyInitialized(msg.sender));
+		require(data.length == 20, InvalidDataLength());
+
 		_setAccountOwner(_checkAccountOwner(data.toAddress()));
 	}
 
 	function onUninstall(bytes calldata) external payable {
 		require(_isInitialized(msg.sender), NotInitialized(msg.sender));
+
 		_setAccountOwner(address(0));
 	}
 
@@ -33,6 +36,7 @@ contract MockValidator is ERC7739Validator {
 
 	function transferOwnership(address owner) external {
 		require(_isInitialized(msg.sender), NotInitialized(msg.sender));
+
 		_setAccountOwner(_checkAccountOwner(owner));
 	}
 
@@ -69,6 +73,7 @@ contract MockValidator is ERC7739Validator {
 		bytes calldata data
 	) external view returns (bool) {
 		require(data.length == 20, InvalidDataLength());
+
 		return _validateSignatureForOwner(data.toAddress(), hash, signature);
 	}
 
@@ -99,6 +104,7 @@ contract MockValidator is ERC7739Validator {
 		assembly ("memory-safe") {
 			mstore(0x00, shr(0x60, shl(0x60, caller())))
 			mstore(0x20, ACCOUNT_OWNERS_STORAGE_SLOT)
+
 			sstore(keccak256(0x00, 0x40), newOwner)
 			log3(0x00, 0x00, ACCOUNT_OWNER_UPDATED_TOPIC, caller(), newOwner)
 		}
@@ -108,6 +114,7 @@ contract MockValidator is ERC7739Validator {
 		assembly ("memory-safe") {
 			mstore(0x00, shr(0x60, shl(0x60, account)))
 			mstore(0x20, ACCOUNT_OWNERS_STORAGE_SLOT)
+
 			owner := sload(keccak256(0x00, 0x40))
 		}
 	}
@@ -115,6 +122,7 @@ contract MockValidator is ERC7739Validator {
 	function _checkAccountOwner(address newOwner) internal view virtual returns (address) {
 		assembly ("memory-safe") {
 			newOwner := shr(0x60, shl(0x60, newOwner))
+
 			if or(iszero(newOwner), iszero(iszero(extcodesize(newOwner)))) {
 				mstore(0x00, 0x36b1fa3a) // InvalidAccountOwner()
 				revert(0x1c, 0x04)
