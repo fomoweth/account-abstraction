@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import {VALIDATION_MODE_DEFAULT, VALIDATION_MODE_ENABLE} from "./Constants.sol";
+
 type ValidationMode is bytes1;
 
 using ValidationModeLib for ValidationMode global;

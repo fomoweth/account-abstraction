@@ -23,19 +23,14 @@ abstract contract EIP712 {
 		_cachedThis = uint256(uint160(address(this)));
 		_cachedChainId = block.chainid;
 		_cachedDomainSeparator = _buildDomainSeparator(
-			(_cachedNameHash = _hash(bytes(name))),
-			(_cachedVersionHash = _hash(bytes(version)))
+			(_cachedNameHash = _hash(name)),
+			(_cachedVersionHash = _hash(version))
 		);
 	}
 
-	function DOMAIN_SEPARATOR() external view returns (bytes32) {
-		return _domainSeparator();
-	}
-
 	function eip712Domain()
-		public
+		external
 		view
-		virtual
 		returns (
 			bytes1 fields,
 			string memory name,
@@ -48,7 +43,7 @@ abstract contract EIP712 {
 	{
 		(name, version) = _domainNameAndVersion();
 		assembly ("memory-safe") {
-			fields := 0x0f
+			fields := shl(0xf8, 0x0f)
 			chainId := chainid()
 			verifyingContract := address()
 			pop(salt)
@@ -56,7 +51,19 @@ abstract contract EIP712 {
 		}
 	}
 
-	function hashTypedData(bytes32 structHash) public view virtual returns (bytes32 digest) {
+	function DOMAIN_SEPARATOR() external view returns (bytes32) {
+		return _domainSeparator();
+	}
+
+	function hashTypedData(bytes32 structHash) external view returns (bytes32 digest) {
+		return _hashTypedData(structHash);
+	}
+
+	function hashTypedDataSansChainId(bytes32 structHash) external view returns (bytes32 digest) {
+		return _hashTypedDataSansChainId(structHash);
+	}
+
+	function _hashTypedData(bytes32 structHash) internal view virtual returns (bytes32 digest) {
 		digest = _domainSeparator();
 		assembly ("memory-safe") {
 			mstore(0x00, 0x1901000000000000)
@@ -67,7 +74,7 @@ abstract contract EIP712 {
 		}
 	}
 
-	function hashTypedDataSansChainId(bytes32 structHash) public view virtual returns (bytes32 digest) {
+	function _hashTypedDataSansChainId(bytes32 structHash) internal view virtual returns (bytes32 digest) {
 		(string memory name, string memory version) = _domainNameAndVersion();
 		assembly ("memory-safe") {
 			let ptr := mload(0x40)
@@ -88,7 +95,7 @@ abstract contract EIP712 {
 		if (!_cachedDomainSeparatorInvalidated()) return _cachedDomainSeparator;
 
 		(string memory name, string memory version) = _domainNameAndVersion();
-		return _buildDomainSeparator(_hash(bytes(name)), _hash(bytes(version)));
+		return _buildDomainSeparator(_hash(name), _hash(version));
 	}
 
 	function _domainNameAndVersion() internal view virtual returns (string memory name, string memory version);
@@ -108,14 +115,15 @@ abstract contract EIP712 {
 	function _cachedDomainSeparatorInvalidated() private view returns (bool result) {
 		uint256 cachedChainId = _cachedChainId;
 		uint256 cachedThis = _cachedThis;
+
 		assembly ("memory-safe") {
 			result := or(xor(chainid(), cachedChainId), xor(address(), cachedThis))
 		}
 	}
 
-	function _hash(bytes memory data) internal pure virtual returns (bytes32 digest) {
+	function _hash(string memory value) private pure returns (bytes32 digest) {
 		assembly ("memory-safe") {
-			digest := keccak256(add(data, 0x20), mload(data))
+			digest := keccak256(add(value, 0x20), mload(value))
 		}
 	}
 }
