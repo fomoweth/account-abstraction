@@ -1,275 +1,209 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {Vm, VmSafe} from "forge-std/Vm.sol";
+import {Vm} from "forge-std/Vm.sol";
+
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 import {IEntryPoint} from "account-abstraction/interfaces/IEntryPoint.sol";
-import {IPaymaster} from "account-abstraction/interfaces/IPaymaster.sol";
-import {ECDSA} from "solady/utils/ECDSA.sol";
-import {ExecutionModeLib, ExecutionMode, CallType, ExecType} from "src/types/ExecutionMode.sol";
-import {ModuleType} from "src/types/ModuleType.sol";
+import {IModule} from "src/interfaces/IERC7579Modules.sol";
+import {ExecutionLib, Execution} from "src/libraries/ExecutionLib.sol";
+import {SignatureChecker} from "src/libraries/SignatureChecker.sol";
+import {VALIDATION_MODE_DEFAULT, VALIDATION_MODE_ENABLE} from "src/types/Constants.sol";
+import {ExecType, ModuleType, ValidationMode} from "src/types/Types.sol";
 import {Vortex} from "src/Vortex.sol";
 
-import {ExecutionUtils, Execution} from "test/shared/utils/ExecutionUtils.sol";
-import {UserOpUtils} from "test/shared/utils/UserOpUtils.sol";
+import {ExecutionUtils} from "test/shared/utils/ExecutionUtils.sol";
 
 using SignerHelper for Signer global;
 
 struct Signer {
-	Vortex account;
-	bytes10 keyword;
 	address payable eoa;
+	bytes10 keyword;
+	Vortex account;
 	uint256 publicKeyX;
 	uint256 publicKeyY;
 	uint256 privateKey;
 }
 
 library SignerHelper {
-	using ECDSA for bytes32;
 	using ExecutionUtils for ExecType;
-	using UserOpUtils for Vortex;
+	using SignatureChecker for bytes32;
+
+	event ModuleInstalled(ModuleType indexed moduleTypeId, address indexed module);
+	event ModuleUninstalled(ModuleType indexed moduleTypeId, address indexed module);
 
 	Vm internal constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
 
-	/// keccak256(bytes("ModuleEnableMode(address module,uint256 moduleType,bytes32 userOpHash,bytes32 initDataHash)"));
-	bytes32 internal constant MODULE_ENABLE_MODE_TYPE_HASH =
-		0xbe844ccefa05559a48680cb7fe805b2ec58df122784191aed18f9f315c763e1b;
-
-	/// UserOperationEvent(bytes32,address,address,uint256,bool,uint256,uint256)
-	bytes32 internal constant USER_OPERATION_EVENT_TOPIC =
-		0x49628fd1471006c1482da88028e9ce4dbb080b815c9b0344d39e5a8e6ec1419f;
-
-	// UserOperationRevertReason(bytes32,address,uint256,bytes)
-	bytes32 internal constant USER_OPERATION_REVERT_REASON_TOPIC =
-		0x1c4fada7374c0a9ee8841fc38afe82932dc0f8e69012e927f061a8bae611a201;
-
 	IEntryPoint internal constant ENTRYPOINT = IEntryPoint(0x0000000071727De22E5E9d8BAf0edAc6f37da032);
 
-	bytes1 internal constant VALIDATION_DEFAULT = 0x00;
-	bytes1 internal constant VALIDATION_ENABLE = 0x01;
-
-	function execute(
-		Signer memory signer,
-		ExecType execType,
-		Execution[] memory executions
-	) internal returns (bytes32 userOpHash, VmSafe.Log[] memory logs) {
-		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
-		userOps[0] = signer.account.buildUserOp(
-			execType.encodeExecutionCalldata(executions, false),
-			signer.account.rootValidator()
-		);
-
-		userOpHash = ENTRYPOINT.getUserOpHash(userOps[0]);
-		userOps[0].signature = signer.sign(userOpHash);
-
-		vm.recordLogs();
-
-		ENTRYPOINT.handleOps(userOps, signer.eoa);
-
-		logs = vm.getRecordedLogs();
-	}
-
-	function execute(
-		Signer memory signer,
-		ExecType execType,
-		Execution memory execution
-	) internal returns (bytes32 userOpHash, VmSafe.Log[] memory logs) {
-		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
-		userOps[0] = signer.account.buildUserOp(
-			execType.encodeExecutionCalldata(execution, false),
-			signer.account.rootValidator()
-		);
-
-		userOpHash = ENTRYPOINT.getUserOpHash(userOps[0]);
-		userOps[0].signature = signer.sign(userOpHash);
-
-		vm.recordLogs();
-
-		ENTRYPOINT.handleOps(userOps, signer.eoa);
-
-		logs = vm.getRecordedLogs();
-	}
-
 	function execute(
 		Signer memory signer,
 		ExecType execType,
 		address target,
 		uint256 value,
 		bytes memory callData
-	) internal returns (bytes32 userOpHash, VmSafe.Log[] memory logs) {
-		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
-		userOps[0] = signer.account.buildUserOp(
-			execType.encodeExecutionCalldata(target, value, callData, false),
-			signer.account.rootValidator()
-		);
-
-		userOpHash = ENTRYPOINT.getUserOpHash(userOps[0]);
-		userOps[0].signature = signer.sign(userOpHash);
-
-		vm.recordLogs();
-
-		ENTRYPOINT.handleOps(userOps, signer.eoa);
-
-		logs = vm.getRecordedLogs();
+	) internal returns (PackedUserOperation[] memory userOps, bytes32 userOpHash) {
+		return signer.execute(execType.encodeExecutionCalldata(target, value, callData));
 	}
 
-	function executeFromExecutor(
-		Signer memory signer,
-		ExecType execType,
-		Execution[] memory executions
-	) internal returns (bytes32 userOpHash, VmSafe.Log[] memory logs) {
-		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
-		userOps[0] = signer.account.buildUserOp(
-			execType.encodeExecutionCalldata(executions, true),
-			signer.account.rootValidator()
-		);
-
-		userOpHash = ENTRYPOINT.getUserOpHash(userOps[0]);
-		userOps[0].signature = signer.sign(userOpHash);
-
-		vm.recordLogs();
-
-		ENTRYPOINT.handleOps(userOps, signer.eoa);
-
-		logs = vm.getRecordedLogs();
-	}
-
-	function executeFromExecutor(
+	function execute(
 		Signer memory signer,
 		ExecType execType,
 		Execution memory execution
-	) internal returns (bytes32 userOpHash, VmSafe.Log[] memory logs) {
-		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
-		userOps[0] = signer.account.buildUserOp(
-			execType.encodeExecutionCalldata(execution, true),
-			signer.account.rootValidator()
-		);
-
-		userOpHash = ENTRYPOINT.getUserOpHash(userOps[0]);
-		userOps[0].signature = signer.sign(userOpHash);
-
-		vm.recordLogs();
-
-		ENTRYPOINT.handleOps(userOps, signer.eoa);
-
-		logs = vm.getRecordedLogs();
+	) internal returns (PackedUserOperation[] memory userOps, bytes32 userOpHash) {
+		return signer.execute(execType.encodeExecutionCalldata(execution.target, execution.value, execution.callData));
 	}
 
-	function executeFromExecutor(
+	function execute(
+		Signer memory signer,
+		ExecType execType,
+		Execution[] memory executions
+	) internal returns (PackedUserOperation[] memory userOps, bytes32 userOpHash) {
+		return signer.execute(execType.encodeExecutionCalldata(executions));
+	}
+
+	function execute(
 		Signer memory signer,
 		ExecType execType,
 		address target,
-		uint256 value,
 		bytes memory callData
-	) internal returns (bytes32 userOpHash, VmSafe.Log[] memory logs) {
-		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
-		userOps[0] = signer.account.buildUserOp(
-			execType.encodeExecutionCalldata(target, value, callData, true),
-			signer.account.rootValidator()
-		);
-
-		userOpHash = ENTRYPOINT.getUserOpHash(userOps[0]);
-		userOps[0].signature = signer.sign(userOpHash);
-
-		vm.recordLogs();
-
-		ENTRYPOINT.handleOps(userOps, signer.eoa);
-
-		logs = vm.getRecordedLogs();
+	) internal returns (PackedUserOperation[] memory userOps, bytes32 userOpHash) {
+		return signer.execute(execType.encodeExecutionCalldata(target, callData));
 	}
 
-	function installModule(
+	function execute(
 		Signer memory signer,
-		ModuleType moduleTypeId,
-		address module,
-		bytes memory data
-	) internal returns (bytes32 userOpHash, VmSafe.Log[] memory logs) {
+		bytes memory executionCalldata
+	) internal returns (PackedUserOperation[] memory userOps, bytes32 userOpHash) {
+		userOps = new PackedUserOperation[](1);
+		(userOps[0], userOpHash) = signer.prepareUserOp(executionCalldata);
+
+		ENTRYPOINT.handleOps(userOps, signer.eoa);
+	}
+
+	function install(Signer memory signer, ModuleType moduleTypeId, address module, bytes memory data) internal {
 		bytes memory callData = abi.encodeCall(Vortex.installModule, (moduleTypeId, module, data));
 
 		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
-		userOps[0] = signer.account.buildUserOp(callData, signer.account.rootValidator());
+		(userOps[0], ) = signer.prepareUserOp(callData, signer.account.rootValidator());
 
-		userOpHash = ENTRYPOINT.getUserOpHash(userOps[0]);
-		userOps[0].signature = signer.sign(userOpHash);
-
-		vm.recordLogs();
+		vm.expectEmit(true, true, true, true);
+		emit ModuleInstalled(moduleTypeId, module);
 
 		ENTRYPOINT.handleOps(userOps, signer.eoa);
 
-		logs = vm.getRecordedLogs();
+		vm.assertTrue(IModule(module).isInitialized(address(signer.account)));
 	}
 
-	function uninstallModule(
-		Signer memory signer,
-		ModuleType moduleTypeId,
-		address module,
-		bytes memory data
-	) internal returns (bytes32 userOpHash, VmSafe.Log[] memory logs) {
+	function uninstall(Signer memory signer, ModuleType moduleTypeId, address module, bytes memory data) internal {
 		bytes memory callData = abi.encodeCall(Vortex.uninstallModule, (moduleTypeId, module, data));
 
 		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
-		userOps[0] = signer.account.buildUserOp(callData, signer.account.rootValidator());
+		(userOps[0], ) = signer.prepareUserOp(callData, signer.account.rootValidator());
 
-		userOpHash = ENTRYPOINT.getUserOpHash(userOps[0]);
-		userOps[0].signature = signer.sign(userOpHash);
-
-		vm.recordLogs();
+		vm.expectEmit(true, true, true, true);
+		emit ModuleUninstalled(moduleTypeId, module);
 
 		ENTRYPOINT.handleOps(userOps, signer.eoa);
 
-		logs = vm.getRecordedLogs();
+		vm.assertFalse(IModule(module).isInitialized(address(signer.account)));
 	}
 
-	function enableModule(
+	function prepareUserOp(
 		Signer memory signer,
-		ModuleType moduleTypeId,
-		address module,
-		bytes memory data,
+		address payable account,
+		bytes memory initCode,
+		address validator
+	) internal view returns (PackedUserOperation memory userOp, bytes32 userOpHash) {
+		userOp = defaultUserOp(account, VALIDATION_MODE_DEFAULT, validator);
+		userOp.initCode = initCode;
+		(userOpHash, userOp.signature) = signer.signUserOp(userOp);
+	}
+
+	function prepareUserOp(
+		Signer memory signer,
 		bytes memory callData
-	) internal returns (bytes32 userOpHash, VmSafe.Log[] memory logs) {
-		address validator = signer.account.rootValidator();
+	) internal view returns (PackedUserOperation memory userOp, bytes32 userOpHash) {
+		return signer.prepareUserOp(callData, signer.account.rootValidator());
+	}
 
-		PackedUserOperation memory userOp = signer.account.buildUserOp(callData, validator, VALIDATION_ENABLE);
-		userOpHash = ENTRYPOINT.getUserOpHash(userOp);
-		userOp.signature = signer.sign(userOpHash);
+	function prepareUserOp(
+		Signer memory signer,
+		bytes memory callData,
+		address validator
+	) internal view returns (PackedUserOperation memory userOp, bytes32 userOpHash) {
+		return signer.prepareUserOp(callData, validator, VALIDATION_MODE_DEFAULT);
+	}
 
-		bytes32 structHash = keccak256(
-			abi.encode(MODULE_ENABLE_MODE_TYPE_HASH, module, moduleTypeId, userOpHash, keccak256(data))
-		);
-		bytes32 messageHash = signer.account.hashTypedData(structHash);
-		bytes memory enableModeSignature = abi.encodePacked(validator, signer.sign(messageHash));
+	function prepareUserOp(
+		Signer memory signer,
+		bytes memory callData,
+		address validator,
+		ValidationMode mode
+	) internal view returns (PackedUserOperation memory userOp, bytes32 userOpHash) {
+		userOp = defaultUserOp(address(signer.account), mode, validator);
+		userOp.callData = callData;
+		(userOpHash, userOp.signature) = signer.signUserOp(userOp);
+	}
 
-		bytes memory enableModeData = abi.encodePacked(
-			module,
-			moduleTypeId,
-			bytes4(uint32(data.length)),
-			data,
-			bytes4(uint32(enableModeSignature.length)),
-			enableModeSignature
-		);
-		userOp.signature = abi.encodePacked(enableModeData, userOp.signature);
+	function prepareUserOp(
+		Signer memory signer,
+		bytes memory initCode,
+		bytes memory callData,
+		bytes memory paymasterAndData
+	) internal view returns (PackedUserOperation memory userOp, bytes32 userOpHash) {
+		return signer.prepareUserOp(initCode, callData, paymasterAndData, signer.account.rootValidator());
+	}
 
-		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
-		userOps[0] = userOp;
+	function prepareUserOp(
+		Signer memory signer,
+		bytes memory initCode,
+		bytes memory callData,
+		bytes memory paymasterAndData,
+		address validator
+	) internal view returns (PackedUserOperation memory userOp, bytes32 userOpHash) {
+		return signer.prepareUserOp(initCode, callData, paymasterAndData, validator, VALIDATION_MODE_DEFAULT);
+	}
 
-		vm.recordLogs();
+	function prepareUserOp(
+		Signer memory signer,
+		bytes memory initCode,
+		bytes memory callData,
+		bytes memory paymasterAndData,
+		address validator,
+		ValidationMode mode
+	) internal view returns (PackedUserOperation memory userOp, bytes32 userOpHash) {
+		userOp = defaultUserOp(address(signer.account), mode, validator);
+		userOp.initCode = initCode;
+		userOp.callData = callData;
+		userOp.paymasterAndData = paymasterAndData;
+		(userOpHash, userOp.signature) = signer.signUserOp(userOp);
+	}
 
-		ENTRYPOINT.handleOps(userOps, signer.eoa);
+	function signUserOp(
+		Signer memory signer,
+		PackedUserOperation memory userOp
+	) internal view returns (bytes32 userOpHash, bytes memory signature) {
+		signature = signer.sign((userOpHash = ENTRYPOINT.getUserOpHash(userOp)));
+	}
 
-		logs = vm.getRecordedLogs();
+	function sign(Signer memory signer, bytes32 messageHash) internal pure returns (bytes memory signature) {
+		(uint8 v, bytes32 r, bytes32 s) = vm.sign(signer.privateKey, messageHash.toEthSignedMessageHash());
+		signature = abi.encodePacked(r, s, v);
 	}
 
 	function addDeposit(Signer memory signer, uint256 value, address beneficiary) internal {
-		vm.assume(value != 0);
+		vm.assertTrue(value != 0);
 		vm.prank(signer.eoa);
 
+		uint256 deposit = ENTRYPOINT.balanceOf(beneficiary);
 		ENTRYPOINT.depositTo{value: value}(beneficiary);
 
-		vm.assertGe(ENTRYPOINT.balanceOf(signer.eoa), value);
+		vm.assertEq(ENTRYPOINT.balanceOf(beneficiary), deposit + value);
 	}
 
 	function addStake(Signer memory signer, uint256 value, uint32 unstakeDelaySec) internal {
-		vm.assume(value != 0 && unstakeDelaySec != 0);
+		vm.assertTrue(value != 0 && unstakeDelaySec != 0);
 		vm.prank(signer.eoa);
 
 		ENTRYPOINT.addStake{value: value}(unstakeDelaySec);
@@ -280,35 +214,46 @@ library SignerHelper {
 		vm.assertEq(info.unstakeDelaySec, unstakeDelaySec);
 	}
 
-	function signUserOp(
-		Signer memory signer,
-		PackedUserOperation memory userOp
-	) internal view returns (bytes memory signature) {
-		return sign(signer, ENTRYPOINT.getUserOpHash(userOp));
+	// nonce: [1 bytes validation mode][3 bytes unused][20 bytes validator][8 bytes nonce]
+	function getNonce(address account, ValidationMode mode, address validator) internal view returns (uint256 nonce) {
+		vm.assertTrue(mode == VALIDATION_MODE_DEFAULT || mode == VALIDATION_MODE_ENABLE);
+		return ENTRYPOINT.getNonce(account, mode.encodeNonceKey(validator));
 	}
 
-	function sign(Signer memory signer, bytes32 messageHash) internal pure returns (bytes memory signature) {
-		bytes32 digest = messageHash.toEthSignedMessageHash();
-		(uint8 v, bytes32 r, bytes32 s) = vm.sign(signer.privateKey, digest);
-		signature = abi.encodePacked(r, s, v);
+	// bytes32 salt: [2 bytes id][10 bytes keyword][20 bytes owner]
+	function encodeSalt(Signer memory signer, uint16 id) internal pure returns (bytes32 salt) {
+		assembly ("memory-safe") {
+			salt := or(or(shl(0xf0, id), shr(0x10, mload(add(signer, 0x20)))), shr(0x60, shl(0x60, mload(signer))))
+		}
 	}
 
-	function resetNonce(Signer memory signer) internal returns (uint64) {
-		vm.resetNonce(signer.eoa);
-		return vm.getNonce(signer.eoa);
+	function defaultUserOp(
+		address account,
+		ValidationMode mode,
+		address validator
+	) internal view returns (PackedUserOperation memory userOp) {
+		userOp = PackedUserOperation({
+			sender: account,
+			nonce: getNonce(account, mode, validator),
+			initCode: "",
+			callData: "",
+			accountGasLimits: defaultGasLimits(),
+			preVerificationGas: defaultGas(),
+			gasFees: defaultGasFees(),
+			paymasterAndData: "",
+			signature: ""
+		});
 	}
 
-	function setNonce(Signer memory signer, uint64 nonce) internal returns (uint64) {
-		uint64 current = vm.getNonce(signer.eoa);
-		if (nonce == current) return nonce;
-
-		if (nonce > current) vm.setNonce(signer.eoa, nonce);
-		else vm.setNonceUnsafe(signer.eoa, nonce);
-
-		return vm.getNonce(signer.eoa);
+	function defaultGas() internal pure returns (uint128) {
+		return uint128(1e6);
 	}
 
-	function getNonce(Signer memory signer) internal view returns (uint64 nonce) {
-		return vm.getNonce(signer.eoa);
+	function defaultGasLimits() internal pure returns (bytes32) {
+		return bytes32(abi.encodePacked(defaultGas(), defaultGas()));
+	}
+
+	function defaultGasFees() internal pure returns (bytes32) {
+		return bytes32(abi.encodePacked(uint128(1), uint128(1)));
 	}
 }

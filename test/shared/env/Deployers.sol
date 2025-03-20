@@ -1,29 +1,26 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {console2 as console} from "forge-std/Test.sol";
-import {StdUtils} from "forge-std/StdUtils.sol";
-
-import {Configured} from "config/Configured.sol";
+import {Test} from "forge-std/Test.sol";
 
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
-
 import {Arrays} from "src/libraries/Arrays.sol";
 import {BootstrapLib, BootstrapConfig} from "src/libraries/BootstrapLib.sol";
-import {ExecutionLib, Execution} from "src/libraries/ExecutionLib.sol";
-
-import {ExecutionModeLib, ExecutionMode, CallType, ExecType} from "src/types/ExecutionMode.sol";
+import {CallType, ExecType} from "src/types/ExecutionMode.sol";
 import {ModuleTypeLib, ModuleType, PackedModuleTypes} from "src/types/ModuleType.sol";
 
 import {K1Validator} from "src/modules/validators/K1Validator.sol";
+import {Permit2Executor} from "src/modules/executors/Permit2Executor.sol";
+import {UniversalExecutor} from "src/modules/executors/UniversalExecutor.sol";
+import {NativeWrapper} from "src/modules/fallbacks/NativeWrapper.sol";
+import {STETHWrapper} from "src/modules/fallbacks/STETHWrapper.sol";
 
-import {Bootstrap} from "src/Bootstrap.sol";
-
-import {AccountFactory, IAccountFactory} from "src/factories/AccountFactory.sol";
+import {AccountFactory} from "src/factories/AccountFactory.sol";
 import {MetaFactory} from "src/factories/MetaFactory.sol";
 import {RegistryFactory} from "src/factories/RegistryFactory.sol";
 import {VortexFactory} from "src/factories/VortexFactory.sol";
 
+import {Bootstrap} from "src/Bootstrap.sol";
 import {Vortex} from "src/Vortex.sol";
 
 import {MockExecutor} from "test/shared/mocks/MockExecutor.sol";
@@ -31,497 +28,380 @@ import {MockFallback} from "test/shared/mocks/MockFallback.sol";
 import {MockHook} from "test/shared/mocks/MockHook.sol";
 import {MockValidator} from "test/shared/mocks/MockValidator.sol";
 
-import {AttestationUtils, AttestationRequest} from "test/shared/utils/AttestationUtils.sol";
-import {MulticallUtils} from "test/shared/utils/MulticallUtils.sol";
+import {Attester} from "test/shared/structs/Attester.sol";
+import {Signer} from "test/shared/structs/Signer.sol";
 import {SolArray} from "test/shared/utils/SolArray.sol";
 
-import {Common} from "./Common.sol";
-import {User} from "./User.sol";
+import {Constants} from "./Constants.sol";
+import {Fork} from "./Fork.sol";
 
-abstract contract Deployers is Configured, Common, StdUtils {
+abstract contract Deployers is Test, Constants, Fork {
 	using Arrays for address[];
 	using BootstrapLib for address;
 	using BootstrapLib for BootstrapConfig;
 	using ModuleTypeLib for ModuleType[];
-	using SolArray for address;
-	using SolArray for bytes1;
-	using SolArray for bytes4;
-	using SolArray for ModuleType;
+	using SolArray for *;
 
-	error CreateDeploymentFailed();
-	error Create2DeploymentFailed();
+	Vortex internal VORTEX;
+	Bootstrap internal BOOTSTRAP;
 
 	MetaFactory internal META_FACTORY;
 	AccountFactory internal ACCOUNT_FACTORY;
 	RegistryFactory internal REGISTRY_FACTORY;
 	VortexFactory internal VORTEX_FACTORY;
 
-	Bootstrap internal BOOTSTRAP;
-
 	K1Validator internal K1_VALIDATOR;
+	Permit2Executor internal PERMIT2_EXECUTOR;
+	UniversalExecutor internal UNIVERSAL_EXECUTOR;
+	NativeWrapper internal NATIVE_WRAPPER;
+	STETHWrapper internal STETH_WRAPPER;
 
 	MockValidator internal MOCK_VALIDATOR;
 	MockExecutor internal MOCK_EXECUTOR;
 	MockFallback internal MOCK_FALLBACK;
 	MockHook internal MOCK_HOOK;
 
-	Vortex internal ACCOUNT_IMPLEMENTATION;
-	Vortex internal ALICE_ACCOUNT;
-	Vortex internal BOB_ACCOUNT;
-	Vortex internal COOPER_ACCOUNT;
+	Signer internal ADMIN;
+	Signer internal BUNDLER;
 
-	User internal ALICE;
-	User internal BOB;
-	User internal COOPER;
-	User internal MURPHY;
-
-	address payable internal ALICE_ADDRESS;
-	address payable internal BOB_ADDRESS;
-	address payable internal COOPER_ADDRESS;
-	address payable internal MURPHY_ADDRESS;
-
-	User internal DEPLOYER;
-	User internal ADMIN;
-	User internal BUNDLER;
-	User internal BENEFICIARY;
-
-	address payable internal DEPLOYER_ADDRESS;
-	address payable internal ADMIN_ADDRESS;
-	address payable internal BUNDLER_ADDRESS;
-	address payable internal BENEFICIARY_ADDRESS;
-
+	Attester[] internal ATTESTERS;
+	address[] internal ATTESTER_ADDRESSES;
 	uint8 internal THRESHOLD = 1;
 
-	User[] internal ATTESTERS;
-	address[] internal ATTESTER_ADDRESSES;
-	uint256 internal ATTESTERS_COUNT = THRESHOLD + 1;
-
-	User[] internal SENDERS;
-	address[] internal SENDER_ADDRESSES;
-	uint256 internal SENDERS_COUNT = 3;
+	Signer internal ALICE;
+	Signer internal COOPER;
+	Signer internal MURPHY;
 
 	uint256 internal constant INITIAL_BALANCE = 1000 ether;
-	uint256 internal constant INITIAL_VALUE = 10 ether;
+	uint256 internal constant INITIAL_VALUE = 100 ether;
+	uint256 internal constant DEFAULT_VALUE = 10 ether;
+	uint32 internal constant DEFAULT_STAKE_DELAY = 1 weeks;
 
-	bytes1 internal constant INITIALIZER_DEFAULT = 0x00;
-	bytes1 internal constant INITIALIZER_SCOPED = 0x01;
-	bytes1 internal constant INITIALIZER_ROOT = 0x02;
-
-	bytes1 internal initializerFlag = INITIALIZER_DEFAULT;
-
-	modifier impersonate(address account) {
-		vm.startPrank(account);
+	modifier impersonate(address target) {
+		vm.startPrank(target);
 		_;
 		vm.stopPrank();
 	}
 
-	function setInitializerFlag(bytes1 flag) internal virtual {
-		vm.assume(flag <= INITIALIZER_ROOT);
-		initializerFlag = flag;
+	function setUpAccounts() internal virtual {
+		deployVortex(ALICE, 0, INITIAL_VALUE, address(VORTEX_FACTORY), true);
+		deployVortex(COOPER, 0, INITIAL_VALUE, address(REGISTRY_FACTORY), true);
+		deployVortex(MURPHY, 0, INITIAL_VALUE, address(ACCOUNT_FACTORY), false);
 	}
 
-	function setUpAccounts() internal virtual {
-		ALICE_ACCOUNT = deployAccount("ALICE_ACCOUNT", ALICE, 0, INITIAL_VALUE, address(ACCOUNT_FACTORY), true);
-		BOB_ACCOUNT = deployAccount("BOB_ACCOUNT", BOB, 0, INITIAL_VALUE, address(ACCOUNT_FACTORY), true);
-		COOPER_ACCOUNT = deployAccount("COOPER_ACCOUNT", COOPER, 0, INITIAL_VALUE, address(ACCOUNT_FACTORY), true);
+	function setUpSigners() internal virtual {
+		ADMIN = createSigner("Admin", "");
+		BUNDLER = createSigner("Bundler", "", INITIAL_BALANCE, 100 ether, 10 ether);
+
+		ALICE = createSigner("Alice", "wonderland");
+		COOPER = createSigner("Cooper", "gargantua");
+		MURPHY = createSigner("Murphy", "gravity.eq");
+
+		(ATTESTERS, ATTESTER_ADDRESSES) = createAttesters("Attester", THRESHOLD + 1, INITIAL_BALANCE);
 	}
 
 	function setUpContracts() internal virtual {
 		deployContracts();
-		setUpModules();
 		setUpFactories();
 	}
 
-	function deployContracts() internal virtual {
-		deployAccountImplementation();
-		deployBootstrap();
+	function deployContracts() internal virtual impersonate(ADMIN.eoa) {
+		VORTEX = Vortex(payable(deploy("Vortex", "")));
+		BOOTSTRAP = Bootstrap(deploy("Bootstrap", ""));
 		deployModules();
 		deployFactories();
 	}
 
-	function deployAccount(
-		string memory name,
-		User memory user,
-		uint256 index,
+	function deployVortex(
+		Signer storage signer,
+		uint16 id,
 		uint256 value,
 		address factory,
-		bool useMetaFactory
-	) internal virtual impersonate(user.addr) returns (Vortex) {
-		(address payable account, bytes memory initCode, ) = getAccountAndInitCode(user, index, factory, true);
+		bool useRegistry
+	) internal virtual impersonate(signer.eoa) returns (Vortex) {
+		bytes32 salt = signer.encodeSalt(id);
+		address payable account = META_FACTORY.computeAddress(factory, address(VORTEX), salt);
+		vm.assertTrue(account.code.length == 0);
+
+		bytes memory initCode = getAccountInitCode(signer.eoa, salt, factory, true, useRegistry);
+
+		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
+		(userOps[0], ) = signer.prepareUserOp(account, initCode, address(K1_VALIDATOR));
+
+		ENTRYPOINT.depositTo{value: value}(account);
+		ENTRYPOINT.handleOps(userOps, signer.eoa);
+
+		vm.assertEq((signer.account = Vortex(account)).rootValidator(), address(K1_VALIDATOR));
+		vm.assertEq(K1_VALIDATOR.getAccountOwner(account), signer.eoa);
+		vm.label(account, string.concat(vm.getLabel(signer.eoa), " Vortex"));
+
+		return signer.account;
+	}
+
+	function getAccountInitCode(
+		address owner,
+		bytes32 salt,
+		address factory,
+		bool useMetaFactory,
+		bool useRegistry
+	) internal view virtual returns (bytes memory initCode) {
+		vm.assertTrue(META_FACTORY.isAuthorized(factory));
+
+		address registry;
+		address[] memory trustedAttesters;
+		uint8 threshold;
+
+		if (useRegistry) {
+			registry = address(REGISTRY);
+			trustedAttesters = ATTESTER_ADDRESSES;
+			threshold = THRESHOLD;
+		}
+
+		bytes memory params;
+
+		if (factory == address(VORTEX_FACTORY)) {
+			params = abi.encode(owner, BUNDLER.eoa.addresses(address(PERMIT2)), ATTESTER_ADDRESSES, THRESHOLD);
+		} else if (factory == address(REGISTRY_FACTORY)) {
+			BootstrapConfig memory rootValidator = address(K1_VALIDATOR).build(
+				TYPE_VALIDATOR.moduleTypes(TYPE_STATELESS_VALIDATOR),
+				abi.encodePacked(owner, BUNDLER.eoa, PERMIT2),
+				""
+			);
+
+			BootstrapConfig[] memory validators = address(MOCK_VALIDATOR)
+				.build(TYPE_VALIDATOR.moduleTypes(TYPE_STATELESS_VALIDATOR), abi.encodePacked(owner), "")
+				.arrayify();
+
+			BootstrapConfig[] memory executors = address(MOCK_EXECUTOR).build(TYPE_EXECUTOR, "", "").arrayify();
+
+			bytes4[] memory selectors = MOCK_FALLBACK.fallbackSingle.selector.bytes4s(
+				MOCK_FALLBACK.fallbackDelegate.selector,
+				MOCK_FALLBACK.fallbackStatic.selector,
+				MOCK_FALLBACK.fallbackSuccess.selector
+			);
+
+			CallType[] memory callTypes = CALLTYPE_SINGLE.callTypes(
+				CALLTYPE_DELEGATE,
+				CALLTYPE_STATIC,
+				CALLTYPE_STATIC
+			);
+
+			bytes32[] memory configurations = encodeFallbackSelectors(selectors, callTypes);
+
+			BootstrapConfig[] memory fallbacks = address(MOCK_FALLBACK)
+				.build(TYPE_FALLBACK.moduleTypes(), abi.encode(configurations, ""), "")
+				.arrayify();
+
+			BootstrapConfig[] memory hooks = address(MOCK_HOOK).build(TYPE_HOOK, vm.randomBytes(32), "").arrayify();
+
+			params = abi.encode(rootValidator, validators, executors, fallbacks, hooks);
+		} else if (factory == address(ACCOUNT_FACTORY)) {
+			BootstrapConfig memory rootValidator = address(K1_VALIDATOR).build(
+				TYPE_VALIDATOR.moduleTypes(TYPE_STATELESS_VALIDATOR),
+				abi.encodePacked(owner, BUNDLER.eoa, PERMIT2),
+				""
+			);
+
+			bytes memory initializer = BOOTSTRAP.getInitializeScopedCalldata(
+				rootValidator,
+				registry,
+				trustedAttesters,
+				threshold
+			);
+
+			params = abi.encodeCall(Vortex.initializeAccount, (initializer));
+		} else {
+			revert("invalid factory");
+		}
+
+		initCode = abi.encodePacked(factory, abi.encodeCall(ACCOUNT_FACTORY.createAccount, (salt, params)));
 
 		if (useMetaFactory) {
 			initCode = abi.encodePacked(META_FACTORY, abi.encodeCall(META_FACTORY.createAccount, (initCode)));
 		}
-
-		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
-		userOps[0] = user.buildUserOp(account, initCode, emptyBytes(), emptyBytes(), address(K1_VALIDATOR));
-
-		ENTRYPOINT.depositTo{value: value}(account);
-		ENTRYPOINT.handleOps(userOps, user.addr);
-
-		vm.assertEq(Vortex(account).rootValidator(), address(K1_VALIDATOR));
-		vm.assertEq(K1_VALIDATOR.getAccountOwner(account), user.addr);
-		vm.assertEq(K1_VALIDATOR.getSafeSenders(account), SENDER_ADDRESSES);
-
-		vm.label(account, name);
-
-		return Vortex(account);
 	}
 
-	function getAccountAndInitCode(
-		User memory user,
-		uint256 index,
-		address factory,
-		bool appendFactory
-	) internal virtual returns (address payable account, bytes memory initCode, bytes32 salt) {
-		salt = encodeSalt(user.addr, index);
+	function deployFactories() internal virtual {
+		META_FACTORY = MetaFactory(payable(deploy("MetaFactory", abi.encode(ADMIN.eoa))));
 
-		while (isContract((account = IAccountFactory(factory).computeAddress(salt)))) {
-			salt = encodeSalt(user.addr, ++index);
-		}
-
-		if (factory == address(VORTEX_FACTORY)) {
-			initCode = abi.encode(user.addr, SENDER_ADDRESSES, ATTESTER_ADDRESSES, THRESHOLD);
-		} else {
-			BootstrapConfig memory rootValidator = address(K1_VALIDATOR).build(
-				TYPE_VALIDATOR,
-				TYPE_VALIDATOR.moduleTypes(TYPE_STATELESS_VALIDATOR),
-				abi.encode(user.addr, SENDER_ADDRESSES),
-				emptyBytes()
-			);
-
-			BootstrapConfig memory hook = address(MOCK_HOOK).build(
-				TYPE_HOOK,
-				TYPE_HOOK.moduleTypes(),
-				emptyBytes(),
-				emptyBytes()
-			);
-
-			BootstrapConfig[] memory validators = address(MOCK_VALIDATOR)
-				.build(
-					TYPE_VALIDATOR,
-					TYPE_VALIDATOR.moduleTypes(TYPE_STATELESS_VALIDATOR),
-					abi.encode(user.addr),
-					emptyBytes()
-				)
-				.arrayify();
-
-			BootstrapConfig[] memory executors = address(MOCK_EXECUTOR)
-				.build(TYPE_EXECUTOR, TYPE_EXECUTOR.moduleTypes(), emptyBytes(), emptyBytes())
-				.arrayify();
-
-			(bytes4[] memory selectors, CallType[] memory callTypes) = MOCK_FALLBACK.getSupportedCalls();
-
-			BootstrapConfig[] memory fallbacks = address(MOCK_FALLBACK)
-				.build(
-					TYPE_FALLBACK,
-					TYPE_FALLBACK.moduleTypes(TYPE_EXECUTOR),
-					abi.encode(selectors, callTypes, emptyBytes()),
-					abi.encodePacked(MOCK_HOOK, emptyBytes())
-				)
-				.arrayify();
-
-			bytes memory initializer;
-
-			if (factory == address(REGISTRY_FACTORY) || initializerFlag == INITIALIZER_DEFAULT) {
-				initializer = BOOTSTRAP.getInitializeCalldata(
-					rootValidator,
-					hook,
-					validators,
-					executors,
-					fallbacks,
-					address(REGISTRY),
-					ATTESTER_ADDRESSES,
-					THRESHOLD
-				);
-			} else if (initializerFlag == INITIALIZER_SCOPED) {
-				initializer = BOOTSTRAP.getInitializeScopedCalldata(
-					rootValidator,
-					hook,
-					address(REGISTRY),
-					ATTESTER_ADDRESSES,
-					THRESHOLD
-				);
-			} else if (initializerFlag == INITIALIZER_ROOT) {
-				hook = SENTINEL.build(TYPE_HOOK, TYPE_HOOK.moduleTypes(), emptyBytes(), emptyBytes());
-
-				initializer = BOOTSTRAP.getInitializeScopedCalldata(
-					rootValidator,
-					hook,
-					address(REGISTRY),
-					ATTESTER_ADDRESSES,
-					THRESHOLD
-				);
-			}
-
-			initCode = abi.encodeCall(Vortex.initializeAccount, (initializer));
-		}
-
-		if (appendFactory) {
-			initCode = abi.encodePacked(factory, abi.encodeCall(IAccountFactory.createAccount, (salt, initCode)));
-		}
-	}
-
-	function deployAccountImplementation() internal virtual impersonate(DEPLOYER_ADDRESS) {
-		ACCOUNT_IMPLEMENTATION = Vortex(
-			payable(create2("AccountImplementation", type(Vortex).creationCode, encodeSalt("Vortex V1")))
-		);
-	}
-
-	function deployFactories() internal virtual impersonate(DEPLOYER_ADDRESS) {
-		META_FACTORY = MetaFactory(
-			payable(
-				create2(
-					"MetaFactory",
-					bytes.concat(type(MetaFactory).creationCode, abi.encode(ADMIN_ADDRESS)),
-					encodeSalt("MetaFactory")
-				)
-			)
-		);
-
-		ACCOUNT_FACTORY = AccountFactory(
-			create2(
-				"AccountFactory",
-				bytes.concat(type(AccountFactory).creationCode, abi.encode(ACCOUNT_IMPLEMENTATION)),
-				encodeSalt("AccountFactory")
-			)
-		);
-
-		VORTEX_FACTORY = VortexFactory(
-			create2(
-				"VortexFactory",
-				bytes.concat(
-					type(VortexFactory).creationCode,
-					abi.encode(ACCOUNT_IMPLEMENTATION, K1_VALIDATOR, BOOTSTRAP, REGISTRY)
-				),
-				encodeSalt("VortexFactory")
-			)
-		);
+		ACCOUNT_FACTORY = AccountFactory(deploy("AccountFactory", abi.encode(VORTEX)));
 
 		REGISTRY_FACTORY = RegistryFactory(
-			create2(
-				"RegistryFactory",
-				bytes.concat(
-					type(RegistryFactory).creationCode,
-					abi.encode(ACCOUNT_IMPLEMENTATION, REGISTRY, ATTESTER_ADDRESSES, THRESHOLD, ADMIN_ADDRESS)
-				),
-				encodeSalt("RegistryFactory")
+			deploy("RegistryFactory", abi.encode(VORTEX, BOOTSTRAP, REGISTRY, ATTESTER_ADDRESSES, THRESHOLD, ADMIN.eoa))
+		);
+
+		VORTEX_FACTORY = VortexFactory(deploy("VortexFactory", abi.encode(VORTEX, K1_VALIDATOR, BOOTSTRAP, REGISTRY)));
+	}
+
+	function setUpFactories() internal virtual impersonate(ADMIN.eoa) {
+		META_FACTORY.authorize(address(ACCOUNT_FACTORY));
+		META_FACTORY.authorize(address(REGISTRY_FACTORY));
+		META_FACTORY.authorize(address(VORTEX_FACTORY));
+	}
+
+	function deployModules() internal virtual {
+		deployValidators();
+		deployExecutors();
+		deployFallbacks();
+		deployHooks();
+		deployMockModules();
+	}
+
+	function deployValidators() internal virtual {
+		K1_VALIDATOR = K1Validator(
+			deployModule("K1Validator", TYPE_VALIDATOR.moduleTypes(TYPE_STATELESS_VALIDATOR), "")
+		);
+	}
+
+	function deployExecutors() internal virtual {
+		PERMIT2_EXECUTOR = Permit2Executor(deployModule("Permit2Executor", TYPE_EXECUTOR.moduleTypes(), ""));
+
+		UNIVERSAL_EXECUTOR = UniversalExecutor(
+			deployModule(
+				"UniversalExecutor",
+				TYPE_EXECUTOR.moduleTypes(),
+				abi.encode(uni.poolManager, uni.v3Factory, uni.v2Factory, WNATIVE)
 			)
 		);
 	}
 
-	function setUpFactories() internal virtual impersonate(ADMIN_ADDRESS) {
-		META_FACTORY.depositTo{value: 50 ether}(address(ENTRYPOINT), address(META_FACTORY));
+	function deployFallbacks() internal virtual {
+		NATIVE_WRAPPER = NativeWrapper(
+			payable(deployModule("NativeWrapper", TYPE_FALLBACK.moduleTypes(), abi.encode(WNATIVE)))
+		);
 
-		META_FACTORY.setWhitelist(address(ACCOUNT_FACTORY), true);
-		META_FACTORY.depositTo{value: 50 ether}(address(ENTRYPOINT), address(ACCOUNT_FACTORY));
-
-		META_FACTORY.setWhitelist(address(VORTEX_FACTORY), true);
-		META_FACTORY.depositTo{value: 50 ether}(address(ENTRYPOINT), address(VORTEX_FACTORY));
-
-		META_FACTORY.setWhitelist(address(REGISTRY_FACTORY), true);
-		META_FACTORY.depositTo{value: 50 ether}(address(ENTRYPOINT), address(REGISTRY_FACTORY));
+		STETH_WRAPPER = STETHWrapper(payable(deployModule("STETHWrapper", TYPE_FALLBACK.moduleTypes(), "")));
 	}
 
-	function deployBootstrap() internal virtual impersonate(DEPLOYER_ADDRESS) {
-		BOOTSTRAP = Bootstrap(create2("Bootstrap", type(Bootstrap).creationCode, encodeSalt("Bootstrap")));
-	}
+	function deployHooks() internal virtual {}
 
-	function deployModules() internal virtual impersonate(DEPLOYER_ADDRESS) {
-		K1_VALIDATOR = K1Validator(create2("K1Validator", type(K1Validator).creationCode, encodeSalt("K1Validator")));
-
+	function deployMockModules() internal virtual {
 		MOCK_VALIDATOR = MockValidator(
-			create2("MockValidator", type(MockValidator).creationCode, encodeSalt("MockValidator"))
+			deployModule("MockValidator", TYPE_VALIDATOR.moduleTypes(TYPE_STATELESS_VALIDATOR), "")
 		);
 
-		MOCK_EXECUTOR = MockExecutor(
-			payable(create2("MockExecutor", type(MockExecutor).creationCode, encodeSalt("MockExecutor")))
-		);
+		MOCK_EXECUTOR = MockExecutor(deployModule("MockExecutor", TYPE_EXECUTOR.moduleTypes(), ""));
 
-		MOCK_FALLBACK = MockFallback(
-			create2("MockFallback", type(MockFallback).creationCode, encodeSalt("MockFallback"))
-		);
+		MOCK_FALLBACK = MockFallback(payable(deployModule("MockFallback", TYPE_FALLBACK.moduleTypes(), "")));
 
-		MOCK_HOOK = MockHook(create2("MockHook", type(MockHook).creationCode, encodeSalt("MockHook")));
+		MOCK_HOOK = MockHook(deployModule("MockHook", TYPE_HOOK.moduleTypes(), ""));
 	}
 
-	function setUpModules() internal virtual impersonate(ADMIN_ADDRESS) {
-		bytes[] memory payloads = new bytes[](5);
-
-		payloads[0] = abi.encodeCall(
-			REGISTRY.registerModule,
-			(DEFAULT_RESOLVER_UID, address(K1_VALIDATOR), emptyBytes(), emptyBytes())
-		);
-
-		payloads[1] = abi.encodeCall(
-			REGISTRY.registerModule,
-			(DEFAULT_RESOLVER_UID, address(MOCK_VALIDATOR), emptyBytes(), emptyBytes())
-		);
-
-		payloads[2] = abi.encodeCall(
-			REGISTRY.registerModule,
-			(DEFAULT_RESOLVER_UID, address(MOCK_EXECUTOR), emptyBytes(), emptyBytes())
-		);
-
-		payloads[3] = abi.encodeCall(
-			REGISTRY.registerModule,
-			(DEFAULT_RESOLVER_UID, address(MOCK_FALLBACK), emptyBytes(), emptyBytes())
-		);
-
-		payloads[4] = abi.encodeCall(
-			REGISTRY.registerModule,
-			(DEFAULT_RESOLVER_UID, address(MOCK_HOOK), emptyBytes(), emptyBytes())
-		);
-
-		MulticallUtils.aggregate(MulticallUtils.build(address(REGISTRY), payloads));
-
-		address[] memory modules = address(K1_VALIDATOR).addresses(
-			address(MOCK_VALIDATOR),
-			address(MOCK_EXECUTOR),
-			address(MOCK_FALLBACK),
-			address(MOCK_HOOK)
-		);
-
-		ModuleType[][] memory moduleTypeIds = new ModuleType[][](5);
-		moduleTypeIds[0] = TYPE_VALIDATOR.moduleTypes(TYPE_STATELESS_VALIDATOR);
-		moduleTypeIds[1] = TYPE_VALIDATOR.moduleTypes(TYPE_STATELESS_VALIDATOR);
-		moduleTypeIds[2] = TYPE_EXECUTOR.moduleTypes();
-		moduleTypeIds[3] = TYPE_FALLBACK.moduleTypes(TYPE_EXECUTOR);
-		moduleTypeIds[4] = TYPE_HOOK.moduleTypes();
-
-		AttestationRequest[] memory requests = AttestationUtils.build(modules, moduleTypeIds);
-
-		for (uint256 i; i < ATTESTERS_COUNT; ++i) {
-			User memory attester = ATTESTERS[i];
-			uint256 nonce = REGISTRY.attesterNonce(attester.addr);
-
-			bytes32 digest = REGISTRY.getDigest(requests, attester.addr);
-			(uint8 v, bytes32 r, bytes32 s) = vm.sign(attester.privateKey, digest);
-			bytes memory signature = abi.encodePacked(r, s, v);
-
-			REGISTRY.attest(DEFAULT_SCHEMA_UID, attester.addr, requests, signature);
-
-			vm.assertEq(REGISTRY.attesterNonce(attester.addr), nonce + 1);
-		}
-	}
-
-	function create(string memory name, bytes memory bytecode) internal virtual returns (address instance) {
-		vm.label((instance = create(bytecode)), name);
-	}
-
-	function create(bytes memory bytecode) internal virtual returns (address instance) {
-		assembly ("memory-safe") {
-			instance := create(0x00, add(bytecode, 0x20), mload(bytecode))
-
-			if iszero(extcodesize(instance)) {
-				mstore(0x00, 0x2c2b8fb3) // CreateDeploymentFailed()
-				revert(0x1c, 0x04)
-			}
-		}
-	}
-
-	function create2(
+	function deployModule(
 		string memory name,
-		bytes memory bytecode,
-		bytes32 salt
-	) internal virtual returns (address instance) {
-		vm.label((instance = create2(bytecode, salt)), name);
+		ModuleType[] memory moduleTypeIds,
+		bytes memory args
+	) internal virtual returns (address module) {
+		REGISTRY.registerModule(DEFAULT_RESOLVER_UID, (module = deploy(name, args)), "", "");
+
+		for (uint256 i; i < ATTESTERS.length; ++i) {
+			ATTESTERS[i].attest(module, moduleTypeIds);
+		}
+	}
+
+	function deploy(string memory name, bytes memory args) internal virtual returns (address instance) {
+		string memory path = string.concat(name, ".sol:", name);
+		bytes memory bytecode = bytes.concat(vm.getCode(path), args);
+		vm.label((instance = create2(bytecode, hex"00")), name);
 	}
 
 	function create2(bytes memory bytecode, bytes32 salt) internal virtual returns (address instance) {
 		assembly ("memory-safe") {
 			instance := create2(0x00, add(bytecode, 0x20), mload(bytecode), salt)
-
-			if iszero(extcodesize(instance)) {
-				mstore(0x00, 0x34bf4559) // Create2DeploymentFailed()
-				revert(0x1c, 0x04)
-			}
 		}
 	}
 
-	function etch(address target, address original) internal virtual {
-		etch(target, original.code);
+	function createSigner(string memory name, bytes10 keyword) internal virtual returns (Signer memory signer) {
+		return createSigner(name, keyword, INITIAL_BALANCE, 0, 0);
 	}
 
-	function etch(address target, bytes memory bytecode) internal virtual {
-		vm.etch(target, bytecode);
-	}
-
-	function setUpUsers() internal virtual {
-		(DEPLOYER, DEPLOYER_ADDRESS) = createUser("DEPLOYER", INITIAL_BALANCE);
-
-		(ADMIN, ADMIN_ADDRESS) = createUser("ADMIN", INITIAL_BALANCE);
-
-		(BUNDLER, BUNDLER_ADDRESS) = createUser("BUNDLER", INITIAL_BALANCE);
-
-		(BENEFICIARY, BENEFICIARY_ADDRESS) = createUser("BENEFICIARY", 0);
-
-		(ALICE, ALICE_ADDRESS) = createUser("ALICE", INITIAL_BALANCE);
-
-		(BOB, BOB_ADDRESS) = createUser("BOB", INITIAL_BALANCE);
-
-		(COOPER, COOPER_ADDRESS) = createUser("COOPER", INITIAL_BALANCE);
-
-		(MURPHY, MURPHY_ADDRESS) = createUser("MURPHY", INITIAL_BALANCE);
-
-		(ATTESTERS, ATTESTER_ADDRESSES) = createUsers("ATTESTER", ATTESTERS_COUNT, INITIAL_BALANCE);
-
-		(SENDERS, SENDER_ADDRESSES) = createUsers("SENDER", SENDERS_COUNT, INITIAL_BALANCE);
-	}
-
-	function createUser(
+	function createSigner(
 		string memory name,
-		uint256 value
-	) internal virtual returns (User memory u, address payable addr) {
-		(u, addr) = _createUser(encodePrivateKey(name), value);
-		vm.label(addr, name);
+		bytes10 keyword,
+		uint256 value,
+		uint256 deposit,
+		uint256 stake
+	) internal virtual returns (Signer memory signer) {
+		signer.privateKey = encodePrivateKey(name);
+		(signer.publicKeyX, signer.publicKeyY) = vm.publicKeyP256(signer.privateKey);
+		signer.eoa = payable(vm.addr(signer.privateKey));
+		signer.keyword = keyword;
+
+		vm.deal(signer.eoa, value + deposit + stake);
+		vm.label(signer.eoa, name);
+
+		if (deposit != 0) signer.addDeposit(deposit, signer.eoa);
+		if (stake != 0) signer.addStake(stake, 1 weeks);
 	}
 
-	function createUsers(
+	function createAttesters(
 		string memory prefix,
 		uint256 count,
 		uint256 value
-	) internal virtual returns (User[] memory users, address[] memory addresses) {
-		users = new User[](count);
-		addresses = new address[](count);
-
+	) internal virtual returns (Attester[] memory attesters, address[] memory addresses) {
 		uint256 privateKey = encodePrivateKey(prefix);
 
+		attesters = new Attester[](count);
+		addresses = new address[](count);
+
 		for (uint256 i; i < count; ++i) {
-			(users[i], addresses[i]) = _createUser(privateKey + i, value);
+			vm.deal(
+				addresses[i] = attesters[i].eoa = payable(vm.addr(attesters[i].privateKey = privateKey + i)),
+				value
+			);
 		}
 
-		addresses.sort();
+		addresses.insertionSort();
+		addresses.uniquifySorted();
 
 		for (uint256 i; i < count; ++i) {
-			string memory name = string.concat(prefix, " #", vm.toString(i));
-			vm.label(addresses[i], name);
+			vm.label(addresses[i], string.concat(prefix, " #", vm.toString(i)));
 
 			for (uint256 j = i; j < count; ++j) {
-				if (users[j].addr == addresses[i]) {
-					User memory user = users[i];
-					users[i] = users[j];
-					users[j] = user;
+				if (attesters[j].eoa == addresses[i]) {
+					Attester memory attester = attesters[j];
+					attesters[j] = attesters[i];
+					attesters[i] = attester;
 					break;
 				}
 			}
 		}
 	}
 
-	function _createUser(uint256 privateKey, uint256 value) private returns (User memory u, address payable addr) {
-		(u.publicKeyX, u.publicKeyY) = vm.publicKeyP256((u.privateKey = privateKey));
-		vm.deal(u.addr = addr = payable(vm.addr(u.privateKey)), value);
-	}
-
-	function encodePrivateKey(string memory key) internal pure returns (uint256 privateKey) {
+	function encodePrivateKey(string memory key) internal pure virtual returns (uint256 privateKey) {
 		return boundPrivateKey(uint256(keccak256(abi.encodePacked(key))));
 	}
 
-	function encodeSalt(string memory key) internal pure virtual returns (bytes32 salt) {
-		return keccak256(abi.encodePacked(key));
+	function encodeInstallModuleData(
+		ModuleType[] memory moduleTypeIds,
+		bytes memory data,
+		bytes memory hookData
+	) internal pure virtual returns (bytes memory result) {
+		result = abi.encodePacked(
+			moduleTypeIds.encode(),
+			bytes4(uint32(data.length)),
+			data,
+			bytes4(uint32(hookData.length)),
+			hookData
+		);
 	}
 
-	function encodeSalt(address owner, uint256 index) internal pure virtual returns (bytes32 salt) {
-		return keccak256(abi.encodePacked(owner, index));
+	function encodeUninstallModuleData(
+		bytes memory data,
+		bytes memory hookData
+	) internal pure virtual returns (bytes memory result) {
+		result = abi.encodePacked(bytes4(uint32(data.length)), data, bytes4(uint32(hookData.length)), hookData);
+	}
+
+	function encodeFallbackSelectors(
+		bytes4[] memory selectors,
+		CallType[] memory callTypes
+	) internal pure virtual returns (bytes32[] memory configurations) {
+		uint256 length = selectors.length;
+		configurations = new bytes32[](length);
+
+		for (uint256 i; i < length; ++i) {
+			configurations[i] = bytes32(abi.encodePacked(selectors[i], callTypes[i]));
+		}
 	}
 }
