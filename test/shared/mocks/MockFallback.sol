@@ -1,64 +1,74 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {IFallback} from "src/interfaces/modules/IERC7579Modules.sol";
-import {CallType, CALLTYPE_SINGLE, CALLTYPE_STATIC, CALLTYPE_DELEGATE} from "src/types/ExecutionMode.sol";
-import {ModuleType, MODULE_TYPE_EXECUTOR, MODULE_TYPE_FALLBACK} from "src/types/ModuleType.sol";
-import {ModuleBase} from "src/modules/ModuleBase.sol";
+import {ModuleType} from "src/types/Types.sol";
+import {FallbackBase} from "src/modules/base/FallbackBase.sol";
 
-contract MockFallback is IFallback, ModuleBase {
-	event Log(address sender, bytes callData);
+contract MockFallback is FallbackBase {
+	event FallbackCall(address indexed sender, bytes32 indexed value);
+	event FallbackDelegate(address indexed sender, bytes32 indexed value);
 
-	mapping(address account => bool isInstalled) public isInstalled;
+	error InvalidFallback();
 
-	function onInstall(bytes calldata) public payable {
+	mapping(address account => bool isInstalled) internal _isInstalled;
+	mapping(address account => bytes32 data) internal _accountData;
+
+	address public immutable self = address(this);
+
+	function onInstall(bytes calldata) external payable {
 		require(!_isInitialized(msg.sender), AlreadyInitialized(msg.sender));
-		isInstalled[msg.sender] = true;
+		_isInstalled[msg.sender] = true;
 	}
 
-	function onUninstall(bytes calldata) public payable {
+	function onUninstall(bytes calldata) external payable {
 		require(_isInitialized(msg.sender), NotInitialized(msg.sender));
-		isInstalled[msg.sender] = false;
+		_isInstalled[msg.sender] = false;
 	}
 
-	function mockCall(bytes calldata data) public payable virtual {
-		emit Log(msg.sender, data);
+	function isInitialized(address account) external view returns (bool) {
+		return _isInitialized(account);
 	}
 
-	function mockDelegate(bytes calldata data) public payable virtual {
-		emit Log(msg.sender, data);
+	function fallbackSingle(bytes32 value) public payable virtual {
+		require(address(this) == self, InvalidFallback());
+		require(_isInitialized(msg.sender), NotInitialized(msg.sender));
+
+		_accountData[msg.sender] = value;
+
+		emit FallbackCall(_msgSender(), value);
 	}
 
-	function mockStatic() public view virtual returns (bytes memory data) {
-		(bytes4[] memory selectors, CallType[] memory callTypes) = getSupportedCalls();
-		data = abi.encode(selectors, callTypes);
+	function fallbackDelegate(bytes32 value) public payable virtual {
+		require(address(this) != self, InvalidFallback());
+
+		emit FallbackDelegate(_msgSender(), value);
 	}
 
-	function _isInitialized(address account) internal view virtual override returns (bool) {
-		return isInstalled[account];
+	function fallbackStatic(address account) public view virtual returns (bytes32) {
+		return _accountData[account];
 	}
 
-	function getSupportedCalls() public pure returns (bytes4[] memory selectors, CallType[] memory callTypes) {
-		selectors = new bytes4[](3);
-		selectors[0] = this.mockCall.selector;
-		selectors[1] = this.mockDelegate.selector;
-		selectors[2] = this.mockStatic.selector;
-
-		callTypes = new CallType[](3);
-		callTypes[0] = CALLTYPE_SINGLE;
-		callTypes[1] = CALLTYPE_DELEGATE;
-		callTypes[2] = CALLTYPE_STATIC;
+	function fallbackSuccess() external pure returns (bytes32) {
+		return keccak256("SUCCESS");
 	}
 
-	function name() public pure virtual override returns (string memory) {
+	function fallbackRevert() external pure {
+		revert("REVERT");
+	}
+
+	function name() external pure returns (string memory) {
 		return "MockFallback";
 	}
 
-	function version() public pure virtual override returns (string memory) {
+	function version() external pure returns (string memory) {
 		return "1.0.0";
 	}
 
-	function isModuleType(ModuleType moduleTypeId) external pure virtual returns (bool) {
-		return moduleTypeId == MODULE_TYPE_FALLBACK || moduleTypeId == MODULE_TYPE_EXECUTOR;
+	function isModuleType(ModuleType moduleTypeId) external pure returns (bool) {
+		return moduleTypeId == TYPE_FALLBACK;
+	}
+
+	function _isInitialized(address account) internal view returns (bool) {
+		return _isInstalled[account];
 	}
 }
