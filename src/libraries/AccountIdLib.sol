@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {strings} from "stringutils/strings.sol";
+import {strings} from "string-utils/strings.sol";
 
 /// @title AccountIdLib
 /// @notice Provides function for parsing the full account name and version

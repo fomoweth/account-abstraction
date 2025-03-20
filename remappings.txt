@@ -5,4 +5,4 @@ account-abstraction/=lib/account-abstraction/contracts/
 erc4337-validation/=lib/erc4337-validation/src/
 solady/=lib/solady/src/
 solarray/=lib/solarray/src/
-stringutils/=lib/solidity-stringutils/src/
+string-utils/=lib/solidity-stringutils/src/
