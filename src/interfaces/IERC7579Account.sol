@@ -3,10 +3,6 @@ pragma solidity ^0.8.28;
 
 import {ExecutionMode, CallType, ExecType, ModuleType} from "src/types/Types.sol";
 
-import {IAccountConfig} from "./account/IAccountConfig.sol";
-import {IAccountExecute} from "./account/IAccountExecute.sol";
-import {IModuleConfig} from "./account/IModuleConfig.sol";
-
 interface IERC7579Account {
 	/**
 	 * @notice Executes a transaction on behalf of the account. MAY be payable.

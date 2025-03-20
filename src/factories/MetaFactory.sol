@@ -2,17 +2,19 @@
 pragma solidity ^0.8.28;
 
 import {IMetaFactory} from "src/interfaces/factories/IMetaFactory.sol";
+import {IAccountFactory} from "src/interfaces/factories/IAccountFactory.sol";
 import {StakingAdapter} from "src/core/StakingAdapter.sol";
 
 /// @title MetaFactory
 /// @notice Manages the creation of Modular Smart Accounts compliant with ERC-7579 and ERC-4337 using a factory pattern
 
 contract MetaFactory is IMetaFactory, StakingAdapter {
-	/// @dev keccak256("Authorized(address)")
-	bytes32 private constant AUTHORIZED_TOPIC = 0xdc84e3a4c83602050e3865df792a4e6800211a79ac60db94e703a820ce892924;
+	/// @dev keccak256("FactoryAuthorized(address)")
+	bytes32 private constant FACTORY_AUTHORIZED_TOPIC =
+		0x2fa23115f2b369fc34eda97ccf6bc2fab82882719f0547f3e45a9a400086aeae;
 
-	/// @dev keccak256("Revoked(address)")
-	bytes32 private constant REVOKED_TOPIC = 0xb6fa8b8bd5eab60f292eca876e3ef90722275b785309d84b1de113ce0b8c4e74;
+	/// @dev keccak256("FactoryRevoked(address)")
+	bytes32 private constant FACTORY_REVOKED_TOPIC = 0xd25dd45a1811dc9170ab90c454ef2024f3086a79da5279a8d42f39bdda8f36d1;
 
 	/// @dev keccak256(abi.encode(uint256(keccak256("MetaFactory.storage.factories")) - 1)) & ~bytes32(uint256(0xff))
 	bytes32 private constant FACTORIES_STORAGE_SLOT =
@@ -53,11 +55,33 @@ contract MetaFactory is IMetaFactory, StakingAdapter {
 		}
 	}
 
-	function isAuthorized(address factory) public view virtual returns (bool result) {
+	function computeAddress(address factory, bytes32 salt) external view returns (address payable account) {
+		return computeAddress(factory, IAccountFactory(factory).ACCOUNT_IMPLEMENTATION(), salt);
+	}
+
+	function computeAddress(
+		address factory,
+		address implementation,
+		bytes32 salt
+	) public pure virtual returns (address payable account) {
 		assembly ("memory-safe") {
-			mstore(0x00, shr(0x60, shl(0x60, factory)))
-			mstore(0x20, FACTORIES_STORAGE_SLOT)
-			result := sload(keccak256(0x00, 0x40))
+			let ptr := mload(0x40)
+
+			mstore(0x60, 0xcc3735a920a3ca505d382bbc545af43d6000803e6038573d6000fd5b3d6000f3)
+			mstore(0x40, 0x5155f3363d3d373d3d363d7f360894a13ba1a3210667c828492db98dca3e2076)
+			mstore(0x20, 0x6009)
+			mstore(0x1e, implementation)
+			mstore(0x0a, 0x603d3d8160223d3973)
+
+			mstore(add(ptr, 0x35), keccak256(0x21, 0x5f))
+			mstore(ptr, shl(0x58, factory))
+			mstore8(ptr, 0xff)
+			mstore(add(ptr, 0x15), salt)
+
+			account := keccak256(ptr, 0x55)
+
+			mstore(0x40, ptr)
+			mstore(0x60, 0x00)
 		}
 	}
 
@@ -74,7 +98,7 @@ contract MetaFactory is IMetaFactory, StakingAdapter {
 			mstore(0x20, FACTORIES_STORAGE_SLOT)
 
 			sstore(keccak256(0x00, 0x40), 0x01)
-			log2(0x00, 0x00, AUTHORIZED_TOPIC, factory)
+			log2(0x00, 0x00, FACTORY_AUTHORIZED_TOPIC, factory)
 		}
 	}
 
@@ -91,7 +115,15 @@ contract MetaFactory is IMetaFactory, StakingAdapter {
 			mstore(0x20, FACTORIES_STORAGE_SLOT)
 
 			sstore(keccak256(0x00, 0x40), 0x00)
-			log2(0x00, 0x00, REVOKED_TOPIC, factory)
+			log2(0x00, 0x00, FACTORY_REVOKED_TOPIC, factory)
+		}
+	}
+
+	function isAuthorized(address factory) external view returns (bool result) {
+		assembly ("memory-safe") {
+			mstore(0x00, shr(0x60, shl(0x60, factory)))
+			mstore(0x20, FACTORIES_STORAGE_SLOT)
+			result := sload(keccak256(0x00, 0x40))
 		}
 	}
 }

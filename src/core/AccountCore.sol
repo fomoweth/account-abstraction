@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import {IERC7579Account} from "src/interfaces/IERC7579Account.sol";
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 import {CalldataDecoder} from "src/libraries/CalldataDecoder.sol";
 import {ExecutionLib} from "src/libraries/ExecutionLib.sol";
 import {CALLTYPE_SINGLE, CALLTYPE_BATCH, CALLTYPE_DELEGATE, EXECTYPE_DEFAULT} from "src/types/Constants.sol";
-import {ExecutionMode, CallType, ExecType, ModuleType, ValidationData, ValidationMode} from "src/types/Types.sol";
+import {ExecutionMode, CallType, ExecType, ModuleType, ValidationData} from "src/types/Types.sol";
 import {EIP712} from "src/utils/EIP712.sol";
 import {UUPSUpgradeable} from "src/utils/UUPSUpgradeable.sol";
 import {AccountBase} from "./AccountBase.sol";
@@ -15,7 +16,8 @@ import {ModuleManager} from "./ModuleManager.sol";
 
 abstract contract AccountCore is AccountBase, EIP712, ModuleManager, UUPSUpgradeable {
 	using CalldataDecoder for bytes;
-	using ExecutionLib for bytes;
+	using ExecutionLib for address;
+	using ExecutionLib for ExecType;
 
 	/// @dev keccak256(bytes("EnableModule(uint256 moduleTypeId,address module,bytes32 initDataHash,bytes32 userOpHash)"));
 	bytes32 internal constant ENABLE_MODULE_TYPEHASH =
@@ -42,7 +44,7 @@ abstract contract AccountCore is AccountBase, EIP712, ModuleManager, UUPSUpgrade
 		}
 	}
 
-	function _initializeAccount(bytes calldata executionCalldata) internal virtual {
+	function _initializeAccount(bytes calldata data) internal virtual {
 		assembly ("memory-safe") {
 			if iszero(iszero(sload(ROOT_VALIDATOR_STORAGE_SLOT))) {
 				mstore(0x00, 0xf92ee8a9) // InvalidInitialization()
@@ -50,7 +52,7 @@ abstract contract AccountCore is AccountBase, EIP712, ModuleManager, UUPSUpgrade
 			}
 		}
 
-		executionCalldata.executeDelegate(EXECTYPE_DEFAULT);
+		EXECTYPE_DEFAULT.executeDelegate(data);
 
 		assembly ("memory-safe") {
 			if iszero(extcodesize(sload(ROOT_VALIDATOR_STORAGE_SLOT))) {
@@ -60,15 +62,27 @@ abstract contract AccountCore is AccountBase, EIP712, ModuleManager, UUPSUpgrade
 		}
 	}
 
-	function _handleExecution(
+	function _execute(
 		ExecutionMode mode,
 		bytes calldata executionCalldata
 	) internal virtual returns (bytes[] memory returnData) {
 		(CallType callType, ExecType execType) = mode.parseTypes();
 
-		if (callType == CALLTYPE_SINGLE) return executionCalldata.executeSingle(execType);
-		if (callType == CALLTYPE_BATCH) return executionCalldata.executeBatch(execType);
-		if (callType == CALLTYPE_DELEGATE) return executionCalldata.executeDelegate(execType);
+		if (callType == CALLTYPE_SINGLE) return execType.executeSingle(executionCalldata);
+		if (callType == CALLTYPE_BATCH) return execType.executeBatch(executionCalldata);
+		if (callType == CALLTYPE_DELEGATE) return execType.executeDelegate(executionCalldata);
+	}
+
+	function _executeUserOp(PackedUserOperation calldata userOp, bytes32) internal virtual {
+		bytes4 selector = bytes(userOp.callData[4:]).decodeSelector();
+
+		if (selector == IERC7579Account.execute.selector || selector == IERC7579Account.executeFromExecutor.selector) {
+			(ExecutionMode mode, bytes calldata executionCalldata) = bytes(userOp.callData[8:])
+				.decodeExecutionModeAndCalldata();
+			_execute(mode, executionCalldata);
+		} else {
+			address(this).callDelegate(userOp.callData[4:]);
+		}
 	}
 
 	function _validateUserOp(
@@ -77,10 +91,10 @@ abstract contract AccountCore is AccountBase, EIP712, ModuleManager, UUPSUpgrade
 		bytes32 userOpHash
 	) internal virtual onlyValidator(validator) returns (ValidationData validationData) {
 		// 0x97003203: validateUserOp((address,uint256,bytes,bytes,bytes32,uint256,bytes32,bytes,bytes),bytes32)
-		bytes memory data = abi.encodeWithSelector(0x97003203, userOp, userOpHash);
+		bytes memory callData = abi.encodeWithSelector(0x97003203, userOp, userOpHash);
 
 		assembly ("memory-safe") {
-			if iszero(call(gas(), validator, 0x00, add(data, 0x20), mload(data), 0x00, 0x20)) {
+			if iszero(call(gas(), validator, 0x00, add(callData, 0x20), mload(callData), 0x00, 0x20)) {
 				let ptr := mload(0x40)
 				returndatacopy(ptr, 0x00, returndatasize())
 				revert(ptr, returndatasize())
@@ -106,36 +120,18 @@ abstract contract AccountCore is AccountBase, EIP712, ModuleManager, UUPSUpgrade
 			calldatacopy(add(ptr, 0x84), signature.offset, signature.length)
 
 			let success := staticcall(gas(), validator, ptr, add(signature.length, 0x84), 0x00, 0x20)
-			magicValue := mload(0x00)
 
 			switch and(iszero(signature.length), eq(hash, mul(div(not(signature.length), 0xffff), 0x7739)))
 			case 0x01 {
-				magicValue := or(magicValue, sub(0x00, iszero(and(eq(shr(0xf0, magicValue), 0x7739), success))))
+				magicValue := or(mload(0x00), sub(0x00, iszero(and(eq(shr(0xf0, mload(0x00)), 0x7739), success))))
 			}
 			default {
-				magicValue := or(magicValue, sub(0x00, iszero(success)))
+				magicValue := or(mload(0x00), sub(0x00, iszero(success)))
 			}
 		}
 	}
 
-	function _enableModule(
-		bytes32 userOpHash,
-		bytes calldata data
-	) internal virtual returns (bytes calldata userOpSignature) {
-		address module;
-		ModuleType moduleType;
-		bytes calldata initData;
-		bytes calldata signature;
-		(module, moduleType, initData, signature, userOpSignature) = data.decodeEnableModuleData();
-
-		bytes32 structHash = _enableModuleHash(module, moduleType, userOpHash, initData);
-		(address validator, bytes calldata innerSignature) = _decodeSignature(signature);
-
-		_checkEnableModuleSignature(validator, hashTypedData(structHash), innerSignature);
-		_installModule(moduleType, module, initData);
-	}
-
-	function _checkEnableModuleSignature(
+	function _validateEnableSignature(
 		address validator,
 		bytes32 hash,
 		bytes calldata signature
@@ -153,10 +149,26 @@ abstract contract AccountCore is AccountBase, EIP712, ModuleManager, UUPSUpgrade
 			let success := staticcall(gas(), validator, ptr, add(signature.length, 0x84), 0x00, 0x20)
 
 			if xor(or(mload(0x00), sub(0x00, iszero(success))), ERC1271_SUCCESS) {
-				mstore(0x00, 0x5d33c0e1) // InvalidEnableModuleSignature()
+				mstore(0x00, 0xc48cf8ee) // EnableNotApproved()
 				revert(0x1c, 0x04)
 			}
 		}
+	}
+
+	function _enableModule(
+		bytes32 userOpHash,
+		bytes calldata data
+	) internal virtual returns (bytes calldata userOpSignature) {
+		ModuleType moduleTypeId;
+		address module;
+		bytes calldata signature;
+		(moduleTypeId, module, data, signature, userOpSignature) = data.decodeEnableModuleParams();
+
+		bytes32 structHash = _enableModuleHash(moduleTypeId, module, data, userOpHash);
+		(address validator, bytes calldata innerSignature) = _decodeSignature(signature);
+
+		_validateEnableSignature(validator, _hashTypedData(structHash), innerSignature);
+		_installModule(moduleTypeId, module, data);
 	}
 
 	function _decodeSignature(
@@ -184,20 +196,20 @@ abstract contract AccountCore is AccountBase, EIP712, ModuleManager, UUPSUpgrade
 
 	function _decodeUserOpNonce(
 		PackedUserOperation calldata userOp
-	) internal pure virtual returns (address validator, ValidationMode mode) {
+	) internal pure virtual returns (address validator, bool isEnableMode) {
 		assembly ("memory-safe") {
 			let nonce := calldataload(add(userOp, 0x20))
-			mode := shl(0xf8, byte(0x00, nonce))
 			validator := shr(0x60, shl(0x20, nonce))
+			isEnableMode := eq(shl(0xf8, shr(0xf8, nonce)), shl(0xf8, 0x01))
 		}
 	}
 
 	function _enableModuleHash(
-		address module,
 		ModuleType moduleTypeId,
-		bytes32 userOpHash,
-		bytes calldata data
-	) internal pure virtual returns (bytes32 structHash) {
+		address module,
+		bytes calldata data,
+		bytes32 userOpHash
+	) internal pure virtual returns (bytes32 hash) {
 		assembly ("memory-safe") {
 			let ptr := mload(0x40)
 			mstore(ptr, ENABLE_MODULE_TYPEHASH)
@@ -206,7 +218,7 @@ abstract contract AccountCore is AccountBase, EIP712, ModuleManager, UUPSUpgrade
 			calldatacopy(add(ptr, 0x60), data.offset, data.length)
 			mstore(add(ptr, 0x60), keccak256(add(ptr, 0x60), data.length))
 			mstore(add(ptr, 0x80), userOpHash)
-			structHash := keccak256(ptr, 0xa0)
+			hash := keccak256(ptr, 0xa0)
 		}
 	}
 
@@ -215,7 +227,7 @@ abstract contract AccountCore is AccountBase, EIP712, ModuleManager, UUPSUpgrade
 		address msgSender,
 		uint256 msgValue,
 		bytes calldata msgData
-	) internal virtual returns (bytes memory hookData) {
+	) internal virtual returns (bytes memory context) {
 		assembly ("memory-safe") {
 			let ptr := mload(0x40)
 
@@ -231,16 +243,16 @@ abstract contract AccountCore is AccountBase, EIP712, ModuleManager, UUPSUpgrade
 				revert(ptr, returndatasize())
 			}
 
-			mstore(0x40, add(add(hookData, 0x20), returndatasize()))
-			mstore(hookData, returndatasize())
-			returndatacopy(add(hookData, 0x20), 0x00, returndatasize())
+			mstore(0x40, add(add(context, 0x20), returndatasize()))
+			mstore(context, returndatasize())
+			returndatacopy(add(context, 0x20), 0x00, returndatasize())
 		}
 	}
 
-	function _postCheck(address hook, bytes memory hookData) internal virtual {
+	function _postCheck(address hook, bytes memory context) internal virtual {
 		assembly ("memory-safe") {
-			let offset := add(hookData, 0x20)
-			let length := mload(hookData)
+			let offset := add(context, 0x20)
+			let length := mload(context)
 			let ptr := mload(0x40)
 
 			mstore(ptr, 0x173bf7da00000000000000000000000000000000000000000000000000000000) // postCheck(bytes)
@@ -274,21 +286,20 @@ abstract contract AccountCore is AccountBase, EIP712, ModuleManager, UUPSUpgrade
 		bytes calldata msgData
 	) internal virtual returns (bytes[] memory contexts) {
 		assembly ("memory-safe") {
-			let hookData := mload(0x40)
-			mstore(0x40, add(hookData, add(msgData.length, 0x84)))
+			let ptr := mload(0x40)
+			mstore(0x40, add(ptr, add(msgData.length, 0x84)))
 
-			mstore(hookData, 0xd68f602500000000000000000000000000000000000000000000000000000000) // preCheck(address,uint256,bytes)
-			mstore(add(hookData, 0x04), shr(0x60, shl(0x60, msgSender)))
-			mstore(add(hookData, 0x24), msgValue)
-			mstore(add(hookData, 0x44), 0x60)
-			mstore(add(hookData, 0x64), msgData.length)
-			calldatacopy(add(hookData, 0x84), msgData.offset, msgData.length)
+			mstore(ptr, 0xd68f602500000000000000000000000000000000000000000000000000000000) // preCheck(address,uint256,bytes)
+			mstore(add(ptr, 0x04), shr(0x60, shl(0x60, msgSender)))
+			mstore(add(ptr, 0x24), msgValue)
+			mstore(add(ptr, 0x44), 0x60)
+			mstore(add(ptr, 0x64), msgData.length)
+			calldatacopy(add(ptr, 0x84), msgData.offset, msgData.length)
 
 			contexts := mload(0x40)
 
 			let length := mload(hooks)
-			let offset := add(contexts, 0x20)
-			let ptr := add(offset, shl(0x05, length))
+			let offset := add(add(contexts, 0x20), shl(0x05, length))
 
 			mstore(contexts, length)
 
@@ -296,57 +307,55 @@ abstract contract AccountCore is AccountBase, EIP712, ModuleManager, UUPSUpgrade
 			for { let i } lt(i, length) { i := add(i, 0x01) } {
 				let hook := shr(0x60, shl(0x60, mload(add(add(hooks, 0x20), shl(0x05, i)))))
 
-				if iszero(call(gas(), hook, 0x00, hookData, add(msgData.length, 0x84), codesize(), 0x00)) {
+				if iszero(call(gas(), hook, 0x00, ptr, add(msgData.length, 0x84), codesize(), 0x00)) {
 					mstore(0x00, 0x4a3a865b) // PreCheckFailed(address)
-					mstore(0x20, shr(0x60, shl(0x60, hook)))
+					mstore(0x20, hook)
 					revert(0x1c, 0x24)
 				}
 
-				mstore(add(offset, shl(0x05, i)), ptr)
-				mstore(ptr, add(returndatasize(), 0x60))
-				mstore(add(ptr, 0x20), hook)
-				mstore(add(ptr, 0x40), 0x40)
-				mstore(add(ptr, 0x60), returndatasize())
-				returndatacopy(add(ptr, 0x80), 0x00, returndatasize())
-
-				ptr := add(add(ptr, 0x80), returndatasize())
+				mstore(add(add(contexts, 0x20), shl(0x05, i)), offset)
+				mstore(offset, add(returndatasize(), 0x60))
+				mstore(add(offset, 0x20), hook)
+				mstore(add(offset, 0x40), 0x40)
+				mstore(add(offset, 0x60), returndatasize())
+				returndatacopy(add(offset, 0x80), 0x00, returndatasize())
+				offset := add(add(offset, 0x80), returndatasize())
 			}
 
-			mstore(0x40, ptr)
+			mstore(0x40, offset)
 		}
 	}
 
 	function _postCheckBatch(bytes[] memory contexts) internal virtual {
 		assembly ("memory-safe") {
 			let length := mload(contexts)
-			let offset := add(contexts, 0x20)
 
 			// prettier-ignore
 			for { let i } lt(i, length) { i := add(i, 0x01) } {
-				let hookOffset := mload(add(offset, shl(0x05, i)))
-				let hook := mload(add(hookOffset, 0x20))
-				let hookDataLength := mload(add(hookOffset, 0x60))
-				let hookDataOffset := add(hookOffset, 0x80)
+				let offset := mload(add(add(contexts, 0x20), shl(0x05, i)))
+				let hook := shr(0x60, shl(0x60, mload(add(offset, 0x20))))
+				let contextLength := mload(add(offset, 0x60))
+				let contextOffset := add(offset, 0x80)
 
 				let ptr := mload(0x40)
 
 				mstore(ptr, 0x173bf7da00000000000000000000000000000000000000000000000000000000) // postCheck(bytes)
 
 				let pos := add(ptr, 0x04)
-				let guard := add(pos, hookDataLength)
+				let guard := add(pos, contextLength)
 
 				for { } 0x01 { } {
-					mstore(pos, mload(hookDataOffset))
+					mstore(pos, mload(contextOffset))
 					pos := add(pos, 0x20)
 					if eq(pos, guard) { break }
-					hookDataOffset := add(hookDataOffset, 0x20)
+					contextOffset := add(contextOffset, 0x20)
 				}
 
 				mstore(0x40, and(add(guard, 0x1f), not(0x1f)))
 
-				if iszero(call(gas(), hook, 0x00, ptr, add(hookDataLength, 0x04), codesize(), 0x00)) {
+				if iszero(call(gas(), hook, 0x00, ptr, add(contextLength, 0x04), codesize(), 0x00)) {
 					mstore(0x00, 0xa154e16d) // PostCheckFailed(address)
-					mstore(0x20, shr(0x60, shl(0x60, hook)))
+					mstore(0x20, hook)
 					revert(0x1c, 0x24)
 				}
 			}
@@ -361,10 +370,12 @@ abstract contract AccountCore is AccountBase, EIP712, ModuleManager, UUPSUpgrade
 			}
 
 			let selector := shr(0xe0, calldataload(0x00))
+
 			mstore(0x00, shl(0xe0, selector))
 			mstore(0x20, FALLBACKS_STORAGE_SLOT)
 
 			let configuration := sload(keccak256(0x00, 0x40))
+
 			if iszero(configuration) {
 				// 0x150b7a02: onERC721Received(address,address,uint256,bytes)
 				// 0xf23a6e61: onERC1155Received(address,address,uint256,uint256,bytes)
@@ -394,7 +405,7 @@ abstract contract AccountCore is AccountBase, EIP712, ModuleManager, UUPSUpgrade
 			}
 
 			let hook := shr(0x60, shl(0x60, configuration))
-			let hookData
+			let context
 
 			if iszero(hook) {
 				mstore(0x00, 0x026d9639) // ModuleNotInstalled(address)
@@ -403,24 +414,24 @@ abstract contract AccountCore is AccountBase, EIP712, ModuleManager, UUPSUpgrade
 			}
 
 			if and(xor(hook, SENTINEL), xor(callType, 0xFE)) {
-				hookData := allocate(add(calldatasize(), 0x84))
+				context := allocate(add(calldatasize(), 0x84))
 
-				mstore(hookData, 0xd68f602500000000000000000000000000000000000000000000000000000000) // preCheck(address,uint256,bytes)
-				mstore(add(hookData, 0x04), shr(0x60, shl(0x60, caller())))
-				mstore(add(hookData, 0x24), callvalue())
-				mstore(add(hookData, 0x44), 0x60)
-				mstore(add(hookData, 0x64), calldatasize())
-				calldatacopy(add(hookData, 0x84), 0x00, calldatasize())
+				mstore(context, 0xd68f602500000000000000000000000000000000000000000000000000000000) // preCheck(address,uint256,bytes)
+				mstore(add(context, 0x04), shr(0x60, shl(0x60, caller())))
+				mstore(add(context, 0x24), callvalue())
+				mstore(add(context, 0x44), 0x60)
+				mstore(add(context, 0x64), calldatasize())
+				calldatacopy(add(context, 0x84), 0x00, calldatasize())
 
-				if iszero(call(gas(), hook, 0x00, hookData, add(calldatasize(), 0x84), codesize(), 0x00)) {
+				if iszero(call(gas(), hook, 0x00, context, add(calldatasize(), 0x84), codesize(), 0x00)) {
 					mstore(0x00, 0x4a3a865b) // PreCheckFailed(address)
 					mstore(0x20, hook)
 					revert(0x1c, 0x24)
 				}
 
-				hookData := allocate(add(returndatasize(), 0x20))
-				mstore(hookData, returndatasize())
-				returndatacopy(add(hookData, 0x20), 0x00, returndatasize())
+				context := allocate(add(returndatasize(), 0x20))
+				mstore(context, returndatasize())
+				returndatacopy(add(context, 0x20), 0x00, returndatasize())
 			}
 
 			let callData := allocate(calldatasize())
@@ -431,18 +442,15 @@ abstract contract AccountCore is AccountBase, EIP712, ModuleManager, UUPSUpgrade
 			switch callType
 			// CALLTYPE_SINGLE
 			case 0x00 {
-				// mstore(allocate(0x14), shl(0x60, caller()))
 				success := call(gas(), module, callvalue(), callData, add(calldatasize(), 0x14), codesize(), 0x00)
 			}
 			// CALLTYPE_STATIC
 			case 0xFE {
-				// mstore(allocate(0x14), shl(0x60, caller()))
 				success := staticcall(gas(), module, callData, add(calldatasize(), 0x14), codesize(), 0x00)
 			}
 			// CALLTYPE_DELEGATE
 			case 0xFF {
 				success := delegatecall(gas(), module, callData, add(calldatasize(), 0x14), codesize(), 0x00)
-				// success := delegatecall(gas(), module, callData, calldatasize(), codesize(), 0x00)
 			}
 			default {
 				mstore(0x00, 0xb96fcfe4) // UnsupportedCallType(bytes1)
@@ -451,32 +459,25 @@ abstract contract AccountCore is AccountBase, EIP712, ModuleManager, UUPSUpgrade
 			}
 
 			if iszero(success) {
-				if iszero(returndatasize()) {
-					mstore(0x00, 0xacfdb444) // ExecutionFailed()
-					revert(0x1c, 0x04)
-				}
-
 				let ptr := mload(0x40)
 				returndatacopy(ptr, 0x00, returndatasize())
 				revert(ptr, returndatasize())
 			}
 
-			let returnDataSize := returndatasize()
-			let returnData := allocate(add(returnDataSize, 0x20))
-
-			mstore(returnData, returnDataSize)
-			returndatacopy(add(returnData, 0x20), 0x00, returnDataSize)
+			let returnData := allocate(add(returndatasize(), 0x20))
+			mstore(returnData, returndatasize())
+			returndatacopy(add(returnData, 0x20), 0x00, returndatasize())
 
 			if and(xor(hook, SENTINEL), xor(callType, 0xFE)) {
-				let offset := add(hookData, 0x20)
-				let length := mload(hookData)
-				let ptr := allocate(add(length, 0x44))
+				let length := mload(context)
+				let offset := add(context, 0x20)
+				context := allocate(add(length, 0x44))
 
-				mstore(ptr, 0x173bf7da00000000000000000000000000000000000000000000000000000000) // postCheck(bytes)
-				mstore(add(ptr, 0x04), 0x20)
-				mstore(add(ptr, 0x24), length)
+				mstore(context, 0x173bf7da00000000000000000000000000000000000000000000000000000000) // postCheck(bytes)
+				mstore(add(context, 0x04), 0x20)
+				mstore(add(context, 0x24), length)
 
-				let pos := add(ptr, 0x44)
+				let pos := add(context, 0x44)
 				let guard := add(pos, length)
 
 				// prettier-ignore
@@ -489,14 +490,14 @@ abstract contract AccountCore is AccountBase, EIP712, ModuleManager, UUPSUpgrade
 
 				mstore(0x40, and(add(guard, 0x1f), not(0x1f)))
 
-				if iszero(call(gas(), hook, 0x00, ptr, add(length, 0x44), codesize(), 0x00)) {
+				if iszero(call(gas(), hook, 0x00, context, add(length, 0x44), codesize(), 0x00)) {
 					mstore(0x00, 0xa154e16d) // PostCheckFailed(address)
 					mstore(0x20, hook)
 					revert(0x1c, 0x24)
 				}
 			}
 
-			return(add(returnData, 0x20), returnDataSize)
+			return(add(returnData, 0x20), add(mload(returnData), 0x20))
 		}
 	}
 }

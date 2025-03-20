@@ -99,14 +99,17 @@ interface IHook is IModule {
 }
 
 interface IPolicy is IModule {
-	function checkUserOpPolicy(bytes32 id, PackedUserOperation calldata userOp) external payable returns (uint256);
+	function checkUserOpPolicy(
+		bytes32 id,
+		PackedUserOperation calldata userOp
+	) external payable returns (ValidationData);
 
 	function checkSignaturePolicy(
 		bytes32 id,
 		address sender,
 		bytes32 hash,
 		bytes calldata signature
-	) external view returns (uint256);
+	) external view returns (ValidationData);
 }
 
 interface ISigner is IModule {
@@ -114,7 +117,7 @@ interface ISigner is IModule {
 		bytes32 id,
 		PackedUserOperation calldata userOp,
 		bytes32 userOpHash
-	) external payable returns (uint256);
+	) external payable returns (ValidationData);
 
 	function checkSignature(
 		bytes32 id,
