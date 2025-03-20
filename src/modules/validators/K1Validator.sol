@@ -35,14 +35,12 @@ contract K1Validator is ERC7739Validator {
 	function onInstall(bytes calldata data) external payable {
 		require(!_isInitialized(msg.sender), AlreadyInitialized(msg.sender));
 		require(_checkDataLength(data), InvalidDataLength());
-
 		_setAccountOwner(_checkAccountOwner(data.toAddress()));
 		if (data.length > 20) _authorizeSenders(data[20:]);
 	}
 
 	function onUninstall(bytes calldata) external payable {
 		require(_isInitialized(msg.sender), NotInitialized(msg.sender));
-
 		_setAccountOwner(address(0));
 		_authorizedSenders.removeAll(msg.sender);
 	}
@@ -53,7 +51,6 @@ contract K1Validator is ERC7739Validator {
 
 	function transferOwnership(address newOwner) external {
 		require(_isInitialized(msg.sender), NotInitialized(msg.sender));
-
 		_setAccountOwner(_checkAccountOwner(newOwner));
 	}
 
@@ -63,14 +60,12 @@ contract K1Validator is ERC7739Validator {
 
 	function authorizeSender(address sender) external {
 		require(_isInitialized(msg.sender), NotInitialized(msg.sender));
-
 		_authorizeSender(sender);
 	}
 
 	function revokeSender(address sender) external {
 		require(_isInitialized(msg.sender), NotInitialized(msg.sender));
 		require(_authorizedSenders.remove(msg.sender, sender), NotAuthorized(sender));
-
 		emit Revoked(msg.sender, sender);
 	}
 
@@ -107,7 +102,6 @@ contract K1Validator is ERC7739Validator {
 		bytes calldata data
 	) external view returns (bool) {
 		require(data.length == 20, InvalidDataLength());
-
 		return _validateSignatureForOwner(data.toAddress(), hash, signature);
 	}
 
@@ -154,7 +148,6 @@ contract K1Validator is ERC7739Validator {
 	function _authorizeSender(address sender) internal virtual {
 		require(sender != address(0), InvalidSender());
 		require(_authorizedSenders.add(msg.sender, sender), AlreadyAuthorized(sender));
-
 		emit Authorized(msg.sender, sender);
 	}
 
@@ -162,7 +155,6 @@ contract K1Validator is ERC7739Validator {
 		assembly ("memory-safe") {
 			mstore(0x00, shr(0x60, shl(0x60, caller())))
 			mstore(0x20, ACCOUNT_OWNERS_STORAGE_SLOT)
-
 			sstore(keccak256(0x00, 0x40), newOwner)
 			log3(0x00, 0x00, ACCOUNT_OWNER_UPDATED_TOPIC, caller(), newOwner)
 		}
@@ -172,7 +164,6 @@ contract K1Validator is ERC7739Validator {
 		assembly ("memory-safe") {
 			mstore(0x00, shr(0x60, shl(0x60, account)))
 			mstore(0x20, ACCOUNT_OWNERS_STORAGE_SLOT)
-
 			owner := sload(keccak256(0x00, 0x40))
 		}
 	}
@@ -180,7 +171,6 @@ contract K1Validator is ERC7739Validator {
 	function _checkAccountOwner(address newOwner) internal view virtual returns (address) {
 		assembly ("memory-safe") {
 			newOwner := shr(0x60, shl(0x60, newOwner))
-
 			if or(iszero(newOwner), iszero(iszero(extcodesize(newOwner)))) {
 				mstore(0x00, 0x36b1fa3a) // InvalidAccountOwner()
 				revert(0x1c, 0x04)

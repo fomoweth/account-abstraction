@@ -13,7 +13,7 @@ import {ExecutorBase} from "src/modules/base/ExecutorBase.sol";
 /// @title UniversalExecutor
 
 contract UniversalExecutor is ExecutorBase, ReentrancyGuard {
-	using BytesLib for bytes;
+	using BytesLib for *;
 	using CalldataDecoder for bytes;
 	using SafeCast for uint256;
 
@@ -30,13 +30,19 @@ contract UniversalExecutor is ExecutorBase, ReentrancyGuard {
 		uint256 sigDeadline;
 	}
 
-	/// @dev keccak256("UniversalRouterUpdated(address,address)")
-	bytes32 private constant UNIVERSAL_ROUTER_UPDATED_TOPIC =
-		0xcdb63a7fcc00d5c3b2b926c6751fb22aae075f16ffb83ab0e00d4ae8b301497f;
+	struct PermitBatch {
+		PermitDetails[] details;
+		address spender;
+		uint256 sigDeadline;
+	}
 
-	/// @dev keccak256(abi.encode(uint256(keccak256("eip7579.executor.universalRouter")) - 1)) & ~bytes32(uint256(0xff))
-	bytes32 internal constant UNIVERSAL_ROUTER_STORAGE_SLOT =
-		0xe1d92fb2ec3f6282da8a76da173da1d701de70f0dc60e3409fa96723f8a01f00;
+	/// @dev keccak256("AccountRouterConfigured(address,address)")
+	bytes32 private constant ACCOUNT_ROUTER_CONFIGURED_TOPIC =
+		0xa8fd23d42b508ba2c717741779865ad45b6fc96f34a0124e880f44cad86076d4;
+
+	/// @dev keccak256(abi.encode(uint256(keccak256("eip7579.executor.accountRouters")) - 1)) & ~bytes32(uint256(0xff))
+	bytes32 internal constant ACCOUNT_ROUTERS_STORAGE_SLOT =
+		0x9c3dee6d7c92c0e43518da88f538f333487ac138b7cb037184debd2b16ed0d00;
 
 	bytes32 internal constant UNISWAP_V3_POOL_INIT_CODE_HASH =
 		0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54;
@@ -83,7 +89,6 @@ contract UniversalExecutor is ExecutorBase, ReentrancyGuard {
 	address public immutable UNISWAP_V4_POOL_MANAGER;
 	address public immutable UNISWAP_V3_FACTORY;
 	address public immutable UNISWAP_V2_FACTORY;
-
 	Currency public immutable WRAPPED_NATIVE;
 
 	constructor(address poolManager, address uniswapV3Factory, address uniswapV2Factory, Currency wrappedNative) {
@@ -96,47 +101,28 @@ contract UniversalExecutor is ExecutorBase, ReentrancyGuard {
 	function onInstall(bytes calldata data) external payable {
 		require(!_isInitialized(msg.sender), AlreadyInitialized(msg.sender));
 		require(data.length == 20, InvalidDataLength());
-		_setUniversalRouter(_checkUniversalRouter(data.toAddress()));
+		_setAccountRouter(_checkAccountRouter(data.toAddress()));
 	}
 
 	function onUninstall(bytes calldata) external payable {
 		require(_isInitialized(msg.sender), NotInitialized(msg.sender));
-		_setUniversalRouter(address(0));
+		_setAccountRouter(address(0));
 	}
 
 	function isInitialized(address account) external view returns (bool) {
 		return _isInitialized(account);
 	}
 
-	function setUniversalRouter(address universalRouter) external {
+	function setAccountRouter(address router) external {
 		require(_isInitialized(msg.sender), NotInitialized(msg.sender));
-		_setUniversalRouter(_checkUniversalRouter(universalRouter));
+		_setAccountRouter(_checkAccountRouter(router));
 	}
 
-	function getUniversalRouter(address account) public view virtual returns (address universalRouter) {
+	function getAccountRouter(address account) public view virtual returns (address router) {
 		assembly ("memory-safe") {
 			mstore(0x00, shr(0x60, shl(0x60, account)))
-			mstore(0x20, UNIVERSAL_ROUTER_STORAGE_SLOT)
-			universalRouter := sload(keccak256(0x00, 0x40))
-		}
-	}
-
-	function permit2Nonce(address owner, Currency currency, address spender) external view returns (uint48 nonce) {
-		assembly ("memory-safe") {
-			let ptr := mload(0x40)
-			let res := add(ptr, 0x64)
-
-			mstore(ptr, 0x927da10500000000000000000000000000000000000000000000000000000000) // allowance(address,address,address)
-			mstore(add(ptr, 0x04), shr(0x60, shl(0x60, owner)))
-			mstore(add(ptr, 0x24), shr(0x60, shl(0x60, currency)))
-			mstore(add(ptr, 0x44), shr(0x60, shl(0x60, spender)))
-
-			if iszero(staticcall(gas(), PERMIT2, ptr, 0x64, res, 0x60)) {
-				returndatacopy(ptr, 0x00, returndatasize())
-				revert(ptr, returndatasize())
-			}
-
-			nonce := and(mload(add(res, 0x40)), 0xffffffffffff)
+			mstore(0x20, ACCOUNT_ROUTERS_STORAGE_SLOT)
+			router := sload(keccak256(0x00, 0x40))
 		}
 	}
 
@@ -146,8 +132,8 @@ contract UniversalExecutor is ExecutorBase, ReentrancyGuard {
 		uint256 amountIn,
 		uint256 amountOutMin,
 		bytes calldata permit // abi.encode(((address,uint160,uint48,uint48),address,uint256),bytes)
-	) external payable nonReentrant {
-		_v3Swap(account, path, amountIn, amountOutMin, true, permit);
+	) external payable nonReentrant returns (bytes[] memory returnData) {
+		return _v3Swap(account, path, amountIn, amountOutMin, true, permit);
 	}
 
 	function v3SwapExactOutput(
@@ -156,8 +142,8 @@ contract UniversalExecutor is ExecutorBase, ReentrancyGuard {
 		uint256 amountOut,
 		uint256 amountInMax,
 		bytes calldata permit // abi.encode(((address,uint160,uint48,uint48),address,uint256),bytes)
-	) external payable nonReentrant {
-		_v3Swap(account, path, amountOut, amountInMax, false, permit);
+	) external payable nonReentrant returns (bytes[] memory returnData) {
+		return _v3Swap(account, path, amountOut, amountInMax, false, permit);
 	}
 
 	function v2SwapExactInput(
@@ -166,8 +152,8 @@ contract UniversalExecutor is ExecutorBase, ReentrancyGuard {
 		uint256 amountIn,
 		uint256 amountOutMin,
 		bytes calldata permit // abi.encode(((address,uint160,uint48,uint48),address,uint256),bytes)
-	) external payable nonReentrant {
-		_v2Swap(account, path, amountIn, amountOutMin, true, permit);
+	) external payable nonReentrant returns (bytes[] memory returnData) {
+		return _v2Swap(account, path, amountIn, amountOutMin, true, permit);
 	}
 
 	function v2SwapExactOutput(
@@ -176,8 +162,16 @@ contract UniversalExecutor is ExecutorBase, ReentrancyGuard {
 		uint256 amountOut,
 		uint256 amountInMax,
 		bytes calldata permit // abi.encode(((address,uint160,uint48,uint48),address,uint256),bytes)
-	) external payable nonReentrant {
-		_v2Swap(account, path, amountOut, amountInMax, false, permit);
+	) external payable nonReentrant returns (bytes[] memory returnData) {
+		return _v2Swap(account, path, amountOut, amountInMax, false, permit);
+	}
+
+	function computePool(Currency currency0, Currency currency1, uint24 fee) external view returns (address pool) {
+		return _computePool(UNISWAP_V3_FACTORY, currency0, currency1, fee);
+	}
+
+	function computePair(Currency currency0, Currency currency1) external view returns (address pair) {
+		return _computePair(UNISWAP_V2_FACTORY, currency0, currency1);
 	}
 
 	function name() external pure returns (string memory) {
@@ -193,28 +187,28 @@ contract UniversalExecutor is ExecutorBase, ReentrancyGuard {
 	}
 
 	function _isInitialized(address account) internal view virtual returns (bool result) {
-		return getUniversalRouter(account) != address(0);
+		return getAccountRouter(account) != address(0);
 	}
 
-	function _setUniversalRouter(address universalRouter) internal virtual {
+	function _setAccountRouter(address router) internal virtual {
 		assembly ("memory-safe") {
 			mstore(0x00, shr(0x60, shl(0x60, caller())))
-			mstore(0x20, UNIVERSAL_ROUTER_STORAGE_SLOT)
-			sstore(keccak256(0x00, 0x40), universalRouter)
-			log3(0x00, 0x00, UNIVERSAL_ROUTER_UPDATED_TOPIC, caller(), universalRouter)
+			mstore(0x20, ACCOUNT_ROUTERS_STORAGE_SLOT)
+			sstore(keccak256(0x00, 0x40), router)
+			log3(0x00, 0x00, ACCOUNT_ROUTER_CONFIGURED_TOPIC, caller(), router)
 		}
 	}
 
-	function _checkUniversalRouter(address universalRouter) internal view virtual returns (address) {
+	function _checkAccountRouter(address router) internal view virtual returns (address) {
 		assembly ("memory-safe") {
-			universalRouter := shr(0x60, shl(0x60, universalRouter))
-			if iszero(extcodesize(universalRouter)) {
-				mstore(0x00, 0xd5208f14) // InvalidUniversalRouter()
+			router := shr(0x60, shl(0x60, router))
+			if iszero(extcodesize(router)) {
+				mstore(0x00, 0x3194ca7b) // InvalidAccountRouter()
 				revert(0x1c, 0x04)
 			}
 		}
 
-		return universalRouter;
+		return router;
 	}
 
 	function _v3Swap(
@@ -224,13 +218,14 @@ contract UniversalExecutor is ExecutorBase, ReentrancyGuard {
 		uint256 limit, // amountOutMin || amountInMax
 		bool isExactIn,
 		bytes calldata permit
-	) internal virtual {
+	) internal virtual returns (bytes[] memory returnData) {
 		Execution[] memory executions = new Execution[](2);
 		uint256 count;
 
 		unchecked {
 			if (permit.length != 0) {
-				Currency currencyIn = bytes(path[isExactIn ? 0 : path.length - 20:]).toCurrency();
+				Currency currencyIn = path[isExactIn ? 0 : path.length - 20:].toCurrency();
+
 				if (currencyIn.allowance(account, PERMIT2) != MAX_UINT256) {
 					executions[count] = Execution({
 						target: currencyIn.toAddress(),
@@ -253,7 +248,7 @@ contract UniversalExecutor is ExecutorBase, ReentrancyGuard {
 			}
 		}
 
-		_execute(account, executions);
+		return _execute(account, executions);
 	}
 
 	function _v2Swap(
@@ -263,13 +258,14 @@ contract UniversalExecutor is ExecutorBase, ReentrancyGuard {
 		uint256 limit, // amountOutMin || amountInMax
 		bool isExactIn,
 		bytes calldata permit
-	) internal virtual {
+	) internal virtual returns (bytes[] memory returnData) {
 		Execution[] memory executions = new Execution[](2);
 		uint256 count;
 
 		unchecked {
 			if (permit.length != 0) {
 				Currency currencyIn = path[isExactIn ? 0 : path.length - 1];
+
 				if (currencyIn.allowance(account, PERMIT2) != MAX_UINT256) {
 					executions[count] = Execution({
 						target: currencyIn.toAddress(),
@@ -286,21 +282,7 @@ contract UniversalExecutor is ExecutorBase, ReentrancyGuard {
 			++count;
 		}
 
-		_execute(account, executions);
-	}
-
-	function _encodeExecuteAction(
-		address account,
-		bytes memory commands,
-		bytes[] memory inputs,
-		uint256 deadline,
-		uint256 value
-	) internal view virtual returns (Execution memory execution) {
-		execution = Execution({
-			target: getUniversalRouter(account),
-			value: value,
-			callData: abi.encodeWithSelector(EXECUTE_SELECTOR, commands, inputs, deadline)
-		});
+		return _execute(account, executions);
 	}
 
 	function _encodeV3ExactInput(
@@ -344,12 +326,15 @@ contract UniversalExecutor is ExecutorBase, ReentrancyGuard {
 			inputs[1] = abi.encode(MSG_SENDER, amountIn, amountOutMin, path, true);
 		}
 
-		execution = _encodeExecuteAction({
-			account: account,
-			commands: commands,
-			inputs: inputs,
-			deadline: permit.toUint256(5), // sigDeadline
-			value: useNative ? amountIn : 0
+		execution = Execution({
+			target: getAccountRouter(account),
+			value: useNative ? amountIn : 0,
+			callData: abi.encodeWithSelector(
+				EXECUTE_SELECTOR,
+				commands,
+				inputs,
+				permit.toUint256(5) // sigDeadline
+			)
 		});
 	}
 
@@ -400,12 +385,15 @@ contract UniversalExecutor is ExecutorBase, ReentrancyGuard {
 			inputs[2] = abi.encode(currencyIn, MSG_SENDER, 0);
 		}
 
-		execution = _encodeExecuteAction({
-			account: account,
-			commands: commands,
-			inputs: inputs,
-			deadline: permit.toUint256(5), // sigDeadline
-			value: useNative ? amountInMax : 0
+		execution = Execution({
+			target: getAccountRouter(account),
+			value: useNative ? amountInMax : 0,
+			callData: abi.encodeWithSelector(
+				EXECUTE_SELECTOR,
+				commands,
+				inputs,
+				permit.toUint256(5) // sigDeadline
+			)
 		});
 	}
 
@@ -438,7 +426,7 @@ contract UniversalExecutor is ExecutorBase, ReentrancyGuard {
 
 			inputs = new bytes[](3);
 			inputs[0] = permit;
-			inputs[1] = abi.encode(ADDRESS_THIS, amountIn, amountOutMin, path, true);
+			inputs[1] = abi.encode(MSG_SENDER, amountIn, amountOutMin, path, true);
 			inputs[2] = abi.encode(MSG_SENDER, amountOutMin);
 		} else {
 			commands = new bytes(2);
@@ -447,15 +435,18 @@ contract UniversalExecutor is ExecutorBase, ReentrancyGuard {
 
 			inputs = new bytes[](2);
 			inputs[0] = permit;
-			inputs[1] = abi.encode(ADDRESS_THIS, amountIn, amountOutMin, path, true);
+			inputs[1] = abi.encode(MSG_SENDER, amountIn, amountOutMin, path, true);
 		}
 
-		execution = _encodeExecuteAction({
-			account: account,
-			commands: commands,
-			inputs: inputs,
-			deadline: permit.toUint256(5), // sigDeadline
-			value: useNative ? amountIn : 0
+		execution = Execution({
+			target: getAccountRouter(account),
+			value: useNative ? amountIn : 0,
+			callData: abi.encodeWithSelector(
+				EXECUTE_SELECTOR,
+				commands,
+				inputs,
+				permit.toUint256(5) // sigDeadline
+			)
 		});
 	}
 
@@ -506,12 +497,15 @@ contract UniversalExecutor is ExecutorBase, ReentrancyGuard {
 			inputs[2] = abi.encode(currencyIn, MSG_SENDER, 0);
 		}
 
-		execution = _encodeExecuteAction({
-			account: account,
-			commands: commands,
-			inputs: inputs,
-			deadline: permit.toUint256(5), // sigDeadline
-			value: useNative ? amountInMax : 0
+		execution = Execution({
+			target: getAccountRouter(account),
+			value: useNative ? amountInMax : 0,
+			callData: abi.encodeWithSelector(
+				EXECUTE_SELECTOR,
+				commands,
+				inputs,
+				permit.toUint256(5) // sigDeadline
+			)
 		});
 	}
 

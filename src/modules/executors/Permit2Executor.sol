@@ -3,8 +3,7 @@ pragma solidity ^0.8.28;
 
 import {BytesLib} from "src/libraries/BytesLib.sol";
 import {CalldataDecoder} from "src/libraries/CalldataDecoder.sol";
-import {ExecutionLib, Execution} from "src/libraries/ExecutionLib.sol";
-import {SafeCast} from "src/libraries/SafeCast.sol";
+import {Execution} from "src/libraries/ExecutionLib.sol";
 import {Currency} from "src/types/Currency.sol";
 import {ModuleType} from "src/types/Types.sol";
 import {ReentrancyGuard} from "src/modules/utils/ReentrancyGuard.sol";
@@ -13,10 +12,8 @@ import {ExecutorBase} from "src/modules/base/ExecutorBase.sol";
 /// @title Permit2Executor
 
 contract Permit2Executor is ExecutorBase, ReentrancyGuard {
-	using BytesLib for bytes;
+	using BytesLib for *;
 	using CalldataDecoder for bytes;
-	using ExecutionLib for address;
-	using SafeCast for uint256;
 
 	struct PermitDetails {
 		Currency currency;
@@ -50,12 +47,12 @@ contract Permit2Executor is ExecutorBase, ReentrancyGuard {
 	uint160 internal constant MAX_UINT160 = (1 << 160) - 1;
 	uint48 internal constant MAX_UINT48 = (1 << 48) - 1;
 
-	function onInstall(bytes calldata) public payable virtual {
+	function onInstall(bytes calldata) external payable {
 		require(!_isInitialized(msg.sender), AlreadyInitialized(msg.sender));
 		_isInstalled[msg.sender] = true;
 	}
 
-	function onUninstall(bytes calldata) public payable virtual {
+	function onUninstall(bytes calldata) external payable {
 		require(_isInitialized(msg.sender), NotInitialized(msg.sender));
 		_isInstalled[msg.sender] = false;
 	}
@@ -66,13 +63,12 @@ contract Permit2Executor is ExecutorBase, ReentrancyGuard {
 
 	function approveCurrencies(address account, bytes calldata data) external payable nonReentrant {
 		unchecked {
-			require(data.length % 20 == 0, InvalidDataLength());
-			uint256 length = data.length / 20;
+			uint256 length = _getCurrenciesLength(data);
 			Execution[] memory executions = new Execution[](length);
 
 			for (uint256 i; i < length; ++i) {
 				executions[i] = Execution({
-					target: bytes(data[i * 20:]).toAddress(),
+					target: data[i * 20:].toAddress(),
 					value: 0,
 					callData: abi.encodeWithSelector(APPROVE_SELECTOR, PERMIT2, MAX_UINT256)
 				});
@@ -86,27 +82,32 @@ contract Permit2Executor is ExecutorBase, ReentrancyGuard {
 		address account,
 		Currency currency,
 		address spender,
-		uint256 amount,
-		uint256 expiration
+		uint160 amount,
+		uint48 expiration
 	) external payable nonReentrant {
-		bytes memory callData = abi.encodeWithSelector(
-			PERMIT2_APPROVE_SELECTOR,
-			currency,
-			spender,
-			amount.toUint160(),
-			expiration.toUint48()
+		_execute(
+			account,
+			PERMIT2,
+			0,
+			abi.encodeWithSelector(PERMIT2_APPROVE_SELECTOR, currency, spender, amount, expiration)
 		);
+	}
 
-		_execute(account, PERMIT2, 0, callData);
+	function approveMax(address account, Currency currency, address spender) external payable nonReentrant {
+		_execute(
+			account,
+			PERMIT2,
+			0,
+			abi.encodeWithSelector(PERMIT2_APPROVE_SELECTOR, currency, spender, MAX_UINT160, MAX_UINT48)
+		);
 	}
 
 	function permitSingle(
 		address account,
 		bytes calldata params // abi.encode(((address,uint160,uint48,uint48),address,uint256),bytes)
 	) external payable nonReentrant {
-		Currency currency;
 		PermitSingle calldata permit;
-		bytes calldata signature = params.toBytes(6);
+		Currency currency;
 
 		assembly ("memory-safe") {
 			permit := params.offset
@@ -129,7 +130,12 @@ contract Permit2Executor is ExecutorBase, ReentrancyGuard {
 			executions[count] = Execution({
 				target: PERMIT2,
 				value: 0,
-				callData: abi.encodeWithSelector(PERMIT2_PERMIT_SINGLE_SELECTOR, account, permit, signature)
+				callData: abi.encodeWithSelector(
+					PERMIT2_PERMIT_SINGLE_SELECTOR,
+					account,
+					permit,
+					params.toBytes(6) // signature
+				)
 			});
 			++count;
 
@@ -148,21 +154,21 @@ contract Permit2Executor is ExecutorBase, ReentrancyGuard {
 		bytes calldata params // abi.encode(((address,uint160,uint48,uint48)[],address,uint256),bytes)
 	) external payable nonReentrant {
 		PermitBatch calldata permit;
-		bytes calldata signature = params.toBytes(1);
 
 		assembly ("memory-safe") {
 			permit := add(params.offset, calldataload(params.offset))
 		}
 
 		Execution[] memory executions;
+		uint256 length = permit.details.length;
 		uint256 count;
 
 		unchecked {
-			uint256 length = permit.details.length;
 			executions = new Execution[](length + 1);
 
 			for (uint256 i; i < length; ++i) {
 				Currency currency = permit.details[i].currency;
+
 				if (currency.allowance(account, PERMIT2) != MAX_UINT256) {
 					executions[count] = Execution({
 						target: currency.toAddress(),
@@ -176,7 +182,12 @@ contract Permit2Executor is ExecutorBase, ReentrancyGuard {
 			executions[count] = Execution({
 				target: PERMIT2,
 				value: 0,
-				callData: abi.encodeWithSelector(PERMIT2_PERMIT_BATCH_SELECTOR, account, permit, signature)
+				callData: abi.encodeWithSelector(
+					PERMIT2_PERMIT_BATCH_SELECTOR,
+					account,
+					permit,
+					params.toBytes(1) // signature
+				)
 			});
 			++count;
 
@@ -193,19 +204,18 @@ contract Permit2Executor is ExecutorBase, ReentrancyGuard {
 	function getNonce(address owner, Currency currency, address spender) external view returns (uint48 nonce) {
 		assembly ("memory-safe") {
 			let ptr := mload(0x40)
-			let res := add(ptr, 0x64)
 
 			mstore(ptr, 0x927da10500000000000000000000000000000000000000000000000000000000) // allowance(address,address,address)
 			mstore(add(ptr, 0x04), shr(0x60, shl(0x60, owner)))
 			mstore(add(ptr, 0x24), shr(0x60, shl(0x60, currency)))
 			mstore(add(ptr, 0x44), shr(0x60, shl(0x60, spender)))
 
-			if iszero(staticcall(gas(), PERMIT2, ptr, 0x64, res, 0x60)) {
+			if iszero(staticcall(gas(), PERMIT2, ptr, 0x64, add(ptr, 0x64), 0x60)) {
 				returndatacopy(ptr, 0x00, returndatasize())
 				revert(ptr, returndatasize())
 			}
 
-			nonce := and(mload(add(res, 0x40)), 0xffffffffffff)
+			nonce := and(mload(add(ptr, 0xa4)), 0xffffffffffff)
 		}
 	}
 
@@ -223,5 +233,17 @@ contract Permit2Executor is ExecutorBase, ReentrancyGuard {
 
 	function _isInitialized(address account) internal view returns (bool) {
 		return _isInstalled[account];
+	}
+
+	function _getCurrenciesLength(bytes calldata data) internal pure returns (uint256 quotient) {
+		assembly ("memory-safe") {
+			quotient := shr(0x40, mul(data.length, 0xCCCCCCCCCCCCD00))
+			let remainder := sub(data.length, mul(quotient, 0x14))
+
+			if iszero(iszero(remainder)) {
+				mstore(0x00, 0xdfe93090) // InvalidDataLength()
+				revert(0x1c, 0x04)
+			}
+		}
 	}
 }

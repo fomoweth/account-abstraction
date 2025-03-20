@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {IValidator} from "src/interfaces/modules/IERC7579Modules.sol";
+import {IValidator, IStatelessValidator} from "src/interfaces/IERC7579Modules.sol";
 import {IERC7579Account} from "src/interfaces/IERC7579Account.sol";
 import {AccountIdLib} from "src/libraries/AccountIdLib.sol";
 import {SignatureChecker} from "src/libraries/SignatureChecker.sol";
@@ -10,7 +10,7 @@ import {ModuleBase} from "./ModuleBase.sol";
 /// @title ERC7739Validator
 /// @dev Modified from https://github.com/erc7579/erc7739Validator/blob/main/src/ERC7739Validator.sol
 
-abstract contract ERC7739Validator is IValidator, ModuleBase {
+abstract contract ERC7739Validator is IValidator, IStatelessValidator, ModuleBase {
 	using AccountIdLib for string;
 	using SignatureChecker for address;
 	using SignatureChecker for bytes32;
