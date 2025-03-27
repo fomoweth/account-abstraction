@@ -26,7 +26,7 @@ contract STETHWrapperTest is BaseTest {
 
 		CallType[] memory callTypes = CALLTYPE_DELEGATE.callTypes(CALLTYPE_DELEGATE, CALLTYPE_DELEGATE);
 
-		bytes memory installData = encodeInstallModuleData(
+		bytes memory installData = encodeInstallModuleParams(
 			TYPE_FALLBACK.moduleTypes(),
 			abi.encode(encodeFallbackSelectors(selectors, callTypes), ""),
 			""

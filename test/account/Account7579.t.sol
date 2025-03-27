@@ -158,7 +158,7 @@ contract Account7579Test is BaseTest {
 		COOPER.install(
 			TYPE_FALLBACK,
 			address(NATIVE_WRAPPER),
-			encodeInstallModuleData(
+			encodeInstallModuleParams(
 				TYPE_FALLBACK.moduleTypes(),
 				abi.encode(
 					encodeFallbackSelectors(
@@ -665,7 +665,7 @@ contract Account7579Test is BaseTest {
 
 		assertEq(account.rootValidator(), address(K1_VALIDATOR));
 		assertEq(K1_VALIDATOR.getAccountOwner(address(account)), owner);
-		assertTrue(K1_VALIDATOR.isAuthorizedSender(address(account), BUNDLER.eoa));
+		assertTrue(K1_VALIDATOR.isAuthorized(address(account), BUNDLER.eoa));
 
 		if (owner != MURPHY.eoa) assertEq(account.registry(), address(REGISTRY));
 

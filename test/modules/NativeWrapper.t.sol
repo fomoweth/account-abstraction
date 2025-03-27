@@ -23,7 +23,7 @@ contract NativeWrapperTest is BaseTest {
 
 		CallType[] memory callTypes = CALLTYPE_DELEGATE.callTypes(CALLTYPE_DELEGATE);
 
-		bytes memory installData = encodeInstallModuleData(
+		bytes memory installData = encodeInstallModuleParams(
 			TYPE_FALLBACK.moduleTypes(),
 			abi.encode(encodeFallbackSelectors(selectors, callTypes), ""),
 			""
@@ -32,7 +32,7 @@ contract NativeWrapperTest is BaseTest {
 		ALICE.install(TYPE_FALLBACK, address(NATIVE_WRAPPER), installData);
 	}
 
-	function test_wrapETH() public virtual impersonate(address(ALICE.account)) {
+	function test_wrapETH() public virtual impersonate(ALICE, true) {
 		deal(address(ALICE.account), DEFAULT_VALUE);
 		assertEq(address(ALICE.account).balance, DEFAULT_VALUE);
 		assertEq(WNATIVE.balanceOf(address(ALICE.account)), 0);
@@ -77,7 +77,7 @@ contract NativeWrapperTest is BaseTest {
 		assertEq(WNATIVE.balanceOf(address(ALICE.account)), DEFAULT_VALUE);
 	}
 
-	function test_unwrapWETH() public virtual impersonate(address(ALICE.account)) {
+	function test_unwrapWETH() public virtual impersonate(ALICE, true) {
 		deal(WNATIVE, address(ALICE.account), DEFAULT_VALUE);
 		assertEq(WNATIVE.balanceOf(address(ALICE.account)), DEFAULT_VALUE);
 		assertEq(address(ALICE.account).balance, 0);
