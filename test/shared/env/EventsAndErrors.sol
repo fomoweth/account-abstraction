@@ -4,8 +4,6 @@ pragma solidity ^0.8.28;
 import {CallType, ExecType, ModuleType} from "src/types/Types.sol";
 
 abstract contract EventsAndErrors {
-	// Events
-
 	// UUPSUpgradeable Proxy
 	event Upgraded(address indexed implementation);
 
@@ -24,8 +22,6 @@ abstract contract EventsAndErrors {
 	event HookConfigured(address indexed module, address indexed hook);
 	event TrustedForwarderConfigured(address indexed account, address indexed forwarder);
 	event TryExecuteUnsuccessful(uint256 index, bytes returnData);
-
-	// Errors
 
 	// UUPSUpgradeable Proxy
 	error InvalidImplementation();
@@ -63,7 +59,7 @@ abstract contract EventsAndErrors {
 	error InvalidDataLength();
 
 	error ForbiddenFallback();
-	error ForbiddenSelector(bytes4 selector); // 0x9ff8cd94
+	error ForbiddenSelector(bytes4 selector);
 	error InvalidSelector();
 	error UnknownSelector(bytes4 selector);
 
@@ -82,14 +78,6 @@ abstract contract EventsAndErrors {
 	error UnsupportedExecType(ExecType execType);
 
 	error SliceOutOfBounds();
-	error InsufficientBalance();
-	error InvalidCallValue();
 	error InvalidWrappedNative();
 	error TransferNativeFailed();
-
-	error InvalidAmountOut();
-	error InvalidAmountOutMin();
-
-	error InvalidAmountIn();
-	error InvalidAmountInMax();
 }

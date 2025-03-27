@@ -1,17 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {Test, console2 as console} from "forge-std/Test.sol";
+import {Test} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 
-import {IEntryPoint} from "account-abstraction/interfaces/IEntryPoint.sol";
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 import {IHook} from "src/interfaces/IERC7579Modules.sol";
-import {Arrays} from "src/libraries/Arrays.sol";
-import {Math} from "src/libraries/Math.sol";
 import {Currency} from "src/types/Currency.sol";
-import {Vortex} from "src/Vortex.sol";
 
+import {PermitDetails, PermitSingle, PermitBatch} from "test/shared/structs/Protocols.sol";
 import {Signer} from "test/shared/structs/Signer.sol";
 
 import {Assertions} from "./Assertions.sol";
@@ -19,9 +16,41 @@ import {Deployers} from "./Deployers.sol";
 import {EventsAndErrors} from "./EventsAndErrors.sol";
 
 abstract contract BaseTest is Test, Assertions, Deployers, EventsAndErrors {
-	using Arrays for Currency[];
-	using Arrays for uint24[];
-	using Math for uint256;
+	string internal constant ENABLE_MODULE_NOTATION =
+		"EnableModule(uint256 moduleTypeId,address module,bytes32 initDataHash,bytes32 userOpHash)";
+	bytes32 internal constant ENABLE_MODULE_TYPEHASH = keccak256(bytes(ENABLE_MODULE_NOTATION));
+
+	string internal constant PERMIT_DETAILS_NOTATION =
+		"PermitDetails(address token,uint160 amount,uint48 expiration,uint48 nonce)";
+	bytes32 internal constant PERMIT_DETAILS_TYPEHASH = keccak256(bytes(PERMIT_DETAILS_NOTATION));
+
+	string internal constant PERMIT_SINGLE_NOTATION =
+		"PermitSingle(PermitDetails details,address spender,uint256 sigDeadline)PermitDetails(address token,uint160 amount,uint48 expiration,uint48 nonce)";
+	bytes32 internal constant PERMIT_SINGLE_TYPEHASH = keccak256(bytes(PERMIT_SINGLE_NOTATION));
+
+	string internal constant PERMIT_BATCH_NOTATION =
+		"PermitBatch(PermitDetails[] details,address spender,uint256 sigDeadline)PermitDetails(address token,uint160 amount,uint48 expiration,uint48 nonce)";
+	bytes32 internal constant PERMIT_BATCH_TYPEHASH = keccak256(bytes(PERMIT_BATCH_NOTATION));
+
+	// AccountDeployed(bytes32,address,address,address)
+	bytes32 internal constant ACCOUNT_DEPLOYED_TOPIC =
+		0xd51a9c61267aa6196961883ecf5ff2da6619c37dac0fa92122513fb32c032d2d;
+
+	// UserOperationEvent(bytes32,address,address,uint256,bool,uint256,uint256)
+	bytes32 internal constant USER_OPERATION_EVENT_TOPIC =
+		0x49628fd1471006c1482da88028e9ce4dbb080b815c9b0344d39e5a8e6ec1419f;
+
+	// UserOperationRevertReason(bytes32,address,uint256,bytes)
+	bytes32 internal constant USER_OPERATION_REVERT_REASON_TOPIC =
+		0x1c4fada7374c0a9ee8841fc38afe82932dc0f8e69012e927f061a8bae611a201;
+
+	bytes32 internal constant ERC1967_IMPLEMENTATION_SLOT =
+		0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
+
+	bytes32 internal constant STETH_TOTAL_SHARES_SLOT =
+		0xe3b4b636e601189b5f4c6742edf2538ac12bb61ed03e6da26949d69838fa447e;
+
+	bytes32 internal PERMIT2_DOMAIN_SEPARATOR;
 
 	uint256 internal snapshotId = MAX_UINT256;
 
@@ -38,9 +67,10 @@ abstract contract BaseTest is Test, Assertions, Deployers, EventsAndErrors {
 	}
 
 	function setUp() public virtual {
-		configure();
 		setUpSigners();
 		setUpContracts();
+
+		PERMIT2_DOMAIN_SEPARATOR = PERMIT2.DOMAIN_SEPARATOR();
 	}
 
 	function snapshotState() internal virtual {
@@ -50,6 +80,35 @@ abstract contract BaseTest is Test, Assertions, Deployers, EventsAndErrors {
 	function revertToState() internal virtual {
 		if (snapshotId != MAX_UINT256) vm.revertToState(snapshotId);
 		snapshotState();
+	}
+
+	function deal(Currency currency, address account, uint256 value, bool adjust) internal virtual {
+		if (currency.isZero()) {
+			deal(account, value);
+		} else if (currency == STETH) {
+			(, bytes memory returndata) = currency.toAddress().staticcall(abi.encodeWithSelector(0xf5eb42dc, account));
+			uint256 balancePrior = abi.decode(returndata, (uint256));
+			bytes32 balanceSlot = keccak256(abi.encode(account, uint256(0)));
+			vm.store(currency.toAddress(), balanceSlot, bytes32(value));
+
+			if (adjust) {
+				uint256 totalSupply = currency.totalSupply();
+
+				if (value < balancePrior) {
+					totalSupply -= (balancePrior - value);
+				} else {
+					totalSupply += (value - balancePrior);
+				}
+
+				vm.store(currency.toAddress(), STETH_TOTAL_SHARES_SLOT, bytes32(totalSupply));
+			}
+		} else {
+			deal(currency.toAddress(), account, value, adjust);
+		}
+	}
+
+	function deal(Currency currency, address account, uint256 value) internal virtual {
+		deal(currency, account, value, false);
 	}
 
 	function getUserOpResult(
@@ -66,24 +125,67 @@ abstract contract BaseTest is Test, Assertions, Deployers, EventsAndErrors {
 		}
 	}
 
-	function encodePath(
+	function preparePermitSingle(
+		Signer memory signer,
+		Currency currency,
+		address spender
+	) internal view virtual returns (PermitSingle memory permit, bytes memory signature, bytes32 hash) {
+		(, , uint48 nonce) = PERMIT2.allowance(address(signer.account), currency, spender);
+
+		permit = PermitSingle({
+			details: PermitDetails({currency: currency, amount: MAX_UINT160, expiration: MAX_UINT48, nonce: nonce}),
+			spender: spender,
+			sigDeadline: MAX_UINT256
+		});
+
+		bytes32 structHash = keccak256(
+			abi.encode(
+				PERMIT_SINGLE_TYPEHASH,
+				keccak256(abi.encode(PERMIT_DETAILS_TYPEHASH, permit.details)),
+				spender,
+				MAX_UINT256
+			)
+		);
+
+		hash = keccak256(abi.encodePacked("\x19\x01", PERMIT2_DOMAIN_SEPARATOR, structHash));
+
+		signature = abi.encodePacked(signer.account.rootValidator(), signer.sign(hash));
+	}
+
+	function preparePermitBatch(
+		Signer memory signer,
 		Currency[] memory currencies,
-		uint24[] memory fees,
-		bool reverse
-	) internal pure virtual returns (bytes memory path) {
-		uint256 length = fees.length;
-		vm.assertTrue(length + 1 == currencies.length);
-
-		if (reverse) {
-			currencies.reverse();
-			fees.reverse();
-		}
-
-		path = abi.encodePacked(currencies[0]);
+		address spender
+	) internal view virtual returns (PermitBatch memory permit, bytes memory signature, bytes32 hash) {
+		uint256 length = currencies.length;
+		PermitDetails[] memory details = new PermitDetails[](length);
+		bytes32[] memory hashes = new bytes32[](length);
 
 		for (uint256 i; i < length; ++i) {
-			path = abi.encodePacked(path, fees[i], currencies[i + 1]);
+			(, , uint48 nonce) = PERMIT2.allowance(address(signer.account), currencies[i], spender);
+
+			hashes[i] = keccak256(
+				abi.encode(
+					PERMIT_DETAILS_TYPEHASH,
+					details[i] = PermitDetails({
+						currency: currencies[i],
+						amount: MAX_UINT160,
+						expiration: MAX_UINT48,
+						nonce: nonce
+					})
+				)
+			);
 		}
+
+		permit = PermitBatch({details: details, spender: spender, sigDeadline: MAX_UINT256});
+
+		bytes32 structHash = keccak256(
+			abi.encode(PERMIT_BATCH_TYPEHASH, keccak256(abi.encodePacked(hashes)), spender, MAX_UINT256)
+		);
+
+		hash = keccak256(abi.encodePacked("\x19\x01", PERMIT2_DOMAIN_SEPARATOR, structHash));
+
+		signature = abi.encodePacked(signer.account.rootValidator(), signer.sign(hash));
 	}
 
 	function addressToBytes32(address input) internal pure virtual returns (bytes32 output) {
@@ -195,59 +297,6 @@ abstract contract BaseTest is Test, Assertions, Deployers, EventsAndErrors {
                 r := xor(value, r)
                 break
             }
-		}
-	}
-
-	function slice(
-		bytes memory data,
-		uint256 offset,
-		uint256 length
-	) internal pure virtual returns (bytes memory result) {
-		assembly ("memory-safe") {
-			result := mload(0x40)
-
-			switch iszero(length)
-			case 0x00 {
-				let lengthmod := and(length, 0x1f)
-				let ptr := add(add(result, lengthmod), mul(0x20, iszero(lengthmod)))
-				let guard := add(ptr, length)
-
-				for {
-					let pos := add(add(add(data, lengthmod), mul(0x20, iszero(lengthmod))), offset)
-				} lt(ptr, guard) {
-					ptr := add(ptr, 0x20)
-					pos := add(pos, 0x20)
-				} {
-					mstore(ptr, mload(pos))
-				}
-
-				mstore(result, length)
-				mstore(0x40, and(add(ptr, 0x1f), not(0x1f)))
-			}
-			default {
-				mstore(result, 0x00)
-				mstore(0x40, add(result, 0x20))
-			}
-		}
-	}
-
-	function logBytes(string memory label, bytes memory data) internal pure virtual {
-		console.log("");
-		console.log(label);
-		console.log("");
-		logBytes(data);
-	}
-
-	function logBytes(bytes memory data) internal pure virtual {
-		if (data.length % 32 == 4) {
-			console.logBytes4(bytes4(data));
-			data = slice(data, 4, data.length - 4);
-		} else {
-			console.log("0x");
-		}
-
-		for (uint256 i; i < data.length; i += 32) {
-			console.log(vm.split(vm.toString(slice(data, i, 32)), "0x")[1]);
 		}
 	}
 }

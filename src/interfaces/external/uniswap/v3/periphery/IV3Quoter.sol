@@ -3,7 +3,7 @@ pragma solidity ^0.8.26;
 
 import {Currency} from "src/types/Currency.sol";
 
-interface IQuoter {
+interface IV3Quoter {
 	struct QuoteExactInputSingleWithPoolParams {
 		Currency currencyIn;
 		Currency currencyOut;

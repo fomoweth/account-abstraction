@@ -2,7 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {Currency} from "src/types/Currency.sol";
-import {PoolId, PoolKey} from "./IPoolManager.sol";
+import {PoolKey, PoolId} from "../V4Types.sol";
 
 /// @notice Interface for all protocol-fee related functions in the pool manager
 interface IProtocolFees {

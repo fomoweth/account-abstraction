@@ -14,7 +14,9 @@ struct UniswapConfig {
 	address universalRouter;
 	address v2Factory;
 	address v3Factory;
+	address v3PositionManager;
 	address v3Quoter;
+	address v4PositionManager;
 	address v4Quoter;
 	address v4StateView;
 }

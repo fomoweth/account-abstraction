@@ -2,13 +2,10 @@
 pragma solidity ^0.8.28;
 
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
-import {BytesLib} from "src/libraries/BytesLib.sol";
 import {ModuleType, ValidationData} from "src/types/Types.sol";
 import {ERC7739Validator} from "src/modules/base/ERC7739Validator.sol";
 
 contract MockValidator is ERC7739Validator {
-	using BytesLib for bytes;
-
 	/// @dev keccak256("AccountOwnerUpdated(address,address)")
 	bytes32 private constant ACCOUNT_OWNER_UPDATED_TOPIC =
 		0xd85ce777a3f61727a3501a1f3adbbfc9927b5c64326149ba64310037f50bf519;
@@ -20,7 +17,7 @@ contract MockValidator is ERC7739Validator {
 	function onInstall(bytes calldata data) external payable {
 		require(!_isInitialized(msg.sender), AlreadyInitialized(msg.sender));
 		require(data.length == 20, InvalidDataLength());
-		_setAccountOwner(_checkAccountOwner(data.toAddress()));
+		_setAccountOwner(_checkAccountOwner(address(bytes20(data))));
 	}
 
 	function onUninstall(bytes calldata) external payable {
@@ -70,7 +67,7 @@ contract MockValidator is ERC7739Validator {
 		bytes calldata data
 	) external view returns (bool) {
 		require(data.length == 20, InvalidDataLength());
-		return _validateSignatureForOwner(data.toAddress(), hash, signature);
+		return _validateSignatureForOwner(address(bytes20(data)), hash, signature);
 	}
 
 	function name() external pure returns (string memory) {

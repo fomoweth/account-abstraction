@@ -9,6 +9,7 @@ import {IModule} from "src/interfaces/IERC7579Modules.sol";
 import {ExecutionLib, Execution} from "src/libraries/ExecutionLib.sol";
 import {SignatureChecker} from "src/libraries/SignatureChecker.sol";
 import {VALIDATION_MODE_DEFAULT, VALIDATION_MODE_ENABLE} from "src/types/Constants.sol";
+import {Currency} from "src/types/Currency.sol";
 import {ExecType, ModuleType, ValidationMode} from "src/types/Types.sol";
 import {Vortex} from "src/Vortex.sol";
 
@@ -35,6 +36,28 @@ library SignerHelper {
 	Vm internal constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
 
 	IEntryPoint internal constant ENTRYPOINT = IEntryPoint(0x0000000071727De22E5E9d8BAf0edAc6f37da032);
+
+	function addDeposit(Signer memory signer, uint256 value, address beneficiary) internal {
+		vm.assertTrue(value != 0);
+
+		uint256 deposit = ENTRYPOINT.balanceOf(beneficiary);
+
+		vm.prank(signer.eoa);
+		ENTRYPOINT.depositTo{value: value}(beneficiary);
+
+		vm.assertEq(ENTRYPOINT.balanceOf(beneficiary), deposit + value);
+	}
+
+	function addStake(Signer memory signer, uint256 value, uint32 unstakeDelaySec) internal {
+		vm.assertTrue(value != 0 && unstakeDelaySec != 0);
+
+		vm.prank(signer.eoa);
+		ENTRYPOINT.addStake{value: value}(unstakeDelaySec);
+
+		IEntryPoint.DepositInfo memory info = ENTRYPOINT.getDepositInfo(signer.eoa);
+		vm.assertTrue(info.staked);
+		vm.assertGe(info.stake, value);
+	}
 
 	function execute(
 		Signer memory signer,
@@ -192,30 +215,12 @@ library SignerHelper {
 		signature = abi.encodePacked(r, s, v);
 	}
 
-	function addDeposit(Signer memory signer, uint256 value, address beneficiary) internal {
-		vm.assertTrue(value != 0);
-		vm.prank(signer.eoa);
-
-		uint256 deposit = ENTRYPOINT.balanceOf(beneficiary);
-		ENTRYPOINT.depositTo{value: value}(beneficiary);
-
-		vm.assertEq(ENTRYPOINT.balanceOf(beneficiary), deposit + value);
-	}
-
-	function addStake(Signer memory signer, uint256 value, uint32 unstakeDelaySec) internal {
-		vm.assertTrue(value != 0 && unstakeDelaySec != 0);
-		vm.prank(signer.eoa);
-
-		ENTRYPOINT.addStake{value: value}(unstakeDelaySec);
-
-		IEntryPoint.DepositInfo memory info = ENTRYPOINT.getDepositInfo(signer.eoa);
-		vm.assertTrue(info.staked);
-		vm.assertGe(info.stake, value);
-		vm.assertEq(info.unstakeDelaySec, unstakeDelaySec);
-	}
-
 	// nonce: [1 bytes validation mode][3 bytes unused][20 bytes validator][8 bytes nonce]
-	function getNonce(address account, ValidationMode mode, address validator) internal view returns (uint256 nonce) {
+	function encodeNonce(
+		address account,
+		ValidationMode mode,
+		address validator
+	) internal view returns (uint256 nonce) {
 		vm.assertTrue(mode == VALIDATION_MODE_DEFAULT || mode == VALIDATION_MODE_ENABLE);
 		return ENTRYPOINT.getNonce(account, mode.encodeNonceKey(validator));
 	}
@@ -234,7 +239,7 @@ library SignerHelper {
 	) internal view returns (PackedUserOperation memory userOp) {
 		userOp = PackedUserOperation({
 			sender: account,
-			nonce: getNonce(account, mode, validator),
+			nonce: encodeNonce(account, mode, validator),
 			initCode: "",
 			callData: "",
 			accountGasLimits: defaultGasLimits(),
@@ -245,11 +250,11 @@ library SignerHelper {
 		});
 	}
 
-	function defaultGas() internal pure returns (uint128) {
-		return uint128(1e6);
+	function defaultGas() internal view returns (uint128) {
+		return uint128(block.chainid == 1 ? 3e6 : block.chainid == 137 ? 6e6 : 5e6);
 	}
 
-	function defaultGasLimits() internal pure returns (bytes32) {
+	function defaultGasLimits() internal view returns (bytes32) {
 		return bytes32(abi.encodePacked(defaultGas(), defaultGas()));
 	}
 

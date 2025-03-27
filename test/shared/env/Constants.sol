@@ -4,7 +4,7 @@ pragma solidity ^0.8.28;
 import {CommonBase} from "forge-std/Base.sol";
 import {IEntryPoint} from "account-abstraction/interfaces/IEntryPoint.sol";
 import {SenderCreator} from "account-abstraction/core/SenderCreator.sol";
-import {IPermit2} from "src/interfaces/external/permit2/IPermit2.sol";
+import {IPermit2} from "src/interfaces/external/uniswap/permit2/IPermit2.sol";
 import {IRegistry, IExternalResolver, IExternalSchemaValidator} from "src/interfaces/registries/IRegistry.sol";
 import {ISmartSession} from "src/interfaces/ISmartSession.sol";
 import {CallType, ExecType} from "src/types/ExecutionMode.sol";
@@ -41,40 +41,6 @@ abstract contract Constants is CommonBase {
 
 	address internal constant SENTINEL = 0x0000000000000000000000000000000000000001;
 	address internal constant ZERO = 0x0000000000000000000000000000000000000000;
-
-	// AccountDeployed(bytes32,address,address,address)
-	bytes32 internal constant ACCOUNT_DEPLOYED_TOPIC =
-		0xd51a9c61267aa6196961883ecf5ff2da6619c37dac0fa92122513fb32c032d2d;
-
-	// UserOperationEvent(bytes32,address,address,uint256,bool,uint256,uint256)
-	bytes32 internal constant USER_OPERATION_EVENT_TOPIC =
-		0x49628fd1471006c1482da88028e9ce4dbb080b815c9b0344d39e5a8e6ec1419f;
-
-	// UserOperationRevertReason(bytes32,address,uint256,bytes)
-	bytes32 internal constant USER_OPERATION_REVERT_REASON_TOPIC =
-		0x1c4fada7374c0a9ee8841fc38afe82932dc0f8e69012e927f061a8bae611a201;
-
-	bytes32 internal constant ERC1967_IMPLEMENTATION_SLOT =
-		0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
-
-	bytes32 internal constant STETH_TOTAL_SHARES_SLOT =
-		0xe3b4b636e601189b5f4c6742edf2538ac12bb61ed03e6da26949d69838fa447e;
-
-	string internal constant ENABLE_MODULE_NOTATION =
-		"EnableModule(uint256 moduleTypeId,address module,bytes32 initDataHash,bytes32 userOpHash)";
-	bytes32 internal constant ENABLE_MODULE_TYPEHASH = keccak256(bytes(ENABLE_MODULE_NOTATION));
-
-	string internal constant PERMIT_DETAILS_NOTATION =
-		"PermitDetails(address token,uint160 amount,uint48 expiration,uint48 nonce)";
-	bytes32 internal constant PERMIT_DETAILS_TYPEHASH = keccak256(bytes(PERMIT_DETAILS_NOTATION));
-
-	string internal constant PERMIT_SINGLE_NOTATION =
-		"PermitSingle(PermitDetails details,address spender,uint256 sigDeadline)PermitDetails(address token,uint160 amount,uint48 expiration,uint48 nonce)";
-	bytes32 internal constant PERMIT_SINGLE_TYPEHASH = keccak256(bytes(PERMIT_SINGLE_NOTATION));
-
-	string internal constant PERMIT_BATCH_NOTATION =
-		"PermitBatch(PermitDetails[] details,address spender,uint256 sigDeadline)PermitDetails(address token,uint160 amount,uint48 expiration,uint48 nonce)";
-	bytes32 internal constant PERMIT_BATCH_TYPEHASH = keccak256(bytes(PERMIT_BATCH_NOTATION));
 
 	bytes4 internal constant ERC1271_SUCCESS = 0x1626ba7e;
 	bytes4 internal constant ERC1271_FAILED = 0xFFFFFFFF;
@@ -120,6 +86,7 @@ abstract contract Constants is CommonBase {
 	uint128 internal constant MAX_UINT128 = (1 << 128) - 1;
 	uint104 internal constant MAX_UINT104 = (1 << 104) - 1;
 	uint48 internal constant MAX_UINT48 = (1 << 48) - 1;
+	uint40 internal constant DEADLINE = 2000000000;
 
 	uint24 internal constant FEE_LOWEST = 100;
 	uint24 internal constant FEE_LOW = 500;

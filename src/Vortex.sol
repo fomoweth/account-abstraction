@@ -51,7 +51,7 @@ contract Vortex is IVortex, AccountCore {
 
 		if (isEnableMode) {
 			PackedUserOperation memory op = userOp;
-			op.signature = _enableModule(userOpHash, userOp.signature);
+			op.signature = _enableModule(userOp.signature, userOpHash);
 			return _validateUserOp(validator, op, userOpHash);
 		} else {
 			return _validateUserOp(validator, userOp, userOpHash);
