@@ -16,13 +16,16 @@ library Errors {
 	error InvalidSignature();
 	error InvalidDataLength();
 
+	error ExceededMaxLimit();
 	error LengthMismatch();
+	error NotSorted();
 
 	error SliceOutOfBounds();
 
 	// ERC-7579 ModuleManager
 	error InvalidModule();
-	error InvalidModuleTypeId(ModuleType moduleTypeId);
+	error InvalidModuleType();
+	error InvalidModuleTypeId();
 	error UnsupportedModuleType(ModuleType moduleTypeId);
 
 	error ModuleAlreadyInstalled(address module);
@@ -36,10 +39,14 @@ library Errors {
 
 	error InvalidCallType();
 	error InvalidExecType();
+	error InvalidFlag();
 
 	// ERC-7579 Fallback
+	error Forbidden();
+	error ForbiddenFallback();
 	error InvalidSelector();
 	error UnknownSelector(bytes4 selector);
+	error IntegrityCheckFailed();
 
 	// ERC-7579 Modules
 	error AlreadyInitialized(address account);

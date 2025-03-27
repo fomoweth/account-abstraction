@@ -10,9 +10,6 @@ import {AccountIdLib} from "src/libraries/AccountIdLib.sol";
 abstract contract ERC1271 {
 	using AccountIdLib for string;
 
-	/// @dev keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)")
-	bytes32 internal constant DOMAIN_TYPEHASH = 0x8b73c3c69bb8fe3d512ecc4cf759cc79239f7b179b0ffacaa9a75d522b39400f;
-
 	/// @dev keccak256("PersonalSign(bytes prefixed)")
 	bytes32 internal constant PERSONAL_SIGN_TYPEHASH =
 		0x983e65e5148e570cd828ead231ee759a8d7958721a768f93bc4483ba005c32de;
@@ -24,6 +21,10 @@ abstract contract ERC1271 {
 
 	bytes4 internal constant ERC7739_SUPPORTS = 0x77390000;
 	bytes4 internal constant ERC7739_SUPPORTS_V1 = 0x77390001;
+
+	function supportsNestedTypedDataSign() public view virtual returns (bytes32) {
+		return bytes4(0xd620c85a);
+	}
 
 	function _erc1271IsValidSignatureWithSender(
 		address sender,
@@ -62,11 +63,16 @@ abstract contract ERC1271 {
 		}
 	}
 
-	function _erc1271CallerIsSafe(address sender) internal view virtual returns (bool flag) {
+	function _erc1271CallerIsSafe(address sender) internal view virtual returns (bool result) {
 		assembly ("memory-safe") {
-			flag := or(eq(sender, caller()), eq(sender, MULTICALLER_WITH_SIGNER))
+			result := or(eq(sender, caller()), eq(sender, MULTICALLER_WITH_SIGNER))
 		}
 	}
+
+	function _erc1271IsValidSignatureNowCalldata(
+		bytes32 hash,
+		bytes calldata signature
+	) internal view virtual returns (bool);
 
 	function _erc1271UnwrapSignature(bytes calldata signature) internal view virtual returns (bytes calldata result) {
 		result = signature;
@@ -77,17 +83,12 @@ abstract contract ERC1271 {
 				calldataload(add(result.offset, sub(result.length, 0x20))),
 				mul(0x6492, div(not(shr(address(), address())), 0xffff)) // `0x6492...6492`.
 			) {
-				let o := add(result.offset, calldataload(add(result.offset, 0x40)))
-				result.length := calldataload(o)
-				result.offset := add(o, 0x20)
+				let ptr := add(result.offset, calldataload(add(result.offset, 0x40)))
+				result.length := calldataload(ptr)
+				result.offset := add(ptr, 0x20)
 			}
 		}
 	}
-
-	function _erc1271IsValidSignatureNowCalldata(
-		bytes32 hash,
-		bytes calldata signature
-	) internal view virtual returns (bool);
 
 	function _erc1271IsValidSignatureViaSafeCaller(
 		address sender,
@@ -104,7 +105,14 @@ abstract contract ERC1271 {
 		uint256 t = uint256(uint160(address(this)));
 
 		if (t != uint256(0)) {
-			(string memory name, string memory version) = IERC7579Account(msg.sender).accountId().parse();
+			string memory name;
+			string memory version;
+
+			try IERC7579Account(msg.sender).accountId() returns (string memory accountId) {
+				(name, version) = accountId.parse();
+			} catch {
+				return false;
+			}
 
 			assembly ("memory-safe") {
 				t := mload(0x40)
@@ -221,23 +229,20 @@ abstract contract ERC1271 {
 	}
 
 	function _hashTypedData(bytes32 structHash) internal view virtual returns (bytes32 digest) {
-		(string memory name, string memory version) = IERC7579Account(msg.sender).accountId().parse();
-
 		assembly ("memory-safe") {
 			let ptr := mload(0x40)
 
-			mstore(ptr, DOMAIN_TYPEHASH)
-			mstore(add(ptr, 0x20), keccak256(add(name, 0x20), mload(name)))
-			mstore(add(ptr, 0x40), keccak256(add(version, 0x20), mload(version)))
-			mstore(add(ptr, 0x60), chainid())
-			mstore(add(ptr, 0x80), shr(0x60, shl(0x60, caller())))
-			digest := keccak256(ptr, 0xa0) // domain separator
+			mstore(ptr, 0x3644e51500000000000000000000000000000000000000000000000000000000) // DOMAIN_SEPARATOR()
 
+			if iszero(staticcall(5000, caller(), ptr, 0x04, 0x00, 0x20)) {
+				returndatacopy(ptr, 0x00, returndatasize())
+				revert(ptr, returndatasize())
+			}
+
+			mstore(0x1a, mload(0x00))
 			mstore(0x00, 0x1901000000000000)
-			mstore(0x1a, digest)
 			mstore(0x3a, structHash)
-			digest := keccak256(0x18, 0x42) // hash typed data
-
+			digest := keccak256(0x18, 0x42)
 			mstore(0x3a, 0x00)
 		}
 	}

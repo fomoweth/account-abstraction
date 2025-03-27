@@ -3,11 +3,9 @@ pragma solidity ^0.8.28;
 
 import {IVortexFactory} from "src/interfaces/factories/IVortexFactory.sol";
 import {IVortex} from "src/interfaces/IVortex.sol";
-import {IBootstrap, BootstrapConfig} from "src/interfaces/IBootstrap.sol";
-import {BootstrapLib} from "src/libraries/BootstrapLib.sol";
-import {Calldata} from "src/libraries/Calldata.sol";
-import {MODULE_TYPE_VALIDATOR, MODULE_TYPE_HOOK, MODULE_TYPE_STATELESS_VALIDATOR} from "src/types/Constants.sol";
-import {ModuleType} from "src/types/Types.sol";
+import {IBootstrap} from "src/interfaces/IBootstrap.sol";
+import {BootstrapLib, BootstrapConfig} from "src/libraries/BootstrapLib.sol";
+import {ModuleType, MODULE_TYPE_VALIDATOR, MODULE_TYPE_STATELESS_VALIDATOR} from "src/types/ModuleType.sol";
 import {IAccountFactory, AccountFactory} from "./AccountFactory.sol";
 
 /// @title VortexFactory
@@ -15,8 +13,6 @@ import {IAccountFactory, AccountFactory} from "./AccountFactory.sol";
 
 contract VortexFactory is IVortexFactory, AccountFactory {
 	using BootstrapLib for address;
-
-	address internal constant SENTINEL = 0x0000000000000000000000000000000000000001;
 
 	address public immutable K1_VALIDATOR;
 
@@ -60,78 +56,70 @@ contract VortexFactory is IVortexFactory, AccountFactory {
 		bytes calldata data
 	) public payable virtual override(IAccountFactory, AccountFactory) returns (address payable account) {
 		address eoaOwner;
-		address[] calldata senders;
-		address[] calldata attesters;
+		address[] calldata safeSenders;
+		address[] calldata trustedAttesters;
 		uint8 threshold;
 
 		assembly ("memory-safe") {
 			eoaOwner := calldataload(data.offset)
 
 			let ptr := add(data.offset, calldataload(add(data.offset, 0x20)))
-			senders.length := calldataload(ptr)
-			senders.offset := add(ptr, 0x20)
+			safeSenders.length := calldataload(ptr)
+			safeSenders.offset := add(ptr, 0x20)
 
 			ptr := add(data.offset, calldataload(add(data.offset, 0x40)))
-			attesters.length := calldataload(ptr)
-			attesters.offset := add(ptr, 0x20)
+			trustedAttesters.length := calldataload(ptr)
+			trustedAttesters.offset := add(ptr, 0x20)
 
 			threshold := and(calldataload(add(data.offset, 0x60)), 0xff)
 		}
 
-		return createAccount(salt, eoaOwner, senders, attesters, threshold);
+		return createAccount(salt, eoaOwner, safeSenders, trustedAttesters, threshold);
 	}
 
 	function createAccount(
 		bytes32 salt,
 		address eoaOwner,
-		address[] calldata senders,
-		address[] calldata attesters,
+		address[] calldata safeSenders,
+		address[] calldata trustedAttesters,
 		uint8 threshold
 	) public payable virtual returns (address payable account) {
 		assembly ("memory-safe") {
 			eoaOwner := shr(0x60, shl(0x60, eoaOwner))
+
 			if or(iszero(eoaOwner), iszero(iszero(extcodesize(eoaOwner)))) {
 				mstore(0x00, 0x5c6a4407) // InvalidEOAOwner()
 				revert(0x1c, 0x04)
 			}
 
-			if gt(threshold, attesters.length) {
+			if gt(threshold, trustedAttesters.length) {
 				mstore(0x00, 0xaabd5a09) // InvalidThreshold()
 				revert(0x1c, 0x04)
 			}
 		}
 
-		ModuleType[] memory moduleTypes = new ModuleType[](2);
-		moduleTypes[0] = MODULE_TYPE_VALIDATOR;
-		moduleTypes[1] = MODULE_TYPE_STATELESS_VALIDATOR;
+		ModuleType[] memory moduleTypeIds = new ModuleType[](2);
+		moduleTypeIds[0] = MODULE_TYPE_VALIDATOR;
+		moduleTypeIds[1] = MODULE_TYPE_STATELESS_VALIDATOR;
 
-		BootstrapConfig memory rootValidator = K1_VALIDATOR.build(
-			MODULE_TYPE_VALIDATOR,
-			moduleTypes,
-			abi.encode(eoaOwner, senders),
-			Calldata.emptyBytes()
-		);
+		bytes memory installData = abi.encodePacked(eoaOwner);
+		uint256 length = safeSenders.length;
 
-		moduleTypes = new ModuleType[](1);
-		moduleTypes[0] = MODULE_TYPE_HOOK;
+		for (uint256 i; i < length; ) {
+			installData = abi.encodePacked(installData, safeSenders[i]);
 
-		BootstrapConfig memory hook = SENTINEL.build(
-			MODULE_TYPE_HOOK,
-			moduleTypes,
-			Calldata.emptyBytes(),
-			Calldata.emptyBytes()
-		);
+			unchecked {
+				i = i + 1;
+			}
+		}
 
 		bytes memory initializer = IBootstrap(BOOTSTRAP).getInitializeScopedCalldata(
-			rootValidator,
-			hook,
+			K1_VALIDATOR.build(moduleTypeIds, installData, ""),
 			REGISTRY,
-			attesters,
+			trustedAttesters,
 			threshold
 		);
 
-		bytes memory data = abi.encodeCall(IVortex.initializeAccount, (initializer));
-
-		return _createAccount(ACCOUNT_IMPLEMENTATION, salt, data);
+		return _createAccount(ACCOUNT_IMPLEMENTATION, salt, abi.encodeCall(IVortex.initializeAccount, (initializer)));
 	}
 }

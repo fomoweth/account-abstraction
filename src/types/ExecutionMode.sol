@@ -16,6 +16,8 @@ type ModeSelector is bytes4;
 type ModePayload is bytes22;
 
 using ExecutionModeLib for ExecutionMode global;
+using ExecutionModeLib for CallType global;
+
 using {eqCallType as ==, neqCallType as !=} for CallType global;
 using {eqExecType as ==, neqExecType as !=} for ExecType global;
 using {eqModeSelector as ==, neqModeSelector as !=} for ModeSelector global;
@@ -102,12 +104,14 @@ library ExecutionModeLib {
 			callType := shl(0xf8, shr(0xf8, mode))
 			execType := shl(0xf8, shr(0xf8, shl(0x08, mode)))
 
+			// CALLTYPE_SINGLE: 0x00 | CALLTYPE_BATCH: 0x01 | CALLTYPE_DELEGATE: 0xFF
 			if iszero(or(iszero(callType), or(eq(callType, shl(0xf8, 0x01)), eq(callType, shl(0xf8, 0xFF))))) {
 				mstore(0x00, 0xb96fcfe4) // UnsupportedCallType(bytes1)
 				mstore(0x20, callType)
 				revert(0x1c, 0x24)
 			}
 
+			// EXECTYPE_DEFAULT: 0x00 | EXECTYPE_TRY: 0x01
 			if iszero(or(iszero(execType), eq(execType, shl(0xf8, 0x01)))) {
 				mstore(0x00, 0x1187dc06) // UnsupportedExecType(bytes1)
 				mstore(0x20, execType)
@@ -116,25 +120,25 @@ library ExecutionModeLib {
 		}
 	}
 
-	function parseCallType(ExecutionMode mode) internal pure returns (CallType callType) {
+	function getCallType(ExecutionMode mode) internal pure returns (CallType callType) {
 		assembly ("memory-safe") {
 			callType := mode
 		}
 	}
 
-	function parseExecType(ExecutionMode mode) internal pure returns (ExecType execType) {
+	function getExecType(ExecutionMode mode) internal pure returns (ExecType execType) {
 		assembly ("memory-safe") {
 			execType := shl(0x08, mode)
 		}
 	}
 
-	function parseSelector(ExecutionMode mode) internal pure returns (ModeSelector selector) {
+	function getSelector(ExecutionMode mode) internal pure returns (ModeSelector selector) {
 		assembly ("memory-safe") {
 			selector := shl(0x30, mode)
 		}
 	}
 
-	function parsePayload(ExecutionMode mode) internal pure returns (ModePayload payload) {
+	function getPayload(ExecutionMode mode) internal pure returns (ModePayload payload) {
 		assembly ("memory-safe") {
 			payload := shl(0x50, mode)
 		}

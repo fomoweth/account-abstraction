@@ -2,15 +2,14 @@
 pragma solidity ^0.8.28;
 
 import {Vm} from "lib/forge-std/src/Vm.sol";
+import {stdJson} from "lib/forge-std/src/StdJson.sol";
 import {Currency} from "src/types/Currency.sol";
-import {Config, UniswapConfig} from "./Config.sol";
+import {Config, AaveV3Config, UniswapConfig} from "./Config.sol";
 
 abstract contract Configured {
-	error UnsupportedChainId(uint256 chainId);
+	using stdJson for string;
 
 	Vm private constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
-
-	bytes10 private constant UNLABELED_PREFIX = bytes10("unlabeled:");
 
 	uint256 internal constant ETHEREUM_CHAIN_ID = 1;
 	uint256 internal constant SEPOLIA_CHAIN_ID = 11155111;
@@ -26,36 +25,21 @@ abstract contract Configured {
 	uint256 internal constant BASE_CHAIN_ID = 8453;
 	uint256 internal constant BASE_SEPOLIA_CHAIN_ID = 84532;
 
-	string internal constant ETHEREUM_NETWORK = "ethereum";
-	string internal constant SEPOLIA_NETWORK = "sepolia";
-
-	string internal constant OPTIMISM_NETWORK = "optimism";
-	string internal constant OPTIMISM_SEPOLIA_NETWORK = "optimism_sepolia";
-
-	string internal constant POLYGON_NETWORK = "polygon";
-
-	string internal constant ARBITRUM_NETWORK = "arbitrum";
-	string internal constant ARBITRUM_SEPOLIA_NETWORK = "arbitrum_sepolia";
-
-	string internal constant BASE_NETWORK = "base";
-	string internal constant BASE_SEPOLIA_NETWORK = "base_sepolia";
-
 	Config internal config;
-
 	string internal network;
 
-	UniswapConfig internal uniswap;
+	UniswapConfig internal uni;
+	AaveV3Config internal aave;
+	AaveV3Config internal lido;
+	AaveV3Config internal etherfi;
 
 	Currency[] internal allCurrencies;
-	Currency[] internal lsdNatives;
-	Currency[] internal stablecoins;
 
+	Currency internal constant NATIVE = Currency.wrap(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
 	Currency internal WNATIVE;
 	Currency internal WETH;
 	Currency internal STETH;
 	Currency internal WSTETH;
-	Currency internal FRXETH;
-	Currency internal SFRXETH;
 	Currency internal CBETH;
 	Currency internal RETH;
 	Currency internal WEETH;
@@ -67,6 +51,7 @@ abstract contract Configured {
 	Currency internal USDT;
 
 	Currency internal WBTC;
+	Currency internal CBBTC;
 	Currency internal AAVE;
 	Currency internal COMP;
 	Currency internal LINK;
@@ -79,79 +64,51 @@ abstract contract Configured {
 		require(chainId != 0, "chain id must be specified (`--chain <chainid>`)");
 
 		if (chainId == ETHEREUM_CHAIN_ID) {
-			network = ETHEREUM_NETWORK;
-		} else if (chainId == SEPOLIA_CHAIN_ID) {
-			network = SEPOLIA_NETWORK;
+			network = "ethereum";
 		} else if (chainId == OPTIMISM_CHAIN_ID) {
-			network = OPTIMISM_NETWORK;
-		} else if (chainId == OPTIMISM_SEPOLIA_CHAIN_ID) {
-			network = OPTIMISM_SEPOLIA_NETWORK;
+			network = "optimism";
 		} else if (chainId == POLYGON_CHAIN_ID) {
-			network = POLYGON_NETWORK;
-		} else if (chainId == ARBITRUM_CHAIN_ID) {
-			network = ARBITRUM_NETWORK;
-		} else if (chainId == ARBITRUM_SEPOLIA_CHAIN_ID) {
-			network = ARBITRUM_SEPOLIA_NETWORK;
+			network = "polygon";
 		} else if (chainId == BASE_CHAIN_ID) {
-			network = BASE_NETWORK;
-		} else if (chainId == BASE_SEPOLIA_CHAIN_ID) {
-			network = BASE_SEPOLIA_NETWORK;
+			network = "base";
+		} else if (chainId == ARBITRUM_CHAIN_ID) {
+			network = "arbitrum";
 		} else {
-			revert UnsupportedChainId(chainId);
+			revert(string.concat("unsupported chain id: ", vm.toString(chainId)));
 		}
 
 		if (bytes(config.json).length == 0) {
 			string memory root = vm.projectRoot();
 			string memory path = string.concat(root, "/config/schema/", network, ".json");
-
 			config.json = vm.readFile(path);
 		}
 
 		configureAssets();
+		configureAaveV3(chainId);
 		configureUniswap();
 	}
 
 	function configureAssets() internal virtual {
-		WETH = config.getCurrency("WETH");
-		STETH = config.getCurrency("stETH");
-		WSTETH = config.getCurrency("wstETH");
-		FRXETH = config.getCurrency("frxETH");
-		SFRXETH = config.getCurrency("sfrxETH");
-		CBETH = config.getCurrency("cbETH");
-		RETH = config.getCurrency("rETH");
-		WEETH = config.getCurrency("weETH");
+		WNATIVE = config.loadWrappedNative();
 
-		DAI = config.getCurrency("DAI");
-		FRAX = config.getCurrency("FRAX");
-		USDC = config.getCurrency("USDC");
-		USDCe = config.getCurrency("USDCe");
-		USDT = config.getCurrency("USDT");
-
-		WBTC = config.getCurrency("WBTC");
-		AAVE = config.getCurrency("AAVE");
-		COMP = config.getCurrency("COMP");
-		LINK = config.getCurrency("LINK");
-		UNI = config.getCurrency("UNI");
-
-		Currency[18] memory currencies = [
-			WETH,
-			STETH,
-			WSTETH,
-			FRXETH,
-			SFRXETH,
-			CBETH,
-			RETH,
-			WEETH,
-			DAI,
-			FRAX,
-			USDC,
-			USDCe,
-			USDT,
-			WBTC,
-			AAVE,
-			COMP,
-			LINK,
-			UNI
+		Currency[17] memory currencies = [
+			(WETH = config.loadCurrency("WETH")),
+			(STETH = config.loadCurrency("stETH")),
+			(WSTETH = config.loadCurrency("wstETH")),
+			(CBETH = config.loadCurrency("cbETH")),
+			(RETH = config.loadCurrency("rETH")),
+			(WEETH = config.loadCurrency("weETH")),
+			(DAI = config.loadCurrency("DAI")),
+			(FRAX = config.loadCurrency("FRAX")),
+			(USDC = config.loadCurrency("USDC")),
+			(USDCe = config.loadCurrency("USDCe")),
+			(USDT = config.loadCurrency("USDT")),
+			(WBTC = config.loadCurrency("WBTC")),
+			(CBBTC = config.loadCurrency("cbBTC")),
+			(AAVE = config.loadCurrency("AAVE")),
+			(COMP = config.loadCurrency("COMP")),
+			(LINK = config.loadCurrency("LINK")),
+			(UNI = config.loadCurrency("UNI"))
 		];
 
 		if (WNATIVE != WETH) allCurrencies.push(WNATIVE);
@@ -160,35 +117,47 @@ abstract contract Configured {
 			if (currencies[i].isZero()) continue;
 			allCurrencies.push(currencies[i]);
 		}
+	}
 
-		lsdNatives = config.getLsdNatives();
-		stablecoins = config.getStablecoins();
+	function configureAaveV3(uint256 chainId) internal virtual {
+		aave = _configureAaveV3("aave");
+		if (chainId == ETHEREUM_CHAIN_ID) {
+			etherfi = _configureAaveV3("etherfi");
+			lido = _configureAaveV3("lido");
+		}
+	}
+
+	function _configureAaveV3(string memory key) internal virtual returns (AaveV3Config memory aaveV3) {
+		aaveV3 = config.loadAaveV3Config(vm.toLowercase(key));
+		label("PoolAddressesProvider", aaveV3.addressesProvider);
+		label("Pool", aaveV3.pool);
+		label("AaveOracle", aaveV3.oracle);
 	}
 
 	function configureUniswap() internal virtual {
-		uniswap = config.getUniswapConfig();
+		uni = config.loadUniswapConfig();
+		label("UniversalRouter", uni.universalRouter);
+		label("PoolManager", uni.poolManager);
+		label("V2Factory", uni.v2Factory);
+		label("V3Factory", uni.v3Factory);
+		label("V3Quoter", uni.v3Quoter);
+		label("V4Quoter", uni.v4Quoter);
+		label("V4StateView", uni.v4StateView);
+	}
 
-		label(uniswap.positionManager, "NonfungiblePositionManager");
-		label(uniswap.universalRouter, "UniversalRouter");
-		label(uniswap.v2Factory, "UniswapV2Factory");
-		label(uniswap.v3Factory, "UniswapV3Factory");
+	function label(string memory name, address target) internal virtual {
+		if (target != address(0)) vm.label(target, name);
 	}
 
 	function getChainId() internal view virtual returns (uint256) {
-		return config.getChainId();
+		return config.json.readUint("$.chainId");
 	}
 
 	function getForkBlockNumber() internal view virtual returns (uint256) {
-		return config.getForkBlockNumber();
+		return config.json.readUintOr("$.forkBlockNumber", 0);
 	}
 
 	function rpcAlias() internal view virtual returns (string memory) {
-		return config.getRpcAlias();
-	}
-
-	function label(address target, string memory name) internal virtual {
-		if (target != address(0) && bytes10(bytes(vm.getLabel(target))) != UNLABELED_PREFIX) {
-			vm.label(target, name);
-		}
+		return config.json.readString("$.rpcAlias");
 	}
 }

@@ -59,7 +59,7 @@ abstract contract Ownable {
 	function _checkOwner() internal view virtual {
 		assembly ("memory-safe") {
 			if xor(caller(), sload(OWNER_SLOT)) {
-				mstore(0x00, 0x82b42900) // Unauthorized()
+				mstore(0x00, 0x9f03a026) // UnauthorizedCallContext()
 				revert(0x1c, 0x04)
 			}
 		}

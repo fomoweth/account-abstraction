@@ -42,12 +42,23 @@ library BytesLib {
 
 	function toCurrency(bytes calldata data) internal pure returns (Currency value) {
 		assembly ("memory-safe") {
-			if lt(data.length, 0x20) {
+			if lt(data.length, 0x14) {
 				mstore(0x00, 0x3b99b53d) // SliceOutOfBounds()
 				revert(0x1c, 0x04)
 			}
 
 			value := shr(0x60, calldataload(data.offset))
+		}
+	}
+
+	function toCurrency(bytes calldata data, uint256 index) internal pure returns (Currency value) {
+		assembly ("memory-safe") {
+			if lt(data.length, shl(0x05, add(index, 0x01))) {
+				mstore(0x00, 0x3b99b53d) // SliceOutOfBounds()
+				revert(0x1c, 0x04)
+			}
+
+			value := calldataload(add(data.offset, shl(0x05, index)))
 		}
 	}
 
@@ -60,14 +71,14 @@ library BytesLib {
 		}
 	}
 
-	function toBytes32(bytes calldata data) internal pure returns (bytes32 value) {
+	function toBytes32(bytes calldata data, uint256 index) internal pure returns (bytes32 value) {
 		assembly ("memory-safe") {
-			if lt(data.length, 0x20) {
+			if lt(data.length, shl(0x05, add(index, 0x01))) {
 				mstore(0x00, 0x3b99b53d) // SliceOutOfBounds()
 				revert(0x1c, 0x04)
 			}
 
-			value := calldataload(data.offset)
+			value := calldataload(add(data.offset, shl(0x05, index)))
 		}
 	}
 
@@ -80,14 +91,14 @@ library BytesLib {
 		}
 	}
 
-	function toUint256(bytes calldata data) internal pure returns (uint256 value) {
+	function toUint256(bytes calldata data, uint256 index) internal pure returns (uint256 value) {
 		assembly ("memory-safe") {
-			if lt(data.length, 0x20) {
+			if lt(data.length, shl(0x05, add(index, 0x01))) {
 				mstore(0x00, 0x3b99b53d) // SliceOutOfBounds()
 				revert(0x1c, 0x04)
 			}
 
-			value := calldataload(data.offset)
+			value := calldataload(add(data.offset, shl(0x05, index)))
 		}
 	}
 

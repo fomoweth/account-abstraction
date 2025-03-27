@@ -2,9 +2,86 @@
 pragma solidity ^0.8.28;
 
 import {Currency} from "src/types/Currency.sol";
-import {ModuleType} from "src/types/ModuleType.sol";
+import {CallType, ModuleType} from "src/types/Types.sol";
 
 library SolArray {
+	function callTypes(CallType a) internal pure returns (CallType[] memory arr) {
+		arr = new CallType[](1);
+		arr[0] = a;
+	}
+
+	function callTypes(CallType a, CallType b) internal pure returns (CallType[] memory arr) {
+		arr = new CallType[](2);
+		arr[0] = a;
+		arr[1] = b;
+	}
+
+	function callTypes(CallType a, CallType b, CallType c) internal pure returns (CallType[] memory arr) {
+		arr = new CallType[](3);
+		arr[0] = a;
+		arr[1] = b;
+		arr[2] = c;
+	}
+
+	function callTypes(CallType a, CallType b, CallType c, CallType d) internal pure returns (CallType[] memory arr) {
+		arr = new CallType[](4);
+		arr[0] = a;
+		arr[1] = b;
+		arr[2] = c;
+		arr[3] = d;
+	}
+
+	function callTypes(
+		CallType a,
+		CallType b,
+		CallType c,
+		CallType d,
+		CallType e
+	) internal pure returns (CallType[] memory arr) {
+		arr = new CallType[](5);
+		arr[0] = a;
+		arr[1] = b;
+		arr[2] = c;
+		arr[3] = d;
+		arr[4] = e;
+	}
+
+	function callTypes(
+		CallType a,
+		CallType b,
+		CallType c,
+		CallType d,
+		CallType e,
+		CallType f
+	) internal pure returns (CallType[] memory arr) {
+		arr = new CallType[](6);
+		arr[0] = a;
+		arr[1] = b;
+		arr[2] = c;
+		arr[3] = d;
+		arr[4] = e;
+		arr[5] = f;
+	}
+
+	function callTypes(
+		CallType a,
+		CallType b,
+		CallType c,
+		CallType d,
+		CallType e,
+		CallType f,
+		CallType g
+	) internal pure returns (CallType[] memory arr) {
+		arr = new CallType[](7);
+		arr[0] = a;
+		arr[1] = b;
+		arr[2] = c;
+		arr[3] = d;
+		arr[4] = e;
+		arr[5] = f;
+		arr[6] = g;
+	}
+
 	function moduleTypes(ModuleType a) internal pure returns (ModuleType[] memory arr) {
 		arr = new ModuleType[](1);
 		arr[0] = a;

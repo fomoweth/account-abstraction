@@ -3,31 +3,28 @@ pragma solidity ^0.8.28;
 
 import {IBootstrap, BootstrapConfig} from "src/interfaces/IBootstrap.sol";
 import {MODULE_TYPE_VALIDATOR, MODULE_TYPE_EXECUTOR, MODULE_TYPE_FALLBACK, MODULE_TYPE_HOOK} from "src/types/Constants.sol";
-import {AccountModule} from "src/core/AccountModule.sol";
+import {ModuleManager} from "src/core/ModuleManager.sol";
 
 /// @title Bootstrap
 /// @notice Provides configuration and initialization for smart accounts
 
-contract Bootstrap is IBootstrap, AccountModule {
+contract Bootstrap is IBootstrap, ModuleManager {
 	function initialize(
 		BootstrapConfig calldata rootValidator,
-		BootstrapConfig calldata hook,
 		BootstrapConfig[] calldata validators,
 		BootstrapConfig[] calldata executors,
 		BootstrapConfig[] calldata fallbacks,
+		BootstrapConfig[] calldata hooks,
 		address registry,
 		address[] calldata attesters,
 		uint8 threshold
 	) external {
 		_configureRegistry(registry, attesters, threshold);
 		_configureRootValidator(rootValidator.module, rootValidator.data);
-		_installModule(MODULE_TYPE_HOOK, hook.module, hook.data);
 
-		address module;
 		uint256 length = validators.length;
 		for (uint256 i; i < length; ) {
-			if ((module = validators[i].module) == ZERO) break;
-			_installModule(MODULE_TYPE_VALIDATOR, module, validators[i].data);
+			_installModule(MODULE_TYPE_VALIDATOR, validators[i].module, validators[i].data);
 
 			unchecked {
 				i = i + 1;
@@ -36,8 +33,7 @@ contract Bootstrap is IBootstrap, AccountModule {
 
 		length = executors.length;
 		for (uint256 i; i < length; ) {
-			if ((module = executors[i].module) == ZERO) break;
-			_installModule(MODULE_TYPE_EXECUTOR, module, executors[i].data);
+			_installModule(MODULE_TYPE_EXECUTOR, executors[i].module, executors[i].data);
 
 			unchecked {
 				i = i + 1;
@@ -46,8 +42,16 @@ contract Bootstrap is IBootstrap, AccountModule {
 
 		length = fallbacks.length;
 		for (uint256 i; i < length; ) {
-			if ((module = fallbacks[i].module) == ZERO) break;
-			_installModule(MODULE_TYPE_FALLBACK, module, fallbacks[i].data);
+			_installModule(MODULE_TYPE_FALLBACK, fallbacks[i].module, fallbacks[i].data);
+
+			unchecked {
+				i = i + 1;
+			}
+		}
+
+		length = hooks.length;
+		for (uint256 i; i < length; ) {
+			_installModule(MODULE_TYPE_HOOK, hooks[i].module, hooks[i].data);
 
 			unchecked {
 				i = i + 1;
@@ -57,22 +61,20 @@ contract Bootstrap is IBootstrap, AccountModule {
 
 	function initializeScoped(
 		BootstrapConfig calldata rootValidator,
-		BootstrapConfig calldata hook,
 		address registry,
 		address[] calldata attesters,
 		uint8 threshold
 	) external {
 		_configureRegistry(registry, attesters, threshold);
 		_configureRootValidator(rootValidator.module, rootValidator.data);
-		_installModule(MODULE_TYPE_HOOK, hook.module, hook.data);
 	}
 
 	function getInitializeCalldata(
 		BootstrapConfig calldata rootValidator,
-		BootstrapConfig calldata hook,
 		BootstrapConfig[] calldata validators,
 		BootstrapConfig[] calldata executors,
 		BootstrapConfig[] calldata fallbacks,
+		BootstrapConfig[] calldata hooks,
 		address registry,
 		address[] calldata attesters,
 		uint8 threshold
@@ -81,21 +83,20 @@ contract Bootstrap is IBootstrap, AccountModule {
 			address(this),
 			abi.encodeCall(
 				this.initialize,
-				(rootValidator, hook, validators, executors, fallbacks, registry, attesters, threshold)
+				(rootValidator, validators, executors, fallbacks, hooks, registry, attesters, threshold)
 			)
 		);
 	}
 
 	function getInitializeScopedCalldata(
 		BootstrapConfig calldata rootValidator,
-		BootstrapConfig calldata hook,
 		address registry,
 		address[] calldata attesters,
 		uint8 threshold
 	) external view returns (bytes memory callData) {
 		callData = abi.encodePacked(
 			address(this),
-			abi.encodeCall(this.initializeScoped, (rootValidator, hook, registry, attesters, threshold))
+			abi.encodeCall(this.initializeScoped, (rootValidator, registry, attesters, threshold))
 		);
 	}
 

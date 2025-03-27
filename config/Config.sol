@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import {stdJson} from "lib/forge-std/src/StdJson.sol";
 import {Currency} from "src/types/Currency.sol";
+import {AaveV3Config, UniswapConfig} from "test/shared/structs/Protocols.sol";
 
 using ConfigLibrary for Config global;
 
@@ -10,52 +11,35 @@ struct Config {
 	string json;
 }
 
-struct UniswapConfig {
-	address positionManager;
-	address quoter;
-	address router;
-	address staker;
-	address universalRouter;
-	address v2Factory;
-	address v3Factory;
-}
-
 library ConfigLibrary {
 	using stdJson for string;
 
 	/// https://crates.io/crates/jsonpath-rust
 
-	string internal constant CHAIN_ID_PATH = "$.chainId";
-	string internal constant RPC_ALIAS_PATH = "$.rpcAlias";
-	string internal constant FORK_BLOCK_NUMBER_PATH = "$.forkBlockNumber";
-
 	string internal constant WRAPPED_NATIVE_PATH = "$.wrappedNative";
-	string internal constant LSD_NATIVES_PATH = "$.lsdNatives";
-	string internal constant STABLECOINS_PATH = "$.stablecoins";
-
+	string internal constant AAVE_V3_PATH = "$.aave-v3";
 	string internal constant UNISWAP_PATH = "$.uniswap";
 
-	function getAddress(Config storage config, string memory key) internal view returns (address) {
+	function loadAddress(Config storage config, string memory key) internal view returns (address) {
 		return config.json.readAddressOr(string.concat("$.", key), address(0));
 	}
 
-	function getAddressArray(Config storage config, string memory key) internal view returns (address[] memory) {
+	function loadAddressArray(Config storage config, string memory key) internal view returns (address[] memory) {
 		return config.json.readAddressArrayOr(string.concat("$.", key), new address[](0));
 	}
 
-	function getAddressArray(
+	function loadAddressArray(
 		Config storage config,
 		string[] memory keys
 	) internal view returns (address[] memory addresses) {
 		uint256 length = keys.length;
 		uint256 count;
+		address target;
 
 		addresses = new address[](length);
 
 		for (uint256 i; i < length; ++i) {
-			address target = getAddress(config, keys[i]);
-
-			if (target != address(0)) {
+			if ((target = loadAddress(config, keys[i])) != address(0)) {
 				addresses[i] = target;
 				++count;
 			}
@@ -68,46 +52,30 @@ library ConfigLibrary {
 		}
 	}
 
-	function getCurrency(Config storage config, string memory key) internal view returns (Currency) {
-		return Currency.wrap(getAddress(config, key));
+	function loadCurrency(Config storage config, string memory key) internal view returns (Currency) {
+		return Currency.wrap(loadAddress(config, key));
 	}
 
-	function getCurrencyArray(
+	function loadCurrencyArray(
 		Config storage config,
 		string[] memory keys
 	) internal view returns (Currency[] memory currencies) {
-		address[] memory addresses = getAddressArray(config, keys);
+		address[] memory addresses = loadAddressArray(config, keys);
 
 		assembly ("memory-safe") {
 			currencies := addresses
 		}
 	}
 
-	function getChainId(Config storage config) internal view returns (uint256) {
-		return config.json.readUint(CHAIN_ID_PATH);
+	function loadWrappedNative(Config storage config) internal view returns (Currency) {
+		return loadCurrency(config, config.json.readString(WRAPPED_NATIVE_PATH));
 	}
 
-	function getRpcAlias(Config storage config) internal view returns (string memory) {
-		return config.json.readString(RPC_ALIAS_PATH);
+	function loadAaveV3Config(Config storage config, string memory key) internal view returns (AaveV3Config memory) {
+		return abi.decode(config.json.parseRaw(string.concat(AAVE_V3_PATH, ".", key)), (AaveV3Config));
 	}
 
-	function getForkBlockNumber(Config storage config) internal view returns (uint256) {
-		return config.json.readUintOr(FORK_BLOCK_NUMBER_PATH, 0);
-	}
-
-	function getWrappedNative(Config storage config) internal view returns (Currency) {
-		return getCurrency(config, config.json.readString(WRAPPED_NATIVE_PATH));
-	}
-
-	function getLsdNatives(Config storage config) internal view returns (Currency[] memory) {
-		return getCurrencyArray(config, config.json.readStringArrayOr(LSD_NATIVES_PATH, new string[](0)));
-	}
-
-	function getStablecoins(Config storage config) internal view returns (Currency[] memory) {
-		return getCurrencyArray(config, config.json.readStringArrayOr(STABLECOINS_PATH, new string[](0)));
-	}
-
-	function getUniswapConfig(Config storage config) internal view returns (UniswapConfig memory) {
+	function loadUniswapConfig(Config storage config) internal view returns (UniswapConfig memory) {
 		return abi.decode(config.json.parseRaw(UNISWAP_PATH), (UniswapConfig));
 	}
 }

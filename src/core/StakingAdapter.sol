@@ -7,7 +7,7 @@ import {Ownable} from "src/utils/Ownable.sol";
 /// @title StakingAdapter
 /// @notice Provides an interface for managing deposits and stakes on EntryPoint
 
-abstract contract StakingAdapter is IStakingAdapter, Ownable {
+contract StakingAdapter is IStakingAdapter, Ownable {
 	constructor(address initialOwner) {
 		_initializeOwner(initialOwner);
 	}
@@ -51,7 +51,7 @@ abstract contract StakingAdapter is IStakingAdapter, Ownable {
 		}
 	}
 
-	function depositTo(address ep, address recipient) external payable virtual {
+	function depositTo(address ep, address recipient) external payable virtual onlyOwner {
 		assembly ("memory-safe") {
 			if iszero(shl(0x60, recipient)) {
 				mstore(0x00, 0x9c8d2cd2) // InvalidRecipient()
@@ -135,4 +135,6 @@ abstract contract StakingAdapter is IStakingAdapter, Ownable {
 			}
 		}
 	}
+
+	receive() external payable virtual {}
 }

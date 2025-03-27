@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {ExecType, EXECTYPE_DEFAULT, EXECTYPE_TRY} from "src/types/ExecutionMode.sol";
+import {ExecType} from "src/types/ExecutionMode.sol";
 
 struct Execution {
 	address target;
@@ -16,8 +16,8 @@ library ExecutionLib {
 	event TryExecuteUnsuccessful(uint256 index, bytes returnData);
 
 	function executeSingle(
-		bytes calldata executionCalldata,
-		ExecType execType
+		ExecType execType,
+		bytes calldata executionCalldata
 	) internal returns (bytes[] memory returnData) {
 		(address target, uint256 value, bytes calldata callData) = decodeSingle(executionCalldata);
 
@@ -26,8 +26,8 @@ library ExecutionLib {
 	}
 
 	function executeBatch(
-		bytes calldata executionCalldata,
-		ExecType execType
+		ExecType execType,
+		bytes calldata executionCalldata
 	) internal returns (bytes[] memory returnData) {
 		Execution[] calldata executions = decodeBatch(executionCalldata);
 		Execution calldata execution;
@@ -50,10 +50,11 @@ library ExecutionLib {
 	}
 
 	function executeDelegate(
-		bytes calldata executionCalldata,
-		ExecType execType
+		ExecType execType,
+		bytes calldata executionCalldata
 	) internal returns (bytes[] memory returnData) {
 		(address target, bytes calldata callData) = decodeDelegate(executionCalldata);
+
 		returnData = new bytes[](1);
 		returnData[0] = _validateExecution(0, execType, _delegatecall(target, callData));
 	}
@@ -63,7 +64,7 @@ library ExecutionLib {
 	) internal pure returns (address target, uint256 value, bytes calldata callData) {
 		assembly ("memory-safe") {
 			if iszero(gt(executionCalldata.length, 0x33)) {
-				mstore(0x00, 0x3b99b53d) // SliceOutOfBounds()
+				mstore(0x00, 0x12f251b4) // InvalidExecutionCalldata()
 				revert(0x1c, 0x04)
 			}
 
@@ -84,7 +85,7 @@ library ExecutionLib {
 			executions.length := calldataload(s)
 
 			if or(shr(0x40, u), gt(add(s, shl(0x05, executions.length)), e)) {
-				mstore(0x00, 0x3b99b53d) // SliceOutOfBounds()
+				mstore(0x00, 0x12f251b4) // InvalidExecutionCalldata()
 				revert(0x1c, 0x04)
 			}
 
@@ -97,9 +98,11 @@ library ExecutionLib {
 					let q := calldataload(add(c, 0x40))
 					let o := add(c, q)
 
-					if or(shr(0x40, or(calldataload(o), or(p, q))),
-						or(gt(add(c, 0x40), e), gt(add(o, calldataload(o)), e))) {
-						mstore(0x00, 0x3b99b53d) // SliceOutOfBounds()
+					if or(
+						shr(0x40, or(calldataload(o), or(p, q))),
+						or(gt(add(c, 0x40), e), gt(add(o, calldataload(o)), e))
+					) {
+						mstore(0x00, 0x12f251b4) // InvalidExecutionCalldata()
 						revert(0x1c, 0x04)
 					}
 					if iszero(i) { break }
@@ -113,7 +116,7 @@ library ExecutionLib {
 	) internal pure returns (address target, bytes calldata callData) {
 		assembly ("memory-safe") {
 			if iszero(gt(executionCalldata.length, 0x13)) {
-				mstore(0x00, 0x3b99b53d) // SliceOutOfBounds()
+				mstore(0x00, 0x12f251b4) // InvalidExecutionCalldata()
 				revert(0x1c, 0x04)
 			}
 
@@ -123,16 +126,35 @@ library ExecutionLib {
 		}
 	}
 
-	function encodeSingle(address target, uint256 value, bytes memory callData) internal pure returns (bytes memory) {
+	function encodeSingle(
+		address target,
+		uint256 value,
+		bytes memory callData
+	) internal pure returns (bytes memory executionCalldata) {
 		return abi.encodePacked(target, value, callData);
 	}
 
-	function encodeBatch(Execution[] memory executions) internal pure returns (bytes memory) {
+	function encodeBatch(Execution[] memory executions) internal pure returns (bytes memory executionCalldata) {
 		return abi.encode(executions);
 	}
 
-	function encodeDelegate(address target, bytes memory callData) internal pure returns (bytes memory) {
+	function encodeDelegate(
+		address target,
+		bytes memory callData
+	) internal pure returns (bytes memory executionCalldata) {
 		return abi.encodePacked(target, callData);
+	}
+
+	function call(address target, uint256 value, bytes memory data) internal returns (bytes memory returnData) {
+		return _validateCall(_call(target, value, data));
+	}
+
+	function callDelegate(address target, bytes memory data) internal returns (bytes memory returnData) {
+		return _validateCall(_delegatecall(target, data));
+	}
+
+	function callStatic(address target, bytes memory data) internal view returns (bytes memory returnData) {
+		return _validateCall(_staticcall(target, data));
 	}
 
 	function _call(address target, uint256 value, bytes memory data) private returns (bool success) {
@@ -177,5 +199,25 @@ library ExecutionLib {
 		}
 
 		if (!success) emit TryExecuteUnsuccessful(index, returnData);
+	}
+
+	function _validateCall(bool success) private pure returns (bytes memory returnData) {
+		assembly ("memory-safe") {
+			returnData := mload(0x40)
+
+			if iszero(success) {
+				if iszero(returndatasize()) {
+					mstore(0x00, 0xacfdb444) // ExecutionFailed()
+					revert(0x1c, 0x04)
+				}
+
+				returndatacopy(returnData, 0x00, returndatasize())
+				revert(returnData, returndatasize())
+			}
+
+			mstore(0x40, add(add(returnData, 0x20), returndatasize()))
+			mstore(returnData, returndatasize())
+			returndatacopy(add(returnData, 0x20), 0x00, returndatasize())
+		}
 	}
 }

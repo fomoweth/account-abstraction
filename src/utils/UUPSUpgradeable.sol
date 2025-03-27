@@ -51,6 +51,7 @@ abstract contract UUPSUpgradeable {
 
 		assembly ("memory-safe") {
 			newImplementation := shr(0x60, shl(0x60, newImplementation))
+
 			if iszero(extcodesize(newImplementation)) {
 				mstore(0x00, 0x68155f9a) // InvalidImplementation()
 				revert(0x1c, 0x04)
@@ -71,6 +72,7 @@ abstract contract UUPSUpgradeable {
 			if data.length {
 				let ptr := mload(0x40)
 				calldatacopy(ptr, data.offset, data.length)
+
 				if iszero(delegatecall(gas(), newImplementation, ptr, data.length, codesize(), 0x00)) {
 					returndatacopy(ptr, 0x00, returndatasize())
 					revert(ptr, returndatasize())
