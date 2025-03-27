@@ -2,8 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
-import {EnumerableSet4337} from "src/libraries/EnumerableSet4337.sol";
-import {BytesLib} from "src/libraries/BytesLib.sol";
+import {EnumerableSet4337 as EnumerableSet} from "src/libraries/EnumerableSet4337.sol";
 import {ModuleType, ValidationData} from "src/types/Types.sol";
 import {ERC7739Validator} from "src/modules/base/ERC7739Validator.sol";
 
@@ -12,8 +11,7 @@ import {ERC7739Validator} from "src/modules/base/ERC7739Validator.sol";
 /// @dev Modified from https://github.com/erc7579/erc7739Validator/blob/main/src/SampleK1ValidatorWithERC7739.sol
 
 contract K1Validator is ERC7739Validator {
-	using BytesLib for *;
-	using EnumerableSet4337 for EnumerableSet4337.AddressSet;
+	using EnumerableSet for EnumerableSet.AddressSet;
 
 	error AlreadyAuthorized(address sender);
 	error NotAuthorized(address sender);
@@ -30,13 +28,25 @@ contract K1Validator is ERC7739Validator {
 	bytes32 internal constant ACCOUNT_OWNERS_STORAGE_SLOT =
 		0x73f50bba1b2b0fd39f326a5de0b3922b4fad09d862eedad31aff9d520dc29a00;
 
-	EnumerableSet4337.AddressSet private _authorizedSenders;
+	EnumerableSet.AddressSet private _authorizedSenders;
 
 	function onInstall(bytes calldata data) external payable {
 		require(!_isInitialized(msg.sender), AlreadyInitialized(msg.sender));
 		require(_checkDataLength(data), InvalidDataLength());
-		_setAccountOwner(_checkAccountOwner(data.toAddress()));
-		if (data.length > 20) _authorizeSenders(data[20:]);
+		_setAccountOwner(_checkAccountOwner(address(bytes20(data))));
+
+		if (data.length == 20) return;
+
+		uint256 length = data.length;
+		uint256 offset = 20;
+
+		while (true) {
+			_authorize(address(bytes20(data[offset:])));
+
+			unchecked {
+				if ((offset += 20) == length) break;
+			}
+		}
 	}
 
 	function onUninstall(bytes calldata) external payable {
@@ -58,12 +68,12 @@ contract K1Validator is ERC7739Validator {
 		return _getAccountOwner(account);
 	}
 
-	function authorizeSender(address sender) external {
+	function authorize(address sender) external {
 		require(_isInitialized(msg.sender), NotInitialized(msg.sender));
-		_authorizeSender(sender);
+		_authorize(sender);
 	}
 
-	function revokeSender(address sender) external {
+	function revoke(address sender) external {
 		require(_isInitialized(msg.sender), NotInitialized(msg.sender));
 		require(_authorizedSenders.remove(msg.sender, sender), NotAuthorized(sender));
 		emit Revoked(msg.sender, sender);
@@ -73,7 +83,7 @@ contract K1Validator is ERC7739Validator {
 		return _authorizedSenders.values(account);
 	}
 
-	function isAuthorizedSender(address account, address sender) public view returns (bool) {
+	function isAuthorized(address account, address sender) public view returns (bool) {
 		return _authorizedSenders.contains(account, sender);
 	}
 
@@ -102,7 +112,7 @@ contract K1Validator is ERC7739Validator {
 		bytes calldata data
 	) external view returns (bool) {
 		require(data.length == 20, InvalidDataLength());
-		return _validateSignatureForOwner(data.toAddress(), hash, signature);
+		return _validateSignatureForOwner(address(bytes20(data)), hash, signature);
 	}
 
 	function name() external pure returns (string memory) {
@@ -129,23 +139,10 @@ contract K1Validator is ERC7739Validator {
 	}
 
 	function _erc1271CallerIsSafe(address sender) internal view virtual override returns (bool) {
-		return super._erc1271CallerIsSafe(sender) || isAuthorizedSender(msg.sender, sender);
+		return super._erc1271CallerIsSafe(sender) || isAuthorized(msg.sender, sender);
 	}
 
-	function _authorizeSenders(bytes calldata data) internal virtual {
-		uint256 length = data.length;
-		uint256 offset;
-
-		while (true) {
-			_authorizeSender(data[offset:].toAddress());
-
-			unchecked {
-				if ((offset += 20) == length) break;
-			}
-		}
-	}
-
-	function _authorizeSender(address sender) internal virtual {
+	function _authorize(address sender) internal virtual {
 		require(sender != address(0), InvalidSender());
 		require(_authorizedSenders.add(msg.sender, sender), AlreadyAuthorized(sender));
 		emit Authorized(msg.sender, sender);

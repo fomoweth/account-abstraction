@@ -22,7 +22,7 @@ abstract contract ExecutorBase is IExecutor, ModuleBase {
 		address target,
 		uint256 value,
 		bytes memory callData
-	) internal virtual returns (bytes memory returnData) {
+	) internal virtual returns (bytes[] memory returnData) {
 		return _execute(msg.sender, target, value, callData);
 	}
 
@@ -31,14 +31,14 @@ abstract contract ExecutorBase is IExecutor, ModuleBase {
 		address target,
 		uint256 value,
 		bytes memory callData
-	) internal virtual returns (bytes memory returnData) {
+	) internal virtual returns (bytes[] memory returnData) {
 		ExecutionMode mode = ExecutionModeLib.encodeSingle();
 		bytes memory executionCalldata = abi.encodePacked(target, value, callData);
 
-		return IERC7579Account(account).executeFromExecutor(mode, executionCalldata)[0];
+		return IERC7579Account(account).executeFromExecutor{value: msg.value}(mode, executionCalldata);
 	}
 
-	function _execute(address target, bytes memory callData) internal virtual returns (bytes memory returnData) {
+	function _execute(address target, bytes memory callData) internal virtual returns (bytes[] memory returnData) {
 		return _execute(msg.sender, target, callData);
 	}
 
@@ -46,11 +46,11 @@ abstract contract ExecutorBase is IExecutor, ModuleBase {
 		address account,
 		address target,
 		bytes memory callData
-	) internal virtual returns (bytes memory returnData) {
+	) internal virtual returns (bytes[] memory returnData) {
 		ExecutionMode mode = ExecutionModeLib.encodeDelegate();
 		bytes memory executionCalldata = abi.encodePacked(target, callData);
 
-		return IERC7579Account(account).executeFromExecutor(mode, executionCalldata)[0];
+		return IERC7579Account(account).executeFromExecutor{value: msg.value}(mode, executionCalldata);
 	}
 
 	function _execute(Execution[] memory executions) internal virtual returns (bytes[] memory returnData) {
@@ -64,6 +64,14 @@ abstract contract ExecutorBase is IExecutor, ModuleBase {
 		ExecutionMode mode = ExecutionModeLib.encodeBatch();
 		bytes memory executionCalldata = abi.encode(executions);
 
-		return IERC7579Account(account).executeFromExecutor(mode, executionCalldata);
+		return IERC7579Account(account).executeFromExecutor{value: msg.value}(mode, executionCalldata);
 	}
+
+	// function _executeFromExecutor(
+	// 	address account,
+	// 	ExecutionMode mode,
+	// 	bytes memory executionCalldata
+	// ) internal virtual returns (bytes[] memory returnData) {
+	// 	return IERC7579Account(account).executeFromExecutor{value: msg.value}(mode, executionCalldata);
+	// }
 }

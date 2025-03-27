@@ -46,13 +46,9 @@ function lte(Currency x, Currency y) pure returns (bool z) {
 /// @dev Modified from https://github.com/Uniswap/v4-core/blob/main/src/types/Currency.sol
 
 library CurrencyLibrary {
-	Currency internal constant NATIVE = Currency.wrap(NATIVE_ADDRESS);
-
-	address private constant NATIVE_ADDRESS = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
-
 	function approve(Currency currency, address spender, uint256 value) internal {
 		assembly ("memory-safe") {
-			if xor(currency, NATIVE_ADDRESS) {
+			if iszero(iszero(currency)) {
 				let ptr := mload(0x40)
 
 				mstore(ptr, 0x095ea7b300000000000000000000000000000000000000000000000000000000)
@@ -89,7 +85,7 @@ library CurrencyLibrary {
 
 	function transfer(Currency currency, address recipient, uint256 value) internal {
 		assembly ("memory-safe") {
-			switch eq(currency, NATIVE_ADDRESS)
+			switch iszero(currency)
 			case 0x00 {
 				let ptr := mload(0x40)
 
@@ -112,7 +108,7 @@ library CurrencyLibrary {
 				mstore(add(ptr, 0x40), 0x00)
 			}
 			default {
-				if iszero(call(gas(), recipient, value, 0x00, 0x00, 0x00, 0x00)) {
+				if iszero(call(gas(), recipient, value, codesize(), 0x00, codesize(), 0x00)) {
 					mstore(0x00, 0xb06a467a) // TransferNativeFailed()
 					revert(0x1c, 0x04)
 				}
@@ -122,8 +118,7 @@ library CurrencyLibrary {
 
 	function transferFrom(Currency currency, address sender, address recipient, uint256 value) internal {
 		assembly ("memory-safe") {
-			switch eq(currency, NATIVE_ADDRESS)
-			case 0x00 {
+			if iszero(iszero(currency)) {
 				let ptr := mload(0x40)
 
 				mstore(ptr, 0x23b872dd00000000000000000000000000000000000000000000000000000000)
@@ -146,18 +141,12 @@ library CurrencyLibrary {
 				mstore(add(ptr, 0x40), 0x00)
 				mstore(add(ptr, 0x60), 0x00)
 			}
-			default {
-				if or(lt(callvalue(), value), or(xor(sender, caller()), xor(recipient, address()))) {
-					mstore(0x00, 0xa20c5180) // TransferFromNativeFailed()
-					revert(0x1c, 0x04)
-				}
-			}
 		}
 	}
 
 	function allowance(Currency currency, address owner, address spender) internal view returns (uint256 value) {
 		assembly ("memory-safe") {
-			switch eq(currency, NATIVE_ADDRESS)
+			switch iszero(currency)
 			case 0x00 {
 				let ptr := mload(0x40)
 
@@ -178,7 +167,7 @@ library CurrencyLibrary {
 
 	function balanceOf(Currency currency, address account) internal view returns (uint256 value) {
 		assembly ("memory-safe") {
-			switch eq(currency, NATIVE_ADDRESS)
+			switch iszero(currency)
 			case 0x00 {
 				let ptr := mload(0x40)
 
@@ -198,7 +187,7 @@ library CurrencyLibrary {
 
 	function balanceOfSelf(Currency currency) internal view returns (uint256 value) {
 		assembly ("memory-safe") {
-			switch eq(currency, NATIVE_ADDRESS)
+			switch iszero(currency)
 			case 0x00 {
 				let ptr := mload(0x40)
 
@@ -218,13 +207,12 @@ library CurrencyLibrary {
 
 	function decimals(Currency currency) internal view returns (uint8 value) {
 		assembly ("memory-safe") {
-			switch eq(currency, NATIVE_ADDRESS)
+			switch iszero(currency)
 			case 0x00 {
-				let ptr := mload(0x40)
+				mstore(0x00, 0x313ce567)
 
-				mstore(ptr, 0x313ce56700000000000000000000000000000000000000000000000000000000)
-
-				if iszero(staticcall(gas(), currency, ptr, 0x04, 0x00, 0x20)) {
+				if iszero(staticcall(gas(), currency, 0x1c, 0x04, 0x00, 0x20)) {
+					let ptr := mload(0x40)
 					returndatacopy(ptr, 0x00, returndatasize())
 					revert(ptr, returndatasize())
 				}
@@ -232,23 +220,22 @@ library CurrencyLibrary {
 				value := mload(0x00)
 			}
 			default {
-				value := 18
+				value := 0x12
 			}
 		}
 	}
 
 	function totalSupply(Currency currency) internal view returns (uint256 value) {
 		assembly ("memory-safe") {
-			if eq(currency, NATIVE_ADDRESS) {
+			if iszero(currency) {
 				mstore(0x00, 0xf5993428) // InvalidCurrency()
 				revert(0x1c, 0x04)
 			}
 
-			let ptr := mload(0x40)
+			mstore(0x00, 0x18160ddd)
 
-			mstore(ptr, 0x18160ddd00000000000000000000000000000000000000000000000000000000)
-
-			if iszero(staticcall(gas(), currency, ptr, 0x04, 0x00, 0x20)) {
+			if iszero(staticcall(gas(), currency, 0x1c, 0x04, 0x00, 0x20)) {
+				let ptr := mload(0x40)
 				returndatacopy(ptr, 0x00, returndatasize())
 				revert(ptr, returndatasize())
 			}
@@ -257,15 +244,9 @@ library CurrencyLibrary {
 		}
 	}
 
-	function isNative(Currency currency) internal pure returns (bool flag) {
+	function isZero(Currency currency) internal pure returns (bool result) {
 		assembly ("memory-safe") {
-			flag := eq(currency, NATIVE_ADDRESS)
-		}
-	}
-
-	function isZero(Currency currency) internal pure returns (bool flag) {
-		assembly ("memory-safe") {
-			flag := iszero(currency)
+			result := iszero(currency)
 		}
 	}
 

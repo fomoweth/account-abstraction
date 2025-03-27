@@ -156,8 +156,8 @@ abstract contract AccountCore is AccountBase, EIP712, ModuleManager, UUPSUpgrade
 	}
 
 	function _enableModule(
-		bytes32 userOpHash,
-		bytes calldata data
+		bytes calldata data,
+		bytes32 userOpHash
 	) internal virtual returns (bytes calldata userOpSignature) {
 		ModuleType moduleTypeId;
 		address module;
