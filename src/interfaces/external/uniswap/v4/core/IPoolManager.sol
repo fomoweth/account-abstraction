@@ -2,31 +2,12 @@
 pragma solidity ^0.8.28;
 
 import {Currency} from "src/types/Currency.sol";
+import {PoolKey, PoolId, BalanceDelta, BeforeSwapDelta} from "../V4Types.sol";
 import {IERC6909Claims} from "./IERC6909Claims.sol";
 import {IExtsload} from "./IExtsload.sol";
 import {IExttload} from "./IExttload.sol";
 import {IHooks} from "./IHooks.sol";
 import {IProtocolFees} from "./IProtocolFees.sol";
-
-type BalanceDelta is int256;
-type BeforeSwapDelta is int256;
-type PoolId is bytes32;
-
-struct PoolKey {
-	Currency currency0;
-	Currency currency1;
-	uint24 fee;
-	int24 tickSpacing;
-	IHooks hooks;
-}
-
-struct PathKey {
-	Currency intermediateCurrency;
-	uint24 fee;
-	int24 tickSpacing;
-	IHooks hooks;
-	bytes hookData;
-}
 
 /// @notice Interface for the PoolManager
 interface IPoolManager is IProtocolFees, IERC6909Claims, IExtsload, IExttload {

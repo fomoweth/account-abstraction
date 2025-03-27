@@ -2,7 +2,8 @@
 pragma solidity ^0.8.28;
 
 import {Currency} from "src/types/Currency.sol";
-import {IPoolManager, PoolKey, BalanceDelta, BeforeSwapDelta} from "./IPoolManager.sol";
+import {PoolKey, BalanceDelta, BeforeSwapDelta} from "../V4Types.sol";
+import {IPoolManager} from "./IPoolManager.sol";
 
 /// @notice V4 decides whether to invoke specific hooks by inspecting the least significant bits
 /// of the address that the hooks contract is deployed to.

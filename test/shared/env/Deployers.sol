@@ -32,23 +32,23 @@ import {Attester} from "test/shared/structs/Attester.sol";
 import {Signer} from "test/shared/structs/Signer.sol";
 import {SolArray} from "test/shared/utils/SolArray.sol";
 
+import {Configured} from "config/Configured.sol";
 import {Constants} from "./Constants.sol";
-import {Fork} from "./Fork.sol";
 
-abstract contract Deployers is Test, Constants, Fork {
+abstract contract Deployers is Test, Configured, Constants {
 	using Arrays for address[];
 	using BootstrapLib for address;
 	using BootstrapLib for BootstrapConfig;
 	using ModuleTypeLib for ModuleType[];
 	using SolArray for *;
 
-	Vortex internal VORTEX;
-	Bootstrap internal BOOTSTRAP;
-
 	MetaFactory internal META_FACTORY;
 	AccountFactory internal ACCOUNT_FACTORY;
 	RegistryFactory internal REGISTRY_FACTORY;
 	VortexFactory internal VORTEX_FACTORY;
+
+	Vortex internal VORTEX;
+	Bootstrap internal BOOTSTRAP;
 
 	K1Validator internal K1_VALIDATOR;
 	Permit2Executor internal PERMIT2_EXECUTOR;
@@ -61,12 +61,12 @@ abstract contract Deployers is Test, Constants, Fork {
 	MockFallback internal MOCK_FALLBACK;
 	MockHook internal MOCK_HOOK;
 
-	Signer internal ADMIN;
-	Signer internal BUNDLER;
-
 	Attester[] internal ATTESTERS;
 	address[] internal ATTESTER_ADDRESSES;
 	uint8 internal THRESHOLD = 1;
+
+	Signer internal ADMIN;
+	Signer internal BUNDLER;
 
 	Signer internal ALICE;
 	Signer internal COOPER;
@@ -77,8 +77,8 @@ abstract contract Deployers is Test, Constants, Fork {
 	uint256 internal constant DEFAULT_VALUE = 10 ether;
 	uint32 internal constant DEFAULT_STAKE_DELAY = 1 weeks;
 
-	modifier impersonate(address target) {
-		vm.startPrank(target);
+	modifier impersonate(Signer memory signer, bool asAccount) {
+		vm.startPrank(asAccount ? address(signer.account) : signer.eoa);
 		_;
 		vm.stopPrank();
 	}
@@ -101,13 +101,22 @@ abstract contract Deployers is Test, Constants, Fork {
 	}
 
 	function setUpContracts() internal virtual {
+		labelContracts();
 		deployContracts();
 		setUpFactories();
 	}
 
-	function deployContracts() internal virtual impersonate(ADMIN.eoa) {
-		VORTEX = Vortex(payable(deploy("Vortex", "")));
-		BOOTSTRAP = Bootstrap(deploy("Bootstrap", ""));
+	function labelContracts() internal virtual {
+		vm.label(address(ENTRYPOINT), "EntryPoint");
+		vm.label(address(REGISTRY), "Registry");
+		vm.label(address(SMART_SESSION), "SmartSession");
+		vm.label(address(PERMIT2), "Permit2");
+		labelCurrencies();
+	}
+
+	function deployContracts() internal virtual impersonate(ADMIN, false) {
+		VORTEX = Vortex(payable(deploy("Vortex")));
+		BOOTSTRAP = Bootstrap(deploy("Bootstrap"));
 		deployModules();
 		deployFactories();
 	}
@@ -118,9 +127,9 @@ abstract contract Deployers is Test, Constants, Fork {
 		uint256 value,
 		address factory,
 		bool useRegistry
-	) internal virtual impersonate(signer.eoa) returns (Vortex) {
+	) internal virtual returns (Vortex) {
 		bytes32 salt = signer.encodeSalt(id);
-		address payable account = META_FACTORY.computeAddress(factory, address(VORTEX), salt);
+		address payable account = AccountFactory(factory).computeAddress(salt);
 		vm.assertTrue(account.code.length == 0);
 
 		bytes memory initCode = getAccountInitCode(signer.eoa, salt, factory, true, useRegistry);
@@ -214,7 +223,7 @@ abstract contract Deployers is Test, Constants, Fork {
 			revert("invalid factory");
 		}
 
-		initCode = abi.encodePacked(factory, abi.encodeCall(ACCOUNT_FACTORY.createAccount, (salt, params)));
+		initCode = abi.encodePacked(factory, abi.encodeCall(AccountFactory.createAccount, (salt, params)));
 
 		if (useMetaFactory) {
 			initCode = abi.encodePacked(META_FACTORY, abi.encodeCall(META_FACTORY.createAccount, (initCode)));
@@ -233,7 +242,7 @@ abstract contract Deployers is Test, Constants, Fork {
 		VORTEX_FACTORY = VortexFactory(deploy("VortexFactory", abi.encode(VORTEX, K1_VALIDATOR, BOOTSTRAP, REGISTRY)));
 	}
 
-	function setUpFactories() internal virtual impersonate(ADMIN.eoa) {
+	function setUpFactories() internal virtual impersonate(ADMIN, false) {
 		META_FACTORY.authorize(address(ACCOUNT_FACTORY));
 		META_FACTORY.authorize(address(REGISTRY_FACTORY));
 		META_FACTORY.authorize(address(VORTEX_FACTORY));
@@ -248,20 +257,14 @@ abstract contract Deployers is Test, Constants, Fork {
 	}
 
 	function deployValidators() internal virtual {
-		K1_VALIDATOR = K1Validator(
-			deployModule("K1Validator", TYPE_VALIDATOR.moduleTypes(TYPE_STATELESS_VALIDATOR), "")
-		);
+		K1_VALIDATOR = K1Validator(deployModule("K1Validator", TYPE_VALIDATOR.moduleTypes(TYPE_STATELESS_VALIDATOR)));
 	}
 
 	function deployExecutors() internal virtual {
-		PERMIT2_EXECUTOR = Permit2Executor(deployModule("Permit2Executor", TYPE_EXECUTOR.moduleTypes(), ""));
+		PERMIT2_EXECUTOR = Permit2Executor(deployModule("Permit2Executor", TYPE_EXECUTOR.moduleTypes()));
 
 		UNIVERSAL_EXECUTOR = UniversalExecutor(
-			deployModule(
-				"UniversalExecutor",
-				TYPE_EXECUTOR.moduleTypes(),
-				abi.encode(uni.poolManager, uni.v3Factory, uni.v2Factory, WNATIVE)
-			)
+			deployModule("UniversalExecutor", TYPE_EXECUTOR.moduleTypes(), abi.encode(WNATIVE))
 		);
 	}
 
@@ -270,21 +273,28 @@ abstract contract Deployers is Test, Constants, Fork {
 			payable(deployModule("NativeWrapper", TYPE_FALLBACK.moduleTypes(), abi.encode(WNATIVE)))
 		);
 
-		STETH_WRAPPER = STETHWrapper(payable(deployModule("STETHWrapper", TYPE_FALLBACK.moduleTypes(), "")));
+		STETH_WRAPPER = STETHWrapper(payable(deployModule("STETHWrapper", TYPE_FALLBACK.moduleTypes())));
 	}
 
 	function deployHooks() internal virtual {}
 
 	function deployMockModules() internal virtual {
 		MOCK_VALIDATOR = MockValidator(
-			deployModule("MockValidator", TYPE_VALIDATOR.moduleTypes(TYPE_STATELESS_VALIDATOR), "")
+			deployModule("MockValidator", TYPE_VALIDATOR.moduleTypes(TYPE_STATELESS_VALIDATOR))
 		);
 
-		MOCK_EXECUTOR = MockExecutor(deployModule("MockExecutor", TYPE_EXECUTOR.moduleTypes(), ""));
+		MOCK_EXECUTOR = MockExecutor(deployModule("MockExecutor", TYPE_EXECUTOR.moduleTypes()));
 
-		MOCK_FALLBACK = MockFallback(payable(deployModule("MockFallback", TYPE_FALLBACK.moduleTypes(), "")));
+		MOCK_FALLBACK = MockFallback(payable(deployModule("MockFallback", TYPE_FALLBACK.moduleTypes())));
 
-		MOCK_HOOK = MockHook(deployModule("MockHook", TYPE_HOOK.moduleTypes(), ""));
+		MOCK_HOOK = MockHook(deployModule("MockHook", TYPE_HOOK.moduleTypes()));
+	}
+
+	function deployModule(
+		string memory name,
+		ModuleType[] memory moduleTypeIds
+	) internal virtual returns (address module) {
+		return deployModule(name, moduleTypeIds, "");
 	}
 
 	function deployModule(
@@ -299,16 +309,19 @@ abstract contract Deployers is Test, Constants, Fork {
 		}
 	}
 
+	function deploy(string memory name) internal virtual returns (address instance) {
+		return deploy(name, "");
+	}
+
 	function deploy(string memory name, bytes memory args) internal virtual returns (address instance) {
 		string memory path = string.concat(name, ".sol:", name);
 		bytes memory bytecode = bytes.concat(vm.getCode(path), args);
-		vm.label((instance = create2(bytecode, hex"00")), name);
-	}
 
-	function create2(bytes memory bytecode, bytes32 salt) internal virtual returns (address instance) {
 		assembly ("memory-safe") {
-			instance := create2(0x00, add(bytecode, 0x20), mload(bytecode), salt)
+			instance := create2(0x00, add(bytecode, 0x20), mload(bytecode), hex"00")
 		}
+
+		vm.label(instance, name);
 	}
 
 	function createSigner(string memory name, bytes10 keyword) internal virtual returns (Signer memory signer) {
@@ -372,7 +385,7 @@ abstract contract Deployers is Test, Constants, Fork {
 		return boundPrivateKey(uint256(keccak256(abi.encodePacked(key))));
 	}
 
-	function encodeInstallModuleData(
+	function encodeInstallModuleParams(
 		ModuleType[] memory moduleTypeIds,
 		bytes memory data,
 		bytes memory hookData
@@ -386,7 +399,7 @@ abstract contract Deployers is Test, Constants, Fork {
 		);
 	}
 
-	function encodeUninstallModuleData(
+	function encodeUninstallModuleParams(
 		bytes memory data,
 		bytes memory hookData
 	) internal pure virtual returns (bytes memory result) {
