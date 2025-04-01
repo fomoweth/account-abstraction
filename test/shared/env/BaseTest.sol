@@ -2,20 +2,23 @@
 pragma solidity ^0.8.28;
 
 import {Test} from "forge-std/Test.sol";
-import {VmSafe} from "forge-std/Vm.sol";
+import {Vm} from "forge-std/Vm.sol";
 
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 import {IHook} from "src/interfaces/IERC7579Modules.sol";
+import {AccountIdLib} from "src/libraries/AccountIdLib.sol";
 import {Currency} from "src/types/Currency.sol";
+import {Vortex} from "src/Vortex.sol";
 
 import {PermitDetails, PermitSingle, PermitBatch} from "test/shared/structs/Protocols.sol";
 import {Signer} from "test/shared/structs/Signer.sol";
-
 import {Assertions} from "./Assertions.sol";
 import {Deployers} from "./Deployers.sol";
 import {EventsAndErrors} from "./EventsAndErrors.sol";
 
 abstract contract BaseTest is Test, Assertions, Deployers, EventsAndErrors {
+	using AccountIdLib for string;
+
 	string internal constant ENABLE_MODULE_NOTATION =
 		"EnableModule(uint256 moduleTypeId,address module,bytes32 initDataHash,bytes32 userOpHash)";
 	bytes32 internal constant ENABLE_MODULE_TYPEHASH = keccak256(bytes(ENABLE_MODULE_NOTATION));
@@ -50,8 +53,6 @@ abstract contract BaseTest is Test, Assertions, Deployers, EventsAndErrors {
 	bytes32 internal constant STETH_TOTAL_SHARES_SLOT =
 		0xe3b4b636e601189b5f4c6742edf2538ac12bb61ed03e6da26949d69838fa447e;
 
-	bytes32 internal PERMIT2_DOMAIN_SEPARATOR;
-
 	uint256 internal snapshotId = MAX_UINT256;
 
 	modifier asEntryPoint() {
@@ -60,17 +61,15 @@ abstract contract BaseTest is Test, Assertions, Deployers, EventsAndErrors {
 		vm.stopPrank();
 	}
 
-	modifier expectHookCall(address hook) {
-		vm.expectCall(hook, abi.encodeWithSelector(IHook.preCheck.selector), 1);
-		vm.expectCall(hook, abi.encodeWithSelector(IHook.postCheck.selector), 1);
+	modifier expectHookCall(address hook, uint256 count) {
+		vm.expectCall(hook, abi.encodeWithSelector(IHook.preCheck.selector), uint8(count));
+		vm.expectCall(hook, abi.encodeWithSelector(IHook.postCheck.selector), uint8(count));
 		_;
 	}
 
 	function setUp() public virtual {
 		setUpSigners();
 		setUpContracts();
-
-		PERMIT2_DOMAIN_SEPARATOR = PERMIT2.DOMAIN_SEPARATOR();
 	}
 
 	function snapshotState() internal virtual {
@@ -111,10 +110,11 @@ abstract contract BaseTest is Test, Assertions, Deployers, EventsAndErrors {
 		deal(currency, account, value, false);
 	}
 
-	function getUserOpResult(
-		bytes32 userOpHash
+	function parseUserOpResult(
+		bytes32 userOpHash,
+		Vm.Log[] memory logs
 	) internal virtual returns (bool success, uint256 actualGasCost, uint256 actualGasUsed, bytes memory revertReason) {
-		VmSafe.Log[] memory logs = vm.getRecordedLogs();
+		// Vm.Log[] memory logs = vm.getRecordedLogs();
 
 		for (uint256 i; i < logs.length; ++i) {
 			if (logs[i].topics[0] == USER_OPERATION_EVENT_TOPIC) {
@@ -123,6 +123,11 @@ abstract contract BaseTest is Test, Assertions, Deployers, EventsAndErrors {
 				(, revertReason) = abi.decode(logs[i].data, (uint256, bytes));
 			}
 		}
+	}
+
+	function getAccountDomainStructFields(Vortex account) internal view virtual returns (bytes memory) {
+		(string memory name, string memory version) = account.accountId().parse();
+		return abi.encode(keccak256(bytes(name)), keccak256(bytes(version)), block.chainid, account, bytes32(0));
 	}
 
 	function preparePermitSingle(
@@ -147,7 +152,7 @@ abstract contract BaseTest is Test, Assertions, Deployers, EventsAndErrors {
 			)
 		);
 
-		hash = keccak256(abi.encodePacked("\x19\x01", PERMIT2_DOMAIN_SEPARATOR, structHash));
+		hash = keccak256(abi.encodePacked("\x19\x01", PERMIT2.DOMAIN_SEPARATOR(), structHash));
 
 		signature = abi.encodePacked(signer.account.rootValidator(), signer.sign(hash));
 	}
@@ -183,7 +188,7 @@ abstract contract BaseTest is Test, Assertions, Deployers, EventsAndErrors {
 			abi.encode(PERMIT_BATCH_TYPEHASH, keccak256(abi.encodePacked(hashes)), spender, MAX_UINT256)
 		);
 
-		hash = keccak256(abi.encodePacked("\x19\x01", PERMIT2_DOMAIN_SEPARATOR, structHash));
+		hash = keccak256(abi.encodePacked("\x19\x01", PERMIT2.DOMAIN_SEPARATOR(), structHash));
 
 		signature = abi.encodePacked(signer.account.rootValidator(), signer.sign(hash));
 	}

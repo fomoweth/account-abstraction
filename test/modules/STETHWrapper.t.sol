@@ -14,7 +14,7 @@ contract STETHWrapperTest is BaseTest {
 	using ExecutionUtils for ExecType;
 	using SolArray for *;
 
-	function setUp() public virtual override {
+	function setUp() public virtual override onlyEthereum {
 		super.setUp();
 
 		deployVortex(ALICE, 0, INITIAL_VALUE, address(VORTEX_FACTORY), true);
@@ -38,7 +38,7 @@ contract STETHWrapperTest is BaseTest {
 		STETH.approve(WSTETH.toAddress(), MAX_UINT256);
 	}
 
-	function test_wrapSTETH() public virtual onlyEthereum {
+	function test_wrapSTETH() public virtual {
 		deal(address(ALICE.account), DEFAULT_VALUE);
 		assertEq(address(ALICE.account).balance, DEFAULT_VALUE);
 		assertEq(STETH.balanceOf(address(ALICE.account)), 0);
@@ -49,7 +49,7 @@ contract STETHWrapperTest is BaseTest {
 		assertGt(STETH.balanceOf(address(ALICE.account)), 0);
 	}
 
-	function test_wrapSTETHByExecute() public virtual onlyEthereum {
+	function test_wrapSTETHByExecute() public virtual {
 		deal(address(ALICE.account), DEFAULT_VALUE);
 		assertEq(address(ALICE.account).balance, DEFAULT_VALUE);
 		assertEq(STETH.balanceOf(address(ALICE.account)), 0);
@@ -66,7 +66,7 @@ contract STETHWrapperTest is BaseTest {
 		assertGt(STETH.balanceOf(address(ALICE.account)), 0);
 	}
 
-	function test_wrapSTETHByExecuteUserOp() public virtual onlyEthereum {
+	function test_wrapSTETHByExecuteUserOp() public virtual {
 		deal(address(ALICE.account), DEFAULT_VALUE);
 		assertEq(address(ALICE.account).balance, DEFAULT_VALUE);
 		assertEq(STETH.balanceOf(address(ALICE.account)), 0);
@@ -83,7 +83,7 @@ contract STETHWrapperTest is BaseTest {
 		assertGt(STETH.balanceOf(address(ALICE.account)), 0);
 	}
 
-	function test_wrapWSTETH() public virtual onlyEthereum {
+	function test_wrapWSTETH() public virtual {
 		deal(STETH, address(ALICE.account), DEFAULT_VALUE);
 		assertGe(STETH.balanceOf(address(ALICE.account)), DEFAULT_VALUE);
 		assertEq(WSTETH.balanceOf(address(ALICE.account)), 0);
@@ -95,7 +95,7 @@ contract STETHWrapperTest is BaseTest {
 		assertGt(WSTETH.balanceOf(address(ALICE.account)), 0);
 	}
 
-	function test_wrapWSTETHByExecute() public virtual onlyEthereum {
+	function test_wrapWSTETHByExecute() public virtual {
 		deal(STETH, address(ALICE.account), DEFAULT_VALUE);
 		assertGe(STETH.balanceOf(address(ALICE.account)), DEFAULT_VALUE);
 		assertEq(WSTETH.balanceOf(address(ALICE.account)), 0);
@@ -113,7 +113,7 @@ contract STETHWrapperTest is BaseTest {
 		assertGt(WSTETH.balanceOf(address(ALICE.account)), 0);
 	}
 
-	function test_wrapWSTETHByExecuteUserOp() public virtual onlyEthereum {
+	function test_wrapWSTETHByExecuteUserOp() public virtual {
 		deal(STETH, address(ALICE.account), DEFAULT_VALUE);
 		assertGe(STETH.balanceOf(address(ALICE.account)), DEFAULT_VALUE);
 		assertEq(WSTETH.balanceOf(address(ALICE.account)), 0);
@@ -131,7 +131,7 @@ contract STETHWrapperTest is BaseTest {
 		assertGt(WSTETH.balanceOf(address(ALICE.account)), 0);
 	}
 
-	function test_unwrapWSTETH() public virtual onlyEthereum {
+	function test_unwrapWSTETH() public virtual {
 		deal(WSTETH, address(ALICE.account), DEFAULT_VALUE);
 		assertEq(WSTETH.balanceOf(address(ALICE.account)), DEFAULT_VALUE);
 		assertEq(STETH.balanceOf(address(ALICE.account)), 0);
@@ -142,7 +142,7 @@ contract STETHWrapperTest is BaseTest {
 		assertGt(STETH.balanceOf(address(ALICE.account)), 0);
 	}
 
-	function test_unwrapWSTETHByExecute() public virtual onlyEthereum {
+	function test_unwrapWSTETHByExecute() public virtual {
 		deal(WSTETH, address(ALICE.account), DEFAULT_VALUE);
 		assertEq(WSTETH.balanceOf(address(ALICE.account)), DEFAULT_VALUE);
 		assertEq(STETH.balanceOf(address(ALICE.account)), 0);
@@ -159,7 +159,7 @@ contract STETHWrapperTest is BaseTest {
 		assertGt(STETH.balanceOf(address(ALICE.account)), 0);
 	}
 
-	function test_unwrapWSTETHByExecuteUserOp() public virtual onlyEthereum {
+	function test_unwrapWSTETHByExecuteUserOp() public virtual {
 		deal(WSTETH, address(ALICE.account), DEFAULT_VALUE);
 		assertEq(WSTETH.balanceOf(address(ALICE.account)), DEFAULT_VALUE);
 		assertEq(STETH.balanceOf(address(ALICE.account)), 0);

@@ -6,16 +6,17 @@ import {IEntryPoint} from "account-abstraction/interfaces/IEntryPoint.sol";
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 import {AccountIdLib} from "src/libraries/AccountIdLib.sol";
 import {Execution} from "src/libraries/ExecutionLib.sol";
-import {CallType, ModuleType} from "src/types/Types.sol";
+import {CallType, ExecType, ModuleType} from "src/types/Types.sol";
 import {Vortex} from "src/Vortex.sol";
 
 import {BaseTest} from "test/shared/env/BaseTest.sol";
 import {MockHook} from "test/shared/mocks/MockHook.sol";
-import {Signer} from "test/shared/structs/Signer.sol";
+import {ExecutionUtils} from "test/shared/utils/ExecutionUtils.sol";
 import {SolArray} from "test/shared/utils/SolArray.sol";
 
 contract ModuleManagerTest is BaseTest {
 	using AccountIdLib for string;
+	using ExecutionUtils for ExecType;
 	using SolArray for *;
 
 	function setUp() public virtual override {
@@ -31,32 +32,31 @@ contract ModuleManagerTest is BaseTest {
 		assertFalse(MURPHY.account.isModuleInstalled(TYPE_VALIDATOR, opValidator, ""));
 
 		ModuleType[] memory moduleTypeIds = TYPE_VALIDATOR.moduleTypes(TYPE_STATELESS_VALIDATOR);
-
 		bytes memory initData = encodeInstallModuleParams(moduleTypeIds, abi.encodePacked(MURPHY.eoa), "");
 		bytes memory callData = abi.encodeCall(Vortex.configureRootValidator, (opValidator, ""));
 
-		PackedUserOperation[] memory userOps;
+		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
 
 		revertToState();
 
-		userOps = prepareEnableModule(enableValidator, TYPE_VALIDATOR, opValidator, initData, callData, true, true);
+		userOps[0] = prepareEnable(enableValidator, TYPE_VALIDATOR, opValidator, initData, callData, true, true);
 
 		vm.expectEmit(true, true, true, true);
 		emit ModuleInstalled(TYPE_VALIDATOR, opValidator);
 
-		ENTRYPOINT.handleOps(userOps, MURPHY.eoa);
+		BUNDLER.handleOps(userOps);
 
 		assertTrue(MURPHY.account.isModuleInstalled(TYPE_VALIDATOR, opValidator, ""));
 		assertEq(MURPHY.account.rootValidator(), opValidator);
 
 		revertToState();
 
-		userOps = prepareEnableModule(enableValidator, TYPE_VALIDATOR, opValidator, initData, callData, true, false);
+		userOps[0] = prepareEnable(enableValidator, TYPE_VALIDATOR, opValidator, initData, callData, true, false);
 
 		vm.expectEmit(true, true, true, true);
 		emit ModuleInstalled(TYPE_VALIDATOR, opValidator);
 
-		ENTRYPOINT.handleOps(userOps, MURPHY.eoa);
+		BUNDLER.handleOps(userOps);
 
 		assertTrue(MURPHY.account.isModuleInstalled(TYPE_VALIDATOR, opValidator, ""));
 		assertEq(MURPHY.account.rootValidator(), opValidator);
@@ -70,7 +70,6 @@ contract ModuleManagerTest is BaseTest {
 		assertFalse(MURPHY.account.isModuleInstalled(TYPE_VALIDATOR, opValidator, ""));
 
 		ModuleType[] memory moduleTypeIds = TYPE_VALIDATOR.moduleTypes(TYPE_STATELESS_VALIDATOR);
-
 		bytes memory initData = encodeInstallModuleParams(moduleTypeIds, abi.encodePacked(MURPHY.eoa), "");
 		bytes memory callData = abi.encodeCall(Vortex.configureRootValidator, (opValidator, ""));
 
@@ -81,21 +80,17 @@ contract ModuleManagerTest is BaseTest {
 			abi.encodeWithSelector(EnableNotApproved.selector)
 		);
 
-		PackedUserOperation[] memory userOps;
+		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
 
-		revertToState();
-
-		userOps = prepareEnableModule(enableValidator, TYPE_VALIDATOR, opValidator, initData, callData, false, true);
+		userOps[0] = prepareEnable(enableValidator, TYPE_VALIDATOR, opValidator, initData, callData, false, true);
 
 		vm.expectRevert(revertReason);
-		ENTRYPOINT.handleOps(userOps, MURPHY.eoa);
+		BUNDLER.handleOps(userOps);
 
-		revertToState();
-
-		userOps = prepareEnableModule(enableValidator, TYPE_VALIDATOR, opValidator, initData, callData, false, false);
+		userOps[0] = prepareEnable(enableValidator, TYPE_VALIDATOR, opValidator, initData, callData, false, false);
 
 		vm.expectRevert(revertReason);
-		ENTRYPOINT.handleOps(userOps, MURPHY.eoa);
+		BUNDLER.handleOps(userOps);
 	}
 
 	function test_enableModule_revertsIfModuleAlreadyInstalled() public virtual {
@@ -106,7 +101,6 @@ contract ModuleManagerTest is BaseTest {
 		assertFalse(MURPHY.account.isModuleInstalled(TYPE_VALIDATOR, opValidator, ""));
 
 		ModuleType[] memory moduleTypeIds = TYPE_VALIDATOR.moduleTypes(TYPE_STATELESS_VALIDATOR);
-
 		bytes memory initData = encodeInstallModuleParams(moduleTypeIds, abi.encodePacked(MURPHY.eoa), "");
 		bytes memory callData = abi.encodeCall(Vortex.configureRootValidator, (opValidator, ""));
 
@@ -120,21 +114,17 @@ contract ModuleManagerTest is BaseTest {
 			abi.encodeWithSelector(ModuleAlreadyInstalled.selector, opValidator)
 		);
 
-		PackedUserOperation[] memory userOps;
+		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
 
-		revertToState();
-
-		userOps = prepareEnableModule(enableValidator, TYPE_VALIDATOR, opValidator, initData, callData, true, true);
+		userOps[0] = prepareEnable(enableValidator, TYPE_VALIDATOR, opValidator, initData, callData, true, true);
 
 		vm.expectRevert(revertReason);
-		ENTRYPOINT.handleOps(userOps, MURPHY.eoa);
+		BUNDLER.handleOps(userOps);
 
-		revertToState();
-
-		userOps = prepareEnableModule(enableValidator, TYPE_VALIDATOR, opValidator, initData, callData, true, false);
+		userOps[0] = prepareEnable(enableValidator, TYPE_VALIDATOR, opValidator, initData, callData, true, false);
 
 		vm.expectRevert(revertReason);
-		ENTRYPOINT.handleOps(userOps, MURPHY.eoa);
+		BUNDLER.handleOps(userOps);
 	}
 
 	function test_enableModule_revertsWithInvalidValidator() public virtual {
@@ -144,7 +134,6 @@ contract ModuleManagerTest is BaseTest {
 		assertFalse(MURPHY.account.isModuleInstalled(TYPE_VALIDATOR, opValidator, ""));
 
 		ModuleType[] memory moduleTypeIds = TYPE_VALIDATOR.moduleTypes(TYPE_STATELESS_VALIDATOR);
-
 		bytes memory initData = encodeInstallModuleParams(moduleTypeIds, abi.encodePacked(MURPHY.eoa), "");
 		bytes memory callData = abi.encodeCall(Vortex.configureRootValidator, (opValidator, ""));
 
@@ -155,21 +144,17 @@ contract ModuleManagerTest is BaseTest {
 			abi.encodeWithSelector(ModuleNotInstalled.selector, invalidValidator)
 		);
 
-		PackedUserOperation[] memory userOps;
+		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
 
-		revertToState();
-
-		userOps = prepareEnableModule(invalidValidator, TYPE_VALIDATOR, opValidator, initData, callData, true, true);
+		userOps[0] = prepareEnable(invalidValidator, TYPE_VALIDATOR, opValidator, initData, callData, true, true);
 
 		vm.expectRevert(revertReason);
-		ENTRYPOINT.handleOps(userOps, MURPHY.eoa);
+		BUNDLER.handleOps(userOps);
 
-		revertToState();
-
-		userOps = prepareEnableModule(invalidValidator, TYPE_VALIDATOR, opValidator, initData, callData, true, false);
+		userOps[0] = prepareEnable(invalidValidator, TYPE_VALIDATOR, opValidator, initData, callData, true, false);
 
 		vm.expectRevert(revertReason);
-		ENTRYPOINT.handleOps(userOps, MURPHY.eoa);
+		BUNDLER.handleOps(userOps);
 	}
 
 	function test_enableModule_revertsWithInvalidModuleTypeId() public virtual {
@@ -180,7 +165,6 @@ contract ModuleManagerTest is BaseTest {
 		assertFalse(MURPHY.account.isModuleInstalled(TYPE_VALIDATOR, opValidator, ""));
 
 		ModuleType[] memory moduleTypeIds = TYPE_EXECUTOR.moduleTypes();
-
 		bytes memory initData = encodeInstallModuleParams(moduleTypeIds, abi.encodePacked(MURPHY.eoa), "");
 		bytes memory callData = abi.encodeCall(Vortex.configureRootValidator, (opValidator, ""));
 
@@ -191,21 +175,17 @@ contract ModuleManagerTest is BaseTest {
 			abi.encodeWithSelector(InvalidModuleType.selector)
 		);
 
-		PackedUserOperation[] memory userOps;
+		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
 
-		revertToState();
-
-		userOps = prepareEnableModule(enableValidator, TYPE_EXECUTOR, opValidator, initData, callData, true, true);
+		userOps[0] = prepareEnable(enableValidator, TYPE_EXECUTOR, opValidator, initData, callData, true, true);
 
 		vm.expectRevert(revertReason);
-		ENTRYPOINT.handleOps(userOps, MURPHY.eoa);
+		BUNDLER.handleOps(userOps);
 
-		revertToState();
-
-		userOps = prepareEnableModule(enableValidator, TYPE_EXECUTOR, opValidator, initData, callData, true, false);
+		userOps[0] = prepareEnable(enableValidator, TYPE_EXECUTOR, opValidator, initData, callData, true, false);
 
 		vm.expectRevert(revertReason);
-		ENTRYPOINT.handleOps(userOps, MURPHY.eoa);
+		BUNDLER.handleOps(userOps);
 	}
 
 	function test_configureRootValidator() public virtual {
@@ -213,20 +193,17 @@ contract ModuleManagerTest is BaseTest {
 		assertEq(MURPHY.account.rootValidator(), address(K1_VALIDATOR));
 
 		ModuleType[] memory moduleTypeIds = TYPE_VALIDATOR.moduleTypes(TYPE_STATELESS_VALIDATOR);
-
 		bytes memory installData = encodeInstallModuleParams(moduleTypeIds, abi.encodePacked(MURPHY.eoa), "");
+		bytes memory callData = abi.encodeCall(Vortex.configureRootValidator, (address(MOCK_VALIDATOR), installData));
+		bytes memory executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(address(MURPHY.account), 0, callData);
 
-		Execution memory execution = Execution({
-			target: address(MURPHY.account),
-			value: 0,
-			callData: abi.encodeCall(Vortex.configureRootValidator, (address(MOCK_VALIDATOR), installData))
-		});
+		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
+		(userOps[0], ) = MURPHY.prepareUserOp(executionCalldata);
 
 		vm.expectEmit(true, true, true, true);
 		emit RootValidatorConfigured(address(MOCK_VALIDATOR));
 
-		MURPHY.execute(EXECTYPE_DEFAULT, execution);
-
+		BUNDLER.handleOps(userOps);
 		assertTrue(MURPHY.account.isModuleInstalled(TYPE_VALIDATOR, address(MOCK_VALIDATOR), ""));
 		assertEq(MURPHY.account.rootValidator(), address(MOCK_VALIDATOR));
 	}
@@ -236,7 +213,6 @@ contract ModuleManagerTest is BaseTest {
 		assertEq(MURPHY.account.rootValidator(), address(K1_VALIDATOR));
 
 		ModuleType[] memory moduleTypeIds = TYPE_VALIDATOR.moduleTypes(TYPE_STATELESS_VALIDATOR);
-
 		bytes memory installData = encodeInstallModuleParams(moduleTypeIds, abi.encodePacked(MURPHY.eoa), "");
 
 		Execution[] memory executions = new Execution[](2);
@@ -251,11 +227,15 @@ contract ModuleManagerTest is BaseTest {
 			abi.encodeCall(Vortex.configureRootValidator, (address(MOCK_VALIDATOR), ""))
 		);
 
+		bytes memory executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(executions);
+
+		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
+		(userOps[0], ) = MURPHY.prepareUserOp(executionCalldata);
+
 		vm.expectEmit(true, true, true, true);
 		emit RootValidatorConfigured(address(MOCK_VALIDATOR));
 
-		MURPHY.execute(EXECTYPE_DEFAULT, executions);
-
+		BUNDLER.handleOps(userOps);
 		assertTrue(MURPHY.account.isModuleInstalled(TYPE_VALIDATOR, address(MOCK_VALIDATOR), ""));
 		assertEq(MURPHY.account.rootValidator(), address(MOCK_VALIDATOR));
 	}
@@ -263,28 +243,28 @@ contract ModuleManagerTest is BaseTest {
 	function test_configureRegistry() public virtual {
 		assertEq(MURPHY.account.registry(), address(0));
 
+		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
+		bytes memory callData;
+		bytes memory executionCalldata;
+
 		vm.expectEmit(true, true, true, true);
 		emit RegistryConfigured(address(REGISTRY));
 
-		Execution memory execution = Execution({
-			target: address(MURPHY.account),
-			value: 0,
-			callData: abi.encodeCall(Vortex.configureRegistry, (address(REGISTRY), ATTESTER_ADDRESSES, THRESHOLD))
-		});
+		callData = abi.encodeCall(Vortex.configureRegistry, (address(REGISTRY), ATTESTER_ADDRESSES, THRESHOLD));
+		executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(address(MURPHY.account), 0, callData);
+		(userOps[0], ) = MURPHY.prepareUserOp(executionCalldata);
 
-		MURPHY.execute(EXECTYPE_DEFAULT, execution);
+		BUNDLER.handleOps(userOps);
 		assertEq(MURPHY.account.registry(), address(REGISTRY));
-
-		execution = Execution({
-			target: address(MURPHY.account),
-			value: 0,
-			callData: abi.encodeCall(Vortex.configureRegistry, (address(0), new address[](0), 0))
-		});
 
 		vm.expectEmit(true, true, true, true);
 		emit RegistryConfigured(address(0));
 
-		MURPHY.execute(EXECTYPE_DEFAULT, execution);
+		callData = abi.encodeCall(Vortex.configureRegistry, (address(0), new address[](0), 0));
+		executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(address(MURPHY.account), 0, callData);
+		(userOps[0], ) = MURPHY.prepareUserOp(executionCalldata);
+
+		BUNDLER.handleOps(userOps);
 		assertEq(MURPHY.account.registry(), address(0));
 	}
 
@@ -371,35 +351,29 @@ contract ModuleManagerTest is BaseTest {
 		assertFalse(MURPHY.account.isModuleInstalled(TYPE_HOOK, address(MOCK_HOOK), ""));
 	}
 
-	function test_installMultipleHooks() public virtual {
-		address[] memory hooks = new address[](4);
-		hooks[0] = address(new MockHook());
-		hooks[1] = address(new MockHook());
-		hooks[2] = address(new MockHook());
-		hooks[3] = address(new MockHook());
-
+	function test_installHooks(uint8 length) public virtual {
+		length = uint8(bound(length, 1, 32));
+		address[] memory hooks = new address[](length);
 		ModuleType[] memory hookTypes = TYPE_HOOK.moduleTypes();
 
-		for (uint256 i; i < hooks.length; ++i) {
+		for (uint256 i; i < length; ++i) {
 			bytes memory installData = encodeInstallModuleParams(hookTypes, vm.randomBytes(32 * (i + 1)), "");
 
-			MURPHY.install(TYPE_HOOK, hooks[i], installData);
+			MURPHY.install(TYPE_HOOK, (hooks[i] = address(new MockHook())), installData);
 			assertTrue(MURPHY.account.isModuleInstalled(TYPE_HOOK, hooks[i], ""));
 		}
 
-		address target = WNATIVE.toAddress();
 		uint256 value = 5 ether;
+		bytes memory callData = abi.encodeWithSignature("deposit()");
+		bytes memory executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(WNATIVE.toAddress(), value, callData);
 
-		Execution memory execution = Execution({
-			target: target,
-			value: value,
-			callData: abi.encodeWithSignature("deposit()")
-		});
+		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
+		(userOps[0], ) = MURPHY.prepareUserOp(executionCalldata);
 
 		assertEq(WNATIVE.balanceOf(address(MURPHY.account)), 0);
 		deal(address(MURPHY.account), address(MURPHY.account).balance + value);
 
-		MURPHY.execute(EXECTYPE_DEFAULT, execution);
+		BUNDLER.handleOps(userOps);
 		assertEq(WNATIVE.balanceOf(address(MURPHY.account)), value);
 	}
 
@@ -624,7 +598,7 @@ contract ModuleManagerTest is BaseTest {
 		MURPHY.account.uninstallModule(TYPE_FALLBACK, address(MOCK_FALLBACK), uninstallData);
 	}
 
-	function prepareEnableModule(
+	function prepareEnable(
 		address enableValidator,
 		ModuleType moduleTypeId,
 		address module,
@@ -632,11 +606,9 @@ contract ModuleManagerTest is BaseTest {
 		bytes memory callData,
 		bool useValidSignature,
 		bool useERC7739
-	) internal view virtual returns (PackedUserOperation[] memory userOps) {
-		userOps = new PackedUserOperation[](1);
+	) internal view virtual returns (PackedUserOperation memory userOp) {
 		bytes32 userOpHash;
-
-		(userOps[0], userOpHash) = MURPHY.prepareUserOp(callData, module, VALIDATION_MODE_ENABLE);
+		(userOp, userOpHash) = MURPHY.prepareUserOp(callData, module, VALIDATION_MODE_ENABLE);
 
 		bytes32 structHash = keccak256(
 			abi.encode(ENABLE_MODULE_TYPEHASH, moduleTypeId, module, keccak256(initData), userOpHash)
@@ -646,16 +618,6 @@ contract ModuleManagerTest is BaseTest {
 		bytes memory enableSignature;
 
 		if (useERC7739) {
-			(string memory name, string memory version) = MURPHY.account.accountId().parse();
-
-			bytes memory domainFields = abi.encode(
-				keccak256(bytes(name)),
-				keccak256(bytes(version)),
-				block.chainid,
-				MURPHY.account,
-				bytes32(0)
-			);
-
 			enableModuleHash = MURPHY.account.hashTypedData(
 				keccak256(
 					abi.encodePacked(
@@ -668,7 +630,7 @@ contract ModuleManagerTest is BaseTest {
 							),
 							structHash
 						),
-						domainFields
+						getAccountDomainStructFields(MURPHY.account)
 					)
 				)
 			);
@@ -702,6 +664,6 @@ contract ModuleManagerTest is BaseTest {
 			enableSignature
 		);
 
-		userOps[0].signature = abi.encodePacked(enableModuleData, userOps[0].signature);
+		userOp.signature = abi.encodePacked(enableModuleData, userOp.signature);
 	}
 }
