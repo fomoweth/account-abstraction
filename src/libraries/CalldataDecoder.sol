@@ -17,7 +17,7 @@ library CalldataDecoder {
 		}
 	}
 
-	function decodeExecutionModeAndCalldata(
+	function decodeExecutionCalldata(
 		bytes calldata params
 	) internal pure returns (ExecutionMode mode, bytes calldata executionCalldata) {
 		assembly ("memory-safe") {

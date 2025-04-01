@@ -4,14 +4,17 @@ pragma solidity ^0.8.28;
 import {IVortex} from "src/interfaces/IVortex.sol";
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 import {AccountIdLib} from "src/libraries/AccountIdLib.sol";
-import {VALIDATION_MODE_ENABLE} from "src/types/Constants.sol";
-import {ExecutionMode, CallType, ModuleType, PackedModuleTypes, ValidationData, ValidationMode} from "src/types/Types.sol";
+import {CalldataDecoder} from "src/libraries/CalldataDecoder.sol";
+import {ExecutionLib} from "src/libraries/ExecutionLib.sol";
+import {ExecutionMode, CallType, ModuleType, PackedModuleTypes, ValidationData} from "src/types/Types.sol";
 import {AccountCore} from "src/core/AccountCore.sol";
 
 /// @title Vortex
 
 contract Vortex is IVortex, AccountCore {
 	using AccountIdLib for string;
+	using CalldataDecoder for *;
+	using ExecutionLib for address;
 
 	constructor() {
 		// prevents from initializing the implementation
@@ -35,11 +38,14 @@ contract Vortex is IVortex, AccountCore {
 		return _execute(mode, executionCalldata);
 	}
 
-	function executeUserOp(
-		PackedUserOperation calldata userOp,
-		bytes32 userOpHash
-	) external payable onlyEntryPoint withHook {
-		_executeUserOp(userOp, userOpHash);
+	function executeUserOp(PackedUserOperation calldata userOp, bytes32) external payable onlyEntryPoint withHook {
+		bytes4 selector = userOp.callData[4:].decodeSelector();
+		if (selector == this.execute.selector || selector == this.executeFromExecutor.selector) {
+			(ExecutionMode mode, bytes calldata executionCalldata) = userOp.callData[8:].decodeExecutionCalldata();
+			_execute(mode, executionCalldata);
+		} else {
+			address(this).callDelegate(userOp.callData[4:]);
+		}
 	}
 
 	function validateUserOp(
@@ -48,7 +54,6 @@ contract Vortex is IVortex, AccountCore {
 		uint256 missingAccountFunds
 	) external payable onlyEntryPoint payPrefund(missingAccountFunds) returns (ValidationData validationData) {
 		(address validator, bool isEnableMode) = _decodeUserOpNonce(userOp);
-
 		if (isEnableMode) {
 			PackedUserOperation memory op = userOp;
 			op.signature = _enableModule(userOp.signature, userOpHash);
@@ -128,12 +133,12 @@ contract Vortex is IVortex, AccountCore {
 		_configureRootValidator(newRootValidator, data);
 	}
 
-	function entryPoint() external pure returns (address) {
-		return ENTRYPOINT;
+	function accountId() public pure virtual returns (string memory) {
+		return "fomoweth.vortex.1.0.0";
 	}
 
-	function accountId() external pure returns (string memory) {
-		return ACCOUNT_IMPLEMENTATION_ID;
+	function entryPoint() public pure virtual returns (address) {
+		return ENTRYPOINT;
 	}
 
 	function registry() external view returns (address) {
@@ -171,7 +176,7 @@ contract Vortex is IVortex, AccountCore {
 		override
 		returns (string memory name, string memory version)
 	{
-		return ACCOUNT_IMPLEMENTATION_ID.parse();
+		return accountId().parse();
 	}
 
 	fallback() external payable virtual {

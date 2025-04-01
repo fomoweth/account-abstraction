@@ -7,8 +7,6 @@ import {AccessControl} from "./AccessControl.sol";
 /// @title AccountBase
 
 abstract contract AccountBase is IERC4337Account, AccessControl {
-	string internal constant ACCOUNT_IMPLEMENTATION_ID = "fomoweth.vortex.1.0.0";
-
 	modifier payPrefund(uint256 missingAccountFunds) {
 		_;
 		_payPrefund(missingAccountFunds);
