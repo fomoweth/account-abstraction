@@ -157,19 +157,19 @@ abstract contract Deployers is Test, Configured, Constants {
 		vm.assertTrue(META_FACTORY.isAuthorized(factory));
 
 		address registry;
-		address[] memory trustedAttesters;
+		address[] memory attesters;
 		uint8 threshold;
 
 		if (useRegistry) {
 			registry = address(REGISTRY);
-			trustedAttesters = ATTESTER_ADDRESSES;
+			attesters = ATTESTER_ADDRESSES;
 			threshold = THRESHOLD;
 		}
 
 		bytes memory params;
 
 		if (factory == address(VORTEX_FACTORY)) {
-			params = abi.encode(owner, BUNDLER.eoa.addresses(address(PERMIT2)), ATTESTER_ADDRESSES, THRESHOLD);
+			params = abi.encode(owner, BUNDLER.eoa.addresses(address(PERMIT2)), registry, attesters, threshold);
 		} else if (factory == address(REGISTRY_FACTORY)) {
 			BootstrapConfig memory rootValidator = address(K1_VALIDATOR).build(
 				TYPE_VALIDATOR.moduleTypes(TYPE_STATELESS_VALIDATOR),
@@ -214,7 +214,7 @@ abstract contract Deployers is Test, Configured, Constants {
 			bytes memory initializer = BOOTSTRAP.getInitializeScopedCalldata(
 				rootValidator,
 				registry,
-				trustedAttesters,
+				attesters,
 				threshold
 			);
 
@@ -239,7 +239,7 @@ abstract contract Deployers is Test, Configured, Constants {
 			deploy("RegistryFactory", abi.encode(VORTEX, BOOTSTRAP, REGISTRY, ATTESTER_ADDRESSES, THRESHOLD, ADMIN.eoa))
 		);
 
-		VORTEX_FACTORY = VortexFactory(deploy("VortexFactory", abi.encode(VORTEX, K1_VALIDATOR, BOOTSTRAP, REGISTRY)));
+		VORTEX_FACTORY = VortexFactory(deploy("VortexFactory", abi.encode(VORTEX, BOOTSTRAP, K1_VALIDATOR)));
 	}
 
 	function setUpFactories() internal virtual impersonate(ADMIN, false) {

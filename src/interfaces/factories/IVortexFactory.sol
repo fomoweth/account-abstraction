@@ -8,6 +8,7 @@ interface IVortexFactory is IAccountFactory {
 		bytes32 salt,
 		address eoaOwner,
 		address[] calldata senders,
+		address registry,
 		address[] calldata attesters,
 		uint8 threshold
 	) external payable returns (address payable);

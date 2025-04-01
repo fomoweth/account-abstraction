@@ -15,7 +15,7 @@ contract AccountFactory is IAccountFactory {
 	constructor(address implementation) {
 		assembly ("memory-safe") {
 			implementation := shr(0x60, shl(0x60, implementation))
-			if iszero(extcodesize(implementation)) {
+			if iszero(implementation) {
 				mstore(0x00, 0xeb30c926) // InvalidAccountImplementation()
 				revert(0x1c, 0x04)
 			}

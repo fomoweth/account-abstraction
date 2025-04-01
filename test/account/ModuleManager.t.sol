@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import {console2 as console} from "forge-std/Test.sol";
 import {IEntryPoint} from "account-abstraction/interfaces/IEntryPoint.sol";
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 import {AccountIdLib} from "src/libraries/AccountIdLib.sol";
@@ -38,7 +39,7 @@ contract ModuleManagerTest is BaseTest {
 
 		revertToState();
 
-		userOps = prepareEnableModule(enableValidator, TYPE_VALIDATOR, opValidator, initData, callData, true, false);
+		userOps = prepareEnableModule(enableValidator, TYPE_VALIDATOR, opValidator, initData, callData, true, true);
 
 		vm.expectEmit(true, true, true, true);
 		emit ModuleInstalled(TYPE_VALIDATOR, opValidator);
@@ -50,7 +51,7 @@ contract ModuleManagerTest is BaseTest {
 
 		revertToState();
 
-		userOps = prepareEnableModule(enableValidator, TYPE_VALIDATOR, opValidator, initData, callData, true, true);
+		userOps = prepareEnableModule(enableValidator, TYPE_VALIDATOR, opValidator, initData, callData, true, false);
 
 		vm.expectEmit(true, true, true, true);
 		emit ModuleInstalled(TYPE_VALIDATOR, opValidator);
@@ -84,14 +85,14 @@ contract ModuleManagerTest is BaseTest {
 
 		revertToState();
 
-		userOps = prepareEnableModule(enableValidator, TYPE_VALIDATOR, opValidator, initData, callData, false, false);
+		userOps = prepareEnableModule(enableValidator, TYPE_VALIDATOR, opValidator, initData, callData, false, true);
 
 		vm.expectRevert(revertReason);
 		ENTRYPOINT.handleOps(userOps, MURPHY.eoa);
 
 		revertToState();
 
-		userOps = prepareEnableModule(enableValidator, TYPE_VALIDATOR, opValidator, initData, callData, false, true);
+		userOps = prepareEnableModule(enableValidator, TYPE_VALIDATOR, opValidator, initData, callData, false, false);
 
 		vm.expectRevert(revertReason);
 		ENTRYPOINT.handleOps(userOps, MURPHY.eoa);
@@ -123,14 +124,14 @@ contract ModuleManagerTest is BaseTest {
 
 		revertToState();
 
-		userOps = prepareEnableModule(enableValidator, TYPE_VALIDATOR, opValidator, initData, callData, true, false);
+		userOps = prepareEnableModule(enableValidator, TYPE_VALIDATOR, opValidator, initData, callData, true, true);
 
 		vm.expectRevert(revertReason);
 		ENTRYPOINT.handleOps(userOps, MURPHY.eoa);
 
 		revertToState();
 
-		userOps = prepareEnableModule(enableValidator, TYPE_VALIDATOR, opValidator, initData, callData, true, true);
+		userOps = prepareEnableModule(enableValidator, TYPE_VALIDATOR, opValidator, initData, callData, true, false);
 
 		vm.expectRevert(revertReason);
 		ENTRYPOINT.handleOps(userOps, MURPHY.eoa);
@@ -158,14 +159,14 @@ contract ModuleManagerTest is BaseTest {
 
 		revertToState();
 
-		userOps = prepareEnableModule(invalidValidator, TYPE_VALIDATOR, opValidator, initData, callData, true, false);
+		userOps = prepareEnableModule(invalidValidator, TYPE_VALIDATOR, opValidator, initData, callData, true, true);
 
 		vm.expectRevert(revertReason);
 		ENTRYPOINT.handleOps(userOps, MURPHY.eoa);
 
 		revertToState();
 
-		userOps = prepareEnableModule(invalidValidator, TYPE_VALIDATOR, opValidator, initData, callData, true, true);
+		userOps = prepareEnableModule(invalidValidator, TYPE_VALIDATOR, opValidator, initData, callData, true, false);
 
 		vm.expectRevert(revertReason);
 		ENTRYPOINT.handleOps(userOps, MURPHY.eoa);
@@ -194,14 +195,14 @@ contract ModuleManagerTest is BaseTest {
 
 		revertToState();
 
-		userOps = prepareEnableModule(enableValidator, TYPE_EXECUTOR, opValidator, initData, callData, true, false);
+		userOps = prepareEnableModule(enableValidator, TYPE_EXECUTOR, opValidator, initData, callData, true, true);
 
 		vm.expectRevert(revertReason);
 		ENTRYPOINT.handleOps(userOps, MURPHY.eoa);
 
 		revertToState();
 
-		userOps = prepareEnableModule(enableValidator, TYPE_EXECUTOR, opValidator, initData, callData, true, true);
+		userOps = prepareEnableModule(enableValidator, TYPE_EXECUTOR, opValidator, initData, callData, true, false);
 
 		vm.expectRevert(revertReason);
 		ENTRYPOINT.handleOps(userOps, MURPHY.eoa);
@@ -386,7 +387,7 @@ contract ModuleManagerTest is BaseTest {
 			assertTrue(MURPHY.account.isModuleInstalled(TYPE_HOOK, hooks[i], ""));
 		}
 
-		address target = WETH.toAddress();
+		address target = WNATIVE.toAddress();
 		uint256 value = 5 ether;
 
 		Execution memory execution = Execution({
@@ -395,11 +396,11 @@ contract ModuleManagerTest is BaseTest {
 			callData: abi.encodeWithSignature("deposit()")
 		});
 
-		assertEq(WETH.balanceOf(address(MURPHY.account)), 0);
+		assertEq(WNATIVE.balanceOf(address(MURPHY.account)), 0);
 		deal(address(MURPHY.account), address(MURPHY.account).balance + value);
 
 		MURPHY.execute(EXECTYPE_DEFAULT, execution);
-		assertEq(WETH.balanceOf(address(MURPHY.account)), value);
+		assertEq(WNATIVE.balanceOf(address(MURPHY.account)), value);
 	}
 
 	function test_installModule_revertsIfAlreadyInstalled() public virtual asEntryPoint {
@@ -661,10 +662,8 @@ contract ModuleManagerTest is BaseTest {
 						abi.encode(
 							keccak256(
 								abi.encodePacked(
-									string.concat(
-										"TypedDataSign(EnableModule contents,string name,string version,uint256 chainId,address verifyingContract,bytes32 salt)",
-										ENABLE_MODULE_NOTATION
-									)
+									"TypedDataSign(EnableModule contents,string name,string version,uint256 chainId,address verifyingContract,bytes32 salt)",
+									ENABLE_MODULE_NOTATION
 								)
 							),
 							structHash
