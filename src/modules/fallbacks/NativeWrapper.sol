@@ -8,6 +8,8 @@ import {FallbackBase} from "src/modules/base/FallbackBase.sol";
 /// @title NativeWrapper
 
 contract NativeWrapper is FallbackBase {
+	error InsufficientBalance();
+
 	mapping(address account => bool isInstalled) internal _isInstalled;
 
 	Currency public immutable WRAPPED_NATIVE;
@@ -27,8 +29,15 @@ contract NativeWrapper is FallbackBase {
 	}
 
 	function wrapETH(uint256 amount) external payable {
-		Currency wrappedNative = WRAPPED_NATIVE;
+		_wrapETH(WRAPPED_NATIVE, amount);
+	}
 
+	function unwrapWETH(uint256 amount) external payable {
+		require(WRAPPED_NATIVE.balanceOfSelf() >= amount, InsufficientBalance());
+		_unwrapWETH(WRAPPED_NATIVE, amount);
+	}
+
+	function _wrapETH(Currency wrappedNative, uint256 amount) private {
 		assembly ("memory-safe") {
 			if lt(selfbalance(), amount) {
 				mstore(0x00, 0xf4d678b8) // InsufficientBalance()
@@ -46,9 +55,7 @@ contract NativeWrapper is FallbackBase {
 		}
 	}
 
-	function unwrapWETH(uint256 amount) external payable {
-		Currency wrappedNative = WRAPPED_NATIVE;
-
+	function _unwrapWETH(Currency wrappedNative, uint256 amount) private {
 		assembly ("memory-safe") {
 			let ptr := mload(0x40)
 

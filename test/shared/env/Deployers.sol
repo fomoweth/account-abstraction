@@ -273,7 +273,11 @@ abstract contract Deployers is Test, Configured, Constants {
 			payable(deployModule("NativeWrapper", TYPE_FALLBACK.moduleTypes(), abi.encode(WNATIVE)))
 		);
 
-		STETH_WRAPPER = STETHWrapper(payable(deployModule("STETHWrapper", TYPE_FALLBACK.moduleTypes())));
+		if (isEthereum()) {
+			STETH_WRAPPER = STETHWrapper(
+				payable(deployModule("STETHWrapper", TYPE_FALLBACK.moduleTypes(), abi.encode(STETH, WSTETH)))
+			);
+		}
 	}
 
 	function deployHooks() internal virtual {}
