@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {IVortexFactory} from "src/interfaces/factories/IVortexFactory.sol";
+import {IK1ValidatorFactory} from "src/interfaces/factories/IK1ValidatorFactory.sol";
 import {IVortex} from "src/interfaces/IVortex.sol";
 import {IBootstrap} from "src/interfaces/IBootstrap.sol";
 import {BootstrapLib, BootstrapConfig} from "src/libraries/BootstrapLib.sol";
 import {ModuleType, MODULE_TYPE_VALIDATOR, MODULE_TYPE_STATELESS_VALIDATOR} from "src/types/ModuleType.sol";
 import {IAccountFactory, AccountFactory} from "./AccountFactory.sol";
 
-/// @title VortexFactory
+/// @title K1ValidatorFactory
 /// @notice Manages the creation of Modular Smart Accounts compliant with ERC-7579 and ERC-4337 using K1 validator and ERC-7484 registry
 
-contract VortexFactory is IVortexFactory, AccountFactory {
+contract K1ValidatorFactory is IK1ValidatorFactory, AccountFactory {
 	using BootstrapLib for address;
 
 	address public immutable BOOTSTRAP;
@@ -39,7 +39,7 @@ contract VortexFactory is IVortexFactory, AccountFactory {
 
 	function createAccount(
 		bytes32 salt,
-		bytes calldata data
+		bytes calldata params
 	) public payable virtual override(IAccountFactory, AccountFactory) returns (address payable account) {
 		address eoaOwner;
 		address[] calldata senders;
@@ -48,19 +48,19 @@ contract VortexFactory is IVortexFactory, AccountFactory {
 		uint8 threshold;
 
 		assembly ("memory-safe") {
-			eoaOwner := calldataload(data.offset)
+			eoaOwner := calldataload(params.offset)
 
-			let ptr := add(data.offset, calldataload(add(data.offset, 0x20)))
-			senders.length := calldataload(ptr)
+			let ptr := add(params.offset, calldataload(add(params.offset, 0x20)))
 			senders.offset := add(ptr, 0x20)
+			senders.length := calldataload(ptr)
 
-			registry := shr(0x60, shl(0x60, calldataload(add(data.offset, 0x40))))
+			registry := shr(0x60, shl(0x60, calldataload(add(params.offset, 0x40))))
 
-			ptr := add(data.offset, calldataload(add(data.offset, 0x60)))
-			attesters.length := calldataload(ptr)
+			ptr := add(params.offset, calldataload(add(params.offset, 0x60)))
 			attesters.offset := add(ptr, 0x20)
+			attesters.length := calldataload(ptr)
 
-			threshold := and(calldataload(add(data.offset, 0x80)), 0xff)
+			threshold := and(calldataload(add(params.offset, 0x80)), 0xff)
 		}
 
 		return createAccount(salt, eoaOwner, senders, registry, attesters, threshold);
@@ -82,7 +82,7 @@ contract VortexFactory is IVortexFactory, AccountFactory {
 			}
 
 			registry := shr(0x60, shl(0x60, registry))
-			if and(iszero(extcodesize(registry)), iszero(iszero(threshold))) {
+			if and(iszero(registry), iszero(iszero(threshold))) {
 				mstore(0x00, 0x81e3306a) // InvalidERC7484Registry()
 				revert(0x1c, 0x04)
 			}
