@@ -34,8 +34,6 @@ contract RegistryFactory is IRegistryFactory, AccountFactory, Ownable {
 		address implementation,
 		address bootstrap,
 		address registry,
-		address[] memory attesters,
-		uint8 threshold,
 		address initialOwner
 	) AccountFactory(implementation) {
 		assembly ("memory-safe") {
@@ -54,13 +52,12 @@ contract RegistryFactory is IRegistryFactory, AccountFactory, Ownable {
 
 		BOOTSTRAP = bootstrap;
 		REGISTRY = registry;
-		if (threshold != 0) _initializeAttesters(registry, attesters, threshold);
 		_initializeOwner(initialOwner);
 	}
 
 	function createAccount(
 		bytes32 salt,
-		bytes calldata data
+		bytes calldata params
 	) public payable virtual override(IAccountFactory, AccountFactory) returns (address payable account) {
 		BootstrapConfig calldata rootValidator;
 		BootstrapConfig[] calldata validators;
@@ -69,24 +66,24 @@ contract RegistryFactory is IRegistryFactory, AccountFactory, Ownable {
 		BootstrapConfig[] calldata hooks;
 
 		assembly ("memory-safe") {
-			let ptr := add(data.offset, calldataload(data.offset))
+			let ptr := add(params.offset, calldataload(params.offset))
 			rootValidator := ptr
 
-			ptr := add(data.offset, calldataload(add(data.offset, 0x20)))
-			validators.length := calldataload(ptr)
+			ptr := add(params.offset, calldataload(add(params.offset, 0x20)))
 			validators.offset := add(ptr, 0x20)
+			validators.length := calldataload(ptr)
 
-			ptr := add(data.offset, calldataload(add(data.offset, 0x40)))
-			executors.length := calldataload(ptr)
+			ptr := add(params.offset, calldataload(add(params.offset, 0x40)))
 			executors.offset := add(ptr, 0x20)
+			executors.length := calldataload(ptr)
 
-			ptr := add(data.offset, calldataload(add(data.offset, 0x60)))
-			fallbacks.length := calldataload(ptr)
+			ptr := add(params.offset, calldataload(add(params.offset, 0x60)))
 			fallbacks.offset := add(ptr, 0x20)
+			fallbacks.length := calldataload(ptr)
 
-			ptr := add(data.offset, calldataload(add(data.offset, 0x80)))
-			hooks.length := calldataload(ptr)
+			ptr := add(params.offset, calldataload(add(params.offset, 0x80)))
 			hooks.offset := add(ptr, 0x20)
+			hooks.length := calldataload(ptr)
 		}
 
 		return createAccount(salt, rootValidator, validators, executors, fallbacks, hooks);
