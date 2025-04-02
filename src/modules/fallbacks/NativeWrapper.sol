@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import {IMetaFactory} from "src/interfaces/factories/IMetaFactory.sol";
 import {Currency} from "src/types/Currency.sol";
 import {ModuleType} from "src/types/Types.sol";
 import {FallbackBase} from "src/modules/base/FallbackBase.sol";
@@ -14,7 +15,19 @@ contract NativeWrapper is FallbackBase {
 
 	Currency public immutable WRAPPED_NATIVE;
 
-	constructor(Currency wrappedNative) {
+	constructor() {
+		bytes memory context = IMetaFactory(msg.sender).parameters();
+		Currency wrappedNative;
+
+		assembly ("memory-safe") {
+			if lt(mload(context), 0x20) {
+				mstore(0x00, 0x3b99b53d) // SliceOutOfBounds()
+				revert(0x1c, 0x04)
+			}
+
+			wrappedNative := shr(0x60, shl(0x60, mload(add(context, 0x20))))
+		}
+
 		WRAPPED_NATIVE = wrappedNative;
 	}
 

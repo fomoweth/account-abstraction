@@ -18,13 +18,4 @@ abstract contract FallbackBase is IFallback, ModuleBase {
 			}
 		}
 	}
-
-	fallback() external payable virtual {
-		assembly ("memory-safe") {
-			mstore(0x00, 0xf6f5069b) // ForbiddenFallback()
-			revert(0x1c, 0x04)
-		}
-	}
-
-	receive() external payable virtual {}
 }
