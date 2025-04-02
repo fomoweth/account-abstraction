@@ -17,10 +17,10 @@ import {Currency} from "src/types/Currency.sol";
 import {ExecType} from "src/types/ExecutionMode.sol";
 
 import {BaseTest} from "test/shared/env/BaseTest.sol";
-import {Signer} from "test/shared/structs/Signer.sol";
 import {PermitSingle} from "test/shared/structs/Protocols.sol";
-import {SolArray} from "test/shared/utils/SolArray.sol";
+import {Signer} from "test/shared/structs/Signer.sol";
 import {ExecutionUtils, Execution} from "test/shared/utils/ExecutionUtils.sol";
+import {SolArray} from "test/shared/utils/SolArray.sol";
 
 contract UniversalExecutorTest is BaseTest {
 	using ExecutionUtils for ExecType;
@@ -34,10 +34,6 @@ contract UniversalExecutorTest is BaseTest {
 	error InsufficientAmountOut();
 	error InsufficientAmountOutMin();
 
-	uint256 internal constant PROTOCOL_V4 = 0x04;
-	uint256 internal constant PROTOCOL_V3 = 0x03;
-	uint256 internal constant PROTOCOL_V2 = 0x02;
-
 	IPoolManager internal immutable POOL_MANAGER = IPoolManager(getAddress("PoolManager"));
 	IV3Factory internal immutable V3_FACTORY = IV3Factory(getAddress("V3Factory"));
 	IV2Factory internal immutable V2_FACTORY = IV2Factory(getAddress("V2Factory"));
@@ -48,6 +44,12 @@ contract UniversalExecutorTest is BaseTest {
 
 	address internal immutable UNIVERSAL_ROUTER = getAddress("UniversalRouter");
 
+	bytes4 internal constant APPROVE_SELECTOR = 0x095ea7b3;
+
+	uint256 internal constant PROTOCOL_V4 = 0x04;
+	uint256 internal constant PROTOCOL_V3 = 0x03;
+	uint256 internal constant PROTOCOL_V2 = 0x02;
+
 	modifier onlyEthereumOrArbitrum() {
 		vm.skip(!isEthereum() && !isArbitrum());
 		_;
@@ -56,13 +58,17 @@ contract UniversalExecutorTest is BaseTest {
 	function setUp() public virtual override {
 		super.setUp();
 
-		deployVortex(ALICE, 0, INITIAL_VALUE, address(VORTEX_FACTORY), true);
+		deployVortex(ALICE, 0, INITIAL_VALUE, address(K1_FACTORY), true);
 
 		ALICE.install(
 			TYPE_EXECUTOR,
 			address(UNIVERSAL_EXECUTOR),
 			encodeInstallModuleParams(TYPE_EXECUTOR.moduleTypes(), abi.encodePacked(UNIVERSAL_ROUTER), "")
 		);
+	}
+
+	function test_immutable() public virtual {
+		assertEq(UNIVERSAL_EXECUTOR.WRAPPED_NATIVE(), WNATIVE);
 	}
 
 	function test_installation() public virtual {
@@ -86,7 +92,7 @@ contract UniversalExecutorTest is BaseTest {
 	}
 
 	function test_setAccountRouter() public virtual {
-		address ROUTER_V1 = getV1Router();
+		address ROUTER_V1 = mapV1Router();
 
 		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
 
@@ -98,8 +104,7 @@ contract UniversalExecutorTest is BaseTest {
 			)
 		);
 
-		vm.prank(BUNDLER.eoa);
-		ENTRYPOINT.handleOps(userOps, BUNDLER.eoa);
+		BUNDLER.handleOps(userOps);
 		assertEq(UNIVERSAL_EXECUTOR.getAccountRouter(address(ALICE.account)), ROUTER_V1);
 
 		(userOps[0], ) = ALICE.prepareUserOp(
@@ -110,8 +115,7 @@ contract UniversalExecutorTest is BaseTest {
 			)
 		);
 
-		vm.prank(BUNDLER.eoa);
-		ENTRYPOINT.handleOps(userOps, BUNDLER.eoa);
+		BUNDLER.handleOps(userOps);
 		assertEq(UNIVERSAL_EXECUTOR.getAccountRouter(address(ALICE.account)), UNIVERSAL_ROUTER);
 
 		(userOps[0], ) = ALICE.prepareUserOp(
@@ -122,12 +126,12 @@ contract UniversalExecutorTest is BaseTest {
 			)
 		);
 
-		vm.prank(BUNDLER.eoa);
-		ENTRYPOINT.handleOps(userOps, BUNDLER.eoa);
+		BUNDLER.handleOps(userOps);
 		assertEq(UNIVERSAL_EXECUTOR.getAccountRouter(address(ALICE.account)), UNIVERSAL_ROUTER);
 
-		vm.expectRevert(InvalidAccountRouter.selector);
 		vm.prank(address(ALICE.account));
+		vm.expectRevert(InvalidAccountRouter.selector);
+
 		UNIVERSAL_EXECUTOR.setAccountRouter(address(0));
 		assertEq(UNIVERSAL_EXECUTOR.getAccountRouter(address(ALICE.account)), UNIVERSAL_ROUTER);
 	}
@@ -1069,11 +1073,13 @@ contract UniversalExecutorTest is BaseTest {
 
 		if (!currencyIn.isZero() && currencyIn.allowance(address(signer.account), address(PERMIT2)) != MAX_UINT256) {
 			Execution[] memory executions = new Execution[](2);
+
 			executions[0] = Execution({
 				target: currencyIn.toAddress(),
 				value: 0,
-				callData: abi.encodeWithSelector(0x095ea7b3, PERMIT2, MAX_UINT256)
+				callData: abi.encodeWithSelector(APPROVE_SELECTOR, PERMIT2, MAX_UINT256)
 			});
+
 			executions[1] = Execution({target: address(UNIVERSAL_EXECUTOR), value: value, callData: callData});
 
 			executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(executions);
@@ -1087,8 +1093,7 @@ contract UniversalExecutorTest is BaseTest {
 		balanceIn = currencyIn.balanceOf(address(signer.account));
 		balanceOut = currencyOut.balanceOf(address(signer.account));
 
-		vm.prank(BUNDLER.eoa);
-		ENTRYPOINT.handleOps(userOps, BUNDLER.eoa);
+		BUNDLER.handleOps(userOps);
 
 		balanceIn = balanceIn - currencyIn.balanceOf(address(signer.account));
 		balanceOut = currencyOut.balanceOf(address(signer.account)) - balanceOut;
@@ -1409,7 +1414,7 @@ contract UniversalExecutorTest is BaseTest {
 		deal(currencyIn, address(signer.account), amountIn);
 	}
 
-	function getV1Router() internal view virtual returns (address router) {
+	function mapV1Router() internal view virtual returns (address router) {
 		assembly ("memory-safe") {
 			switch chainid()
 			case 10 {

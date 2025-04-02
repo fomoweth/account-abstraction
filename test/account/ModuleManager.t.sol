@@ -1,21 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {console2 as console} from "forge-std/Test.sol";
 import {IEntryPoint} from "account-abstraction/interfaces/IEntryPoint.sol";
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
-import {AccountIdLib} from "src/libraries/AccountIdLib.sol";
-import {Execution} from "src/libraries/ExecutionLib.sol";
 import {CallType, ExecType, ModuleType} from "src/types/Types.sol";
 import {Vortex} from "src/Vortex.sol";
 
 import {BaseTest} from "test/shared/env/BaseTest.sol";
 import {MockHook} from "test/shared/mocks/MockHook.sol";
-import {ExecutionUtils} from "test/shared/utils/ExecutionUtils.sol";
+import {ExecutionUtils, Execution} from "test/shared/utils/ExecutionUtils.sol";
 import {SolArray} from "test/shared/utils/SolArray.sol";
 
 contract ModuleManagerTest is BaseTest {
-	using AccountIdLib for string;
 	using ExecutionUtils for ExecType;
 	using SolArray for *;
 
@@ -351,8 +347,8 @@ contract ModuleManagerTest is BaseTest {
 		assertFalse(MURPHY.account.isModuleInstalled(TYPE_HOOK, address(MOCK_HOOK), ""));
 	}
 
-	function test_installHooks(uint8 length) public virtual {
-		length = uint8(bound(length, 1, 32));
+	function test_installHooks(uint8 seed) public virtual {
+		uint256 length = bound(seed, 1, 32);
 		address[] memory hooks = new address[](length);
 		ModuleType[] memory hookTypes = TYPE_HOOK.moduleTypes();
 

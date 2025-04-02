@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {console2 as console} from "forge-std/Test.sol";
 import {IEntryPoint} from "account-abstraction/interfaces/IEntryPoint.sol";
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 import {Currency} from "src/types/Currency.sol";
@@ -11,8 +10,8 @@ import {Vortex} from "src/Vortex.sol";
 import {BaseTest} from "test/shared/env/BaseTest.sol";
 import {PermitDetails, PermitSingle, PermitBatch} from "test/shared/structs/Protocols.sol";
 import {Signer} from "test/shared/structs/Signer.sol";
-import {SolArray} from "test/shared/utils/SolArray.sol";
 import {ExecutionUtils, Execution} from "test/shared/utils/ExecutionUtils.sol";
+import {SolArray} from "test/shared/utils/SolArray.sol";
 
 contract Permit2ExecutorTest is BaseTest {
 	using ExecutionUtils for ExecType;
@@ -21,6 +20,7 @@ contract Permit2ExecutorTest is BaseTest {
 	error InvalidContractSignature();
 
 	bytes4 internal constant APPROVE_SELECTOR = 0x095ea7b3;
+	bytes4 internal constant PERMIT_SELECTOR = 0x2b67b570;
 
 	address internal immutable spender = makeAddr("SPENDER");
 
@@ -31,7 +31,7 @@ contract Permit2ExecutorTest is BaseTest {
 
 		currencies = WNATIVE.currencies(WSTETH, USDC, DAI);
 
-		deployVortex(ALICE, 0, INITIAL_VALUE, address(VORTEX_FACTORY), true);
+		deployVortex(ALICE, 0, INITIAL_VALUE, address(K1_FACTORY), true);
 
 		ALICE.install(
 			TYPE_EXECUTOR,
@@ -71,8 +71,7 @@ contract Permit2ExecutorTest is BaseTest {
 		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
 		(userOps[0], ) = ALICE.prepareUserOp(executionCalldata);
 
-		vm.prank(BUNDLER.eoa);
-		ENTRYPOINT.handleOps(userOps, BUNDLER.eoa);
+		BUNDLER.handleOps(userOps);
 
 		for (uint256 i; i < currencies.length; ++i) {
 			assertEq(currencies[i].allowance(address(ALICE.account), address(PERMIT2)), MAX_UINT256);
@@ -107,8 +106,7 @@ contract Permit2ExecutorTest is BaseTest {
 		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
 		(userOps[0], ) = ALICE.prepareUserOp(executionCalldata);
 
-		vm.prank(BUNDLER.eoa);
-		ENTRYPOINT.handleOps(userOps, BUNDLER.eoa);
+		BUNDLER.handleOps(userOps);
 
 		(amount, expiration, ) = PERMIT2.allowance(address(ALICE.account), WSTETH, spender);
 		assertEq(amount, MAX_UINT160);
@@ -124,7 +122,7 @@ contract Permit2ExecutorTest is BaseTest {
 
 		(PermitSingle memory permit, bytes memory signature, ) = preparePermitSingle(ALICE, currency, spender);
 
-		bytes memory callData = abi.encodeWithSelector(0x2b67b570, address(ALICE.account), permit, signature);
+		bytes memory callData = abi.encodeWithSelector(PERMIT_SELECTOR, address(ALICE.account), permit, signature);
 
 		(bool success, ) = address(PERMIT2).call(callData);
 		assertTrue(success);
@@ -169,8 +167,7 @@ contract Permit2ExecutorTest is BaseTest {
 			PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
 			(userOps[0], ) = ALICE.prepareUserOp(executionCalldata);
 
-			vm.prank(BUNDLER.eoa);
-			ENTRYPOINT.handleOps(userOps, BUNDLER.eoa);
+			BUNDLER.handleOps(userOps);
 
 			(amount, expiration, nonce) = PERMIT2.allowance(address(ALICE.account), currencies[i], spender);
 
@@ -238,8 +235,7 @@ contract Permit2ExecutorTest is BaseTest {
 			PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
 			(userOps[0], ) = ALICE.prepareUserOp(executionCalldata);
 
-			vm.prank(BUNDLER.eoa);
-			ENTRYPOINT.handleOps(userOps, BUNDLER.eoa);
+			BUNDLER.handleOps(userOps);
 
 			(amount, expiration, nonce) = PERMIT2.allowance(address(ALICE.account), currencies[i], spender);
 
@@ -283,8 +279,7 @@ contract Permit2ExecutorTest is BaseTest {
 				abi.encodeWithSelector(InvalidContractSignature.selector)
 			);
 
-			vm.prank(BUNDLER.eoa);
-			ENTRYPOINT.handleOps(userOps, BUNDLER.eoa);
+			BUNDLER.handleOps(userOps);
 
 			revertToState();
 		}
@@ -326,8 +321,7 @@ contract Permit2ExecutorTest is BaseTest {
 		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
 		(userOps[0], ) = ALICE.prepareUserOp(executionCalldata);
 
-		vm.prank(BUNDLER.eoa);
-		ENTRYPOINT.handleOps(userOps, BUNDLER.eoa);
+		BUNDLER.handleOps(userOps);
 
 		for (uint256 i; i < currencies.length; ++i) {
 			(uint160 amount, uint48 expiration, uint48 nonce) = PERMIT2.allowance(
@@ -407,8 +401,7 @@ contract Permit2ExecutorTest is BaseTest {
 		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
 		(userOps[0], ) = ALICE.prepareUserOp(executionCalldata);
 
-		vm.prank(BUNDLER.eoa);
-		ENTRYPOINT.handleOps(userOps, BUNDLER.eoa);
+		BUNDLER.handleOps(userOps);
 
 		for (uint256 i; i < currencies.length; ++i) {
 			(uint160 amount, uint48 expiration, uint48 nonce) = PERMIT2.allowance(
@@ -454,7 +447,6 @@ contract Permit2ExecutorTest is BaseTest {
 			abi.encodeWithSelector(InvalidContractSignature.selector)
 		);
 
-		vm.prank(BUNDLER.eoa);
-		ENTRYPOINT.handleOps(userOps, BUNDLER.eoa);
+		BUNDLER.handleOps(userOps);
 	}
 }

@@ -13,14 +13,13 @@ names = true
 sizes = true
 gas_reports = ["AccountFactory", "MetaFactory", "RegistryFactory", "VortexFactory", "Vortex"]
 fs_permissions = [
-	{ access = "read-write", path = "deployments" },
     { access = "read", path = "config"},
+	{ access = "read-write", path = "deployments" },
     { access = "read", path = "out"},
     { access = "read", path = "script"}
 ]
 
 [rpc_endpoints]
-mainnet = "${RPC_ETHEREUM}"
 ethereum = "${RPC_ETHEREUM}"
 sepolia = "${RPC_SEPOLIA}"
 optimism = "${RPC_OPTIMISM}"
@@ -33,7 +32,6 @@ arbitrum = "${RPC_ARBITRUM}"
 arbitrum-sepolia = "${RPC_ARBITRUM_SEPOLIA}"
 
 [etherscan]
-mainnet = { key = "${ETHERSCAN_API_KEY_ETHEREUM}", url = "${ETHERSCAN_URL_ETHEREUM}" }
 ethereum = { key = "${ETHERSCAN_API_KEY_ETHEREUM}", url = "${ETHERSCAN_URL_ETHEREUM}" }
 sepolia = { key = "${ETHERSCAN_API_KEY_ETHEREUM}", url = "${ETHERSCAN_URL_SEPOLIA}" }
 optimism-sepolia = { key = "${ETHERSCAN_API_KEY_OPTIMISM}", url = "${ETHERSCAN_URL_OPTIMISM_SEPOLIA}" }

@@ -26,17 +26,16 @@ abstract contract Constants is CommonBase {
 	IRegistry internal constant REGISTRY = IRegistry(0x000000000069E2a187AEFFb852bF3cCdC95151B2);
 
 	// Rhinestone Resolver
-	IExternalResolver internal constant DEFAULT_RESOLVER =
-		IExternalResolver(0xF0f468571e764664c93308504642aF941d9f77F1);
+	IExternalResolver internal constant RESOLVER = IExternalResolver(0xF0f468571e764664c93308504642aF941d9f77F1);
 
-	ResolverUID internal constant DEFAULT_RESOLVER_UID =
+	ResolverUID internal constant RESOLVER_UID =
 		ResolverUID.wrap(0xdbca873b13c783c0c9c6ddfc4280e505580bf6cc3dac83f8a0f7b44acaafca4f);
 
 	// Rhinestone Schema Validator
-	IExternalSchemaValidator internal constant DEFAULT_SCHEMA =
+	IExternalSchemaValidator internal constant SCHEMA =
 		IExternalSchemaValidator(0x86430E19D7D204807bBb8CDa997bb57b7EE785dD);
 
-	SchemaUID internal constant DEFAULT_SCHEMA_UID =
+	SchemaUID internal constant SCHEMA_UID =
 		SchemaUID.wrap(0x93d46fcca4ef7d66a413c7bde08bb1ff14bacbd04c4069bb24cd7c21729d7bf1);
 
 	address internal constant SENTINEL = 0x0000000000000000000000000000000000000001;

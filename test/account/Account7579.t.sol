@@ -125,7 +125,7 @@ contract Account7579Test is BaseTest {
 	function test_fallback(CallType callType, bytes32 value) public virtual asEntryPoint {
 		vm.assume(callType == CALLTYPE_SINGLE || callType == CALLTYPE_STATIC || callType == CALLTYPE_DELEGATE);
 
-		MockFallback account = MockFallback(payable(address(COOPER.account)));
+		MockFallback account = MockFallback(address(COOPER.account));
 
 		if (callType == CALLTYPE_SINGLE) {
 			vm.expectEmit(true, true, true, true);
@@ -147,22 +147,22 @@ contract Account7579Test is BaseTest {
 
 	function test_fallback_revertsWhenUnknownSelectorsInvoked() public virtual asEntryPoint {
 		vm.expectRevert(abi.encodeWithSelector(UnknownSelector.selector, NativeWrapper.wrapETH.selector));
-		NativeWrapper(payable(address(MURPHY.account))).wrapETH(1 ether);
+		NativeWrapper(address(MURPHY.account)).wrapETH(1 ether);
 
 		vm.expectRevert(abi.encodeWithSelector(UnknownSelector.selector, NativeWrapper.unwrapWETH.selector));
-		NativeWrapper(payable(address(MURPHY.account))).unwrapWETH(1 ether);
+		NativeWrapper(address(MURPHY.account)).unwrapWETH(1 ether);
 
 		vm.expectRevert(abi.encodeWithSelector(UnknownSelector.selector, MockFallback.fallbackSingle.selector));
-		MockFallback(payable(address(MURPHY.account))).fallbackSingle(bytes32(vm.randomBytes(32)));
+		MockFallback(address(MURPHY.account)).fallbackSingle(bytes32(vm.randomBytes(32)));
 
 		vm.expectRevert(abi.encodeWithSelector(UnknownSelector.selector, MockFallback.fallbackDelegate.selector));
-		MockFallback(payable(address(MURPHY.account))).fallbackDelegate(bytes32(vm.randomBytes(32)));
+		MockFallback(address(MURPHY.account)).fallbackDelegate(bytes32(vm.randomBytes(32)));
 
 		vm.expectRevert(abi.encodeWithSelector(UnknownSelector.selector, MockFallback.fallbackStatic.selector));
-		MockFallback(payable(address(MURPHY.account))).fallbackStatic(address(MURPHY.account));
+		MockFallback(address(MURPHY.account)).fallbackStatic(address(MURPHY.account));
 
 		vm.expectRevert(abi.encodeWithSelector(UnknownSelector.selector, MockFallback.fallbackSuccess.selector));
-		MockFallback(payable(address(MURPHY.account))).fallbackSuccess();
+		MockFallback(address(MURPHY.account)).fallbackSuccess();
 	}
 
 	function test_executeUserOp() public virtual {

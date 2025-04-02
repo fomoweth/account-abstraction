@@ -3,7 +3,6 @@ pragma solidity ^0.8.28;
 
 import {Test} from "forge-std/Test.sol";
 import {Vm} from "forge-std/Vm.sol";
-
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 import {IHook} from "src/interfaces/IERC7579Modules.sol";
 import {AccountIdLib} from "src/libraries/AccountIdLib.sol";
@@ -205,31 +204,6 @@ abstract contract BaseTest is Test, Assertions, Deployers, EventsAndErrors {
 		}
 	}
 
-	function bytes32ToString(bytes32 target) internal pure returns (string memory) {
-		bytes memory buffer = new bytes(32);
-		uint256 count;
-
-		unchecked {
-			for (uint256 i; i < 32; ++i) {
-				bytes1 char = target[i];
-				if (char != 0) {
-					buffer[count] = char;
-					++count;
-				}
-			}
-		}
-
-		bytes memory trimmed = new bytes(count);
-
-		unchecked {
-			for (uint256 i; i < count; ++i) {
-				trimmed[i] = buffer[i];
-			}
-		}
-
-		return string(trimmed);
-	}
-
 	function randomAddress() internal virtual returns (address r) {
 		do {
 			r = address(uint160(randomUint()));
@@ -279,7 +253,7 @@ abstract contract BaseTest is Test, Assertions, Deployers, EventsAndErrors {
 			sstore(slot, add(r, 0x01))
 
 			// prettier-ignore
-			for { } 0x01 { } {
+			for {} 0x01 {} {
                 let d := byte(0x00, r)
                 if iszero(d) {
                     r := and(r, 0x03)

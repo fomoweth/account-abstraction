@@ -7,8 +7,8 @@ import {STETHWrapper} from "src/modules/fallbacks/STETHWrapper.sol";
 import {Vortex} from "src/Vortex.sol";
 
 import {BaseTest} from "test/shared/env/BaseTest.sol";
-import {SolArray} from "test/shared/utils/SolArray.sol";
 import {ExecutionUtils} from "test/shared/utils/ExecutionUtils.sol";
+import {SolArray} from "test/shared/utils/SolArray.sol";
 
 contract STETHWrapperTest is BaseTest {
 	using ExecutionUtils for ExecType;
@@ -17,7 +17,7 @@ contract STETHWrapperTest is BaseTest {
 	function setUp() public virtual override onlyEthereum {
 		super.setUp();
 
-		deployVortex(ALICE, 0, INITIAL_VALUE, address(VORTEX_FACTORY), true);
+		deployVortex(ALICE, 0, INITIAL_VALUE, address(K1_FACTORY), true);
 
 		bytes4[] memory selectors = STETHWrapper.wrapSTETH.selector.bytes4s(
 			STETHWrapper.wrapWSTETH.selector,
@@ -38,18 +38,23 @@ contract STETHWrapperTest is BaseTest {
 		STETH.approve(WSTETH.toAddress(), MAX_UINT256);
 	}
 
+	function test_immutables() public virtual {
+		assertEq(STETH_WRAPPER.STETH(), STETH);
+		assertEq(STETH_WRAPPER.WSTETH(), WSTETH);
+	}
+
 	function test_wrapSTETH() public virtual {
 		deal(address(ALICE.account), DEFAULT_VALUE);
 		assertEq(address(ALICE.account).balance, DEFAULT_VALUE);
 		assertEq(STETH.balanceOf(address(ALICE.account)), 0);
 
-		STETHWrapper(payable(address(ALICE.account))).wrapSTETH(DEFAULT_VALUE);
+		STETHWrapper(address(ALICE.account)).wrapSTETH(DEFAULT_VALUE);
 
 		assertEq(address(ALICE.account).balance, 0);
 		assertGt(STETH.balanceOf(address(ALICE.account)), 0);
 	}
 
-	function test_wrapSTETHByExecute() public virtual {
+	function test_wrapSTETH_execute() public virtual {
 		deal(address(ALICE.account), DEFAULT_VALUE);
 		assertEq(address(ALICE.account).balance, DEFAULT_VALUE);
 		assertEq(STETH.balanceOf(address(ALICE.account)), 0);
@@ -60,13 +65,13 @@ contract STETHWrapperTest is BaseTest {
 		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
 		(userOps[0], ) = ALICE.prepareUserOp(executionCalldata);
 
-		ENTRYPOINT.handleOps(userOps, ALICE.eoa);
+		BUNDLER.handleOps(userOps);
 
 		assertEq(address(ALICE.account).balance, 0);
 		assertGt(STETH.balanceOf(address(ALICE.account)), 0);
 	}
 
-	function test_wrapSTETHByExecuteUserOp() public virtual {
+	function test_wrapSTETH_executeUserOp() public virtual {
 		deal(address(ALICE.account), DEFAULT_VALUE);
 		assertEq(address(ALICE.account).balance, DEFAULT_VALUE);
 		assertEq(STETH.balanceOf(address(ALICE.account)), 0);
@@ -77,7 +82,7 @@ contract STETHWrapperTest is BaseTest {
 		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
 		(userOps[0], ) = ALICE.prepareUserOp(userOpCalldata);
 
-		ENTRYPOINT.handleOps(userOps, ALICE.eoa);
+		BUNDLER.handleOps(userOps);
 
 		assertEq(address(ALICE.account).balance, 0);
 		assertGt(STETH.balanceOf(address(ALICE.account)), 0);
@@ -89,13 +94,13 @@ contract STETHWrapperTest is BaseTest {
 		assertEq(WSTETH.balanceOf(address(ALICE.account)), 0);
 
 		uint256 value = STETH.balanceOf(address(ALICE.account));
-		STETHWrapper(payable(address(ALICE.account))).wrapWSTETH(value);
+		STETHWrapper(address(ALICE.account)).wrapWSTETH(value);
 
 		assertLt(STETH.balanceOf(address(ALICE.account)), value);
 		assertGt(WSTETH.balanceOf(address(ALICE.account)), 0);
 	}
 
-	function test_wrapWSTETHByExecute() public virtual {
+	function test_wrapWSTETH_execute() public virtual {
 		deal(STETH, address(ALICE.account), DEFAULT_VALUE);
 		assertGe(STETH.balanceOf(address(ALICE.account)), DEFAULT_VALUE);
 		assertEq(WSTETH.balanceOf(address(ALICE.account)), 0);
@@ -107,13 +112,13 @@ contract STETHWrapperTest is BaseTest {
 		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
 		(userOps[0], ) = ALICE.prepareUserOp(executionCalldata);
 
-		ENTRYPOINT.handleOps(userOps, ALICE.eoa);
+		BUNDLER.handleOps(userOps);
 
 		assertLt(STETH.balanceOf(address(ALICE.account)), value);
 		assertGt(WSTETH.balanceOf(address(ALICE.account)), 0);
 	}
 
-	function test_wrapWSTETHByExecuteUserOp() public virtual {
+	function test_wrapWSTETH_executeUserOp() public virtual {
 		deal(STETH, address(ALICE.account), DEFAULT_VALUE);
 		assertGe(STETH.balanceOf(address(ALICE.account)), DEFAULT_VALUE);
 		assertEq(WSTETH.balanceOf(address(ALICE.account)), 0);
@@ -125,7 +130,7 @@ contract STETHWrapperTest is BaseTest {
 		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
 		(userOps[0], ) = ALICE.prepareUserOp(userOpCalldata);
 
-		ENTRYPOINT.handleOps(userOps, ALICE.eoa);
+		BUNDLER.handleOps(userOps);
 
 		assertLt(STETH.balanceOf(address(ALICE.account)), value);
 		assertGt(WSTETH.balanceOf(address(ALICE.account)), 0);
@@ -136,13 +141,13 @@ contract STETHWrapperTest is BaseTest {
 		assertEq(WSTETH.balanceOf(address(ALICE.account)), DEFAULT_VALUE);
 		assertEq(STETH.balanceOf(address(ALICE.account)), 0);
 
-		STETHWrapper(payable(address(ALICE.account))).unwrapWSTETH(DEFAULT_VALUE);
+		STETHWrapper(address(ALICE.account)).unwrapWSTETH(DEFAULT_VALUE);
 
 		assertEq(WSTETH.balanceOf(address(ALICE.account)), 0);
 		assertGt(STETH.balanceOf(address(ALICE.account)), 0);
 	}
 
-	function test_unwrapWSTETHByExecute() public virtual {
+	function test_unwrapWSTETH_execute() public virtual {
 		deal(WSTETH, address(ALICE.account), DEFAULT_VALUE);
 		assertEq(WSTETH.balanceOf(address(ALICE.account)), DEFAULT_VALUE);
 		assertEq(STETH.balanceOf(address(ALICE.account)), 0);
@@ -153,13 +158,13 @@ contract STETHWrapperTest is BaseTest {
 		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
 		(userOps[0], ) = ALICE.prepareUserOp(executionCalldata);
 
-		ENTRYPOINT.handleOps(userOps, ALICE.eoa);
+		BUNDLER.handleOps(userOps);
 
 		assertEq(WSTETH.balanceOf(address(ALICE.account)), 0);
 		assertGt(STETH.balanceOf(address(ALICE.account)), 0);
 	}
 
-	function test_unwrapWSTETHByExecuteUserOp() public virtual {
+	function test_unwrapWSTETH_executeUserOp() public virtual {
 		deal(WSTETH, address(ALICE.account), DEFAULT_VALUE);
 		assertEq(WSTETH.balanceOf(address(ALICE.account)), DEFAULT_VALUE);
 		assertEq(STETH.balanceOf(address(ALICE.account)), 0);
@@ -170,7 +175,7 @@ contract STETHWrapperTest is BaseTest {
 		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
 		(userOps[0], ) = ALICE.prepareUserOp(userOpCalldata);
 
-		ENTRYPOINT.handleOps(userOps, ALICE.eoa);
+		BUNDLER.handleOps(userOps);
 
 		assertEq(WSTETH.balanceOf(address(ALICE.account)), 0);
 		assertGt(STETH.balanceOf(address(ALICE.account)), 0);
