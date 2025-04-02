@@ -15,7 +15,7 @@ contract AccountFactory is IAccountFactory {
 	constructor(address implementation) {
 		assembly ("memory-safe") {
 			implementation := shr(0x60, shl(0x60, implementation))
-			if iszero(extcodesize(implementation)) {
+			if iszero(implementation) {
 				mstore(0x00, 0xeb30c926) // InvalidAccountImplementation()
 				revert(0x1c, 0x04)
 			}
@@ -24,14 +24,17 @@ contract AccountFactory is IAccountFactory {
 		ACCOUNT_IMPLEMENTATION = implementation;
 	}
 
-	function createAccount(bytes32 salt, bytes calldata data) public payable virtual returns (address payable account) {
-		return _createAccount(ACCOUNT_IMPLEMENTATION, salt, data);
+	function createAccount(
+		bytes32 salt,
+		bytes calldata params
+	) public payable virtual returns (address payable account) {
+		return _createAccount(ACCOUNT_IMPLEMENTATION, salt, params);
 	}
 
 	function _createAccount(
 		address implementation,
 		bytes32 salt,
-		bytes memory data
+		bytes memory params
 	) internal virtual returns (address payable account) {
 		assembly ("memory-safe") {
 			let ptr := mload(0x40)
@@ -59,7 +62,7 @@ contract AccountFactory is IAccountFactory {
 						revert(0x1c, 0x04)
 					}
 
-					if iszero(call(gas(), account, 0x00, add(data, 0x20), mload(data), codesize(), 0x00)) {
+					if iszero(call(gas(), account, 0x00, add(params, 0x20), mload(params), codesize(), 0x00)) {
 						returndatacopy(ptr, 0x00, returndatasize())
 						revert(ptr, returndatasize())
 					}

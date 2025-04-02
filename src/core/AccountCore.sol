@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {IERC7579Account} from "src/interfaces/IERC7579Account.sol";
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 import {CalldataDecoder} from "src/libraries/CalldataDecoder.sol";
 import {ExecutionLib} from "src/libraries/ExecutionLib.sol";
@@ -16,7 +15,6 @@ import {ModuleManager} from "./ModuleManager.sol";
 
 abstract contract AccountCore is AccountBase, EIP712, ModuleManager, UUPSUpgradeable {
 	using CalldataDecoder for bytes;
-	using ExecutionLib for address;
 	using ExecutionLib for ExecType;
 
 	/// @dev keccak256(bytes("EnableModule(uint256 moduleTypeId,address module,bytes32 initDataHash,bytes32 userOpHash)"));
@@ -71,18 +69,6 @@ abstract contract AccountCore is AccountBase, EIP712, ModuleManager, UUPSUpgrade
 		if (callType == CALLTYPE_SINGLE) return execType.executeSingle(executionCalldata);
 		if (callType == CALLTYPE_BATCH) return execType.executeBatch(executionCalldata);
 		if (callType == CALLTYPE_DELEGATE) return execType.executeDelegate(executionCalldata);
-	}
-
-	function _executeUserOp(PackedUserOperation calldata userOp, bytes32) internal virtual {
-		bytes4 selector = bytes(userOp.callData[4:]).decodeSelector();
-
-		if (selector == IERC7579Account.execute.selector || selector == IERC7579Account.executeFromExecutor.selector) {
-			(ExecutionMode mode, bytes calldata executionCalldata) = bytes(userOp.callData[8:])
-				.decodeExecutionModeAndCalldata();
-			_execute(mode, executionCalldata);
-		} else {
-			address(this).callDelegate(userOp.callData[4:]);
-		}
 	}
 
 	function _validateUserOp(
@@ -140,7 +126,7 @@ abstract contract AccountCore is AccountBase, EIP712, ModuleManager, UUPSUpgrade
 			let ptr := mload(0x40)
 
 			mstore(ptr, 0xf551e2ee00000000000000000000000000000000000000000000000000000000) // isValidSignatureWithSender(address,bytes32,bytes)
-			mstore(add(ptr, 0x04), shr(0x60, shl(0x60, caller())))
+			mstore(add(ptr, 0x04), shr(0x60, shl(0x60, address())))
 			mstore(add(ptr, 0x24), hash)
 			mstore(add(ptr, 0x44), 0x60)
 			mstore(add(ptr, 0x64), signature.length)
@@ -169,6 +155,24 @@ abstract contract AccountCore is AccountBase, EIP712, ModuleManager, UUPSUpgrade
 
 		_validateEnableSignature(validator, _hashTypedData(structHash), innerSignature);
 		_installModule(moduleTypeId, module, data);
+	}
+
+	function _enableModuleHash(
+		ModuleType moduleTypeId,
+		address module,
+		bytes calldata data,
+		bytes32 userOpHash
+	) internal pure virtual returns (bytes32 hash) {
+		assembly ("memory-safe") {
+			let ptr := mload(0x40)
+			mstore(ptr, ENABLE_MODULE_TYPEHASH)
+			mstore(add(ptr, 0x20), moduleTypeId)
+			mstore(add(ptr, 0x40), module)
+			calldatacopy(add(ptr, 0x60), data.offset, data.length)
+			mstore(add(ptr, 0x60), keccak256(add(ptr, 0x60), data.length))
+			mstore(add(ptr, 0x80), userOpHash)
+			hash := keccak256(ptr, 0xa0)
+		}
 	}
 
 	function _decodeSignature(
@@ -201,24 +205,6 @@ abstract contract AccountCore is AccountBase, EIP712, ModuleManager, UUPSUpgrade
 			let nonce := calldataload(add(userOp, 0x20))
 			validator := shr(0x60, shl(0x20, nonce))
 			isEnableMode := eq(shl(0xf8, shr(0xf8, nonce)), shl(0xf8, 0x01))
-		}
-	}
-
-	function _enableModuleHash(
-		ModuleType moduleTypeId,
-		address module,
-		bytes calldata data,
-		bytes32 userOpHash
-	) internal pure virtual returns (bytes32 hash) {
-		assembly ("memory-safe") {
-			let ptr := mload(0x40)
-			mstore(ptr, ENABLE_MODULE_TYPEHASH)
-			mstore(add(ptr, 0x20), moduleTypeId)
-			mstore(add(ptr, 0x40), shr(0x60, shl(0x60, module)))
-			calldatacopy(add(ptr, 0x60), data.offset, data.length)
-			mstore(add(ptr, 0x60), keccak256(add(ptr, 0x60), data.length))
-			mstore(add(ptr, 0x80), userOpHash)
-			hash := keccak256(ptr, 0xa0)
 		}
 	}
 

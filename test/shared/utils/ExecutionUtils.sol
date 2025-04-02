@@ -26,13 +26,6 @@ library ExecutionUtils {
 
 	function encodeExecutionCalldata(
 		ExecType execType,
-		Execution memory execution
-	) internal pure returns (bytes memory) {
-		return encodeExecutionCalldata(execType, execution.target, execution.value, execution.callData);
-	}
-
-	function encodeExecutionCalldata(
-		ExecType execType,
 		Execution[] memory executions
 	) internal pure returns (bytes memory) {
 		vm.assertTrue(execType == EXECTYPE_DEFAULT || execType == EXECTYPE_TRY);

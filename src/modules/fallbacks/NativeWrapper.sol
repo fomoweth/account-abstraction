@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import {IMetaFactory} from "src/interfaces/factories/IMetaFactory.sol";
 import {Currency} from "src/types/Currency.sol";
 import {ModuleType} from "src/types/Types.sol";
 import {FallbackBase} from "src/modules/base/FallbackBase.sol";
@@ -8,11 +9,25 @@ import {FallbackBase} from "src/modules/base/FallbackBase.sol";
 /// @title NativeWrapper
 
 contract NativeWrapper is FallbackBase {
+	error InsufficientBalance();
+
 	mapping(address account => bool isInstalled) internal _isInstalled;
 
 	Currency public immutable WRAPPED_NATIVE;
 
-	constructor(Currency wrappedNative) {
+	constructor() {
+		bytes memory context = IMetaFactory(msg.sender).parameters();
+		Currency wrappedNative;
+
+		assembly ("memory-safe") {
+			if lt(mload(context), 0x20) {
+				mstore(0x00, 0x3b99b53d) // SliceOutOfBounds()
+				revert(0x1c, 0x04)
+			}
+
+			wrappedNative := shr(0x60, shl(0x60, mload(add(context, 0x20))))
+		}
+
 		WRAPPED_NATIVE = wrappedNative;
 	}
 
@@ -27,8 +42,15 @@ contract NativeWrapper is FallbackBase {
 	}
 
 	function wrapETH(uint256 amount) external payable {
-		Currency wrappedNative = WRAPPED_NATIVE;
+		_wrapETH(WRAPPED_NATIVE, amount);
+	}
 
+	function unwrapWETH(uint256 amount) external payable {
+		require(WRAPPED_NATIVE.balanceOfSelf() >= amount, InsufficientBalance());
+		_unwrapWETH(WRAPPED_NATIVE, amount);
+	}
+
+	function _wrapETH(Currency wrappedNative, uint256 amount) private {
 		assembly ("memory-safe") {
 			if lt(selfbalance(), amount) {
 				mstore(0x00, 0xf4d678b8) // InsufficientBalance()
@@ -46,9 +68,7 @@ contract NativeWrapper is FallbackBase {
 		}
 	}
 
-	function unwrapWETH(uint256 amount) external payable {
-		Currency wrappedNative = WRAPPED_NATIVE;
-
+	function _unwrapWETH(Currency wrappedNative, uint256 amount) private {
 		assembly ("memory-safe") {
 			let ptr := mload(0x40)
 

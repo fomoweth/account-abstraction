@@ -2,20 +2,18 @@
 pragma solidity ^0.8.28;
 
 import {Vm} from "forge-std/Vm.sol";
-
-import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 import {IEntryPoint} from "account-abstraction/interfaces/IEntryPoint.sol";
+import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 import {IModule} from "src/interfaces/IERC7579Modules.sol";
-import {ExecutionLib, Execution} from "src/libraries/ExecutionLib.sol";
+import {ExecutionLib} from "src/libraries/ExecutionLib.sol";
 import {SignatureChecker} from "src/libraries/SignatureChecker.sol";
 import {VALIDATION_MODE_DEFAULT, VALIDATION_MODE_ENABLE} from "src/types/Constants.sol";
-import {Currency} from "src/types/Currency.sol";
 import {ExecType, ModuleType, ValidationMode} from "src/types/Types.sol";
 import {Vortex} from "src/Vortex.sol";
 
 import {ExecutionUtils} from "test/shared/utils/ExecutionUtils.sol";
 
-using SignerHelper for Signer global;
+using SignerLib for Signer global;
 
 struct Signer {
 	address payable eoa;
@@ -26,7 +24,7 @@ struct Signer {
 	uint256 privateKey;
 }
 
-library SignerHelper {
+library SignerLib {
 	using ExecutionUtils for ExecType;
 	using SignatureChecker for bytes32;
 
@@ -59,48 +57,8 @@ library SignerHelper {
 		vm.assertGe(info.stake, value);
 	}
 
-	function execute(
-		Signer memory signer,
-		ExecType execType,
-		address target,
-		uint256 value,
-		bytes memory callData
-	) internal returns (PackedUserOperation[] memory userOps, bytes32 userOpHash) {
-		return signer.execute(execType.encodeExecutionCalldata(target, value, callData));
-	}
-
-	function execute(
-		Signer memory signer,
-		ExecType execType,
-		Execution memory execution
-	) internal returns (PackedUserOperation[] memory userOps, bytes32 userOpHash) {
-		return signer.execute(execType.encodeExecutionCalldata(execution.target, execution.value, execution.callData));
-	}
-
-	function execute(
-		Signer memory signer,
-		ExecType execType,
-		Execution[] memory executions
-	) internal returns (PackedUserOperation[] memory userOps, bytes32 userOpHash) {
-		return signer.execute(execType.encodeExecutionCalldata(executions));
-	}
-
-	function execute(
-		Signer memory signer,
-		ExecType execType,
-		address target,
-		bytes memory callData
-	) internal returns (PackedUserOperation[] memory userOps, bytes32 userOpHash) {
-		return signer.execute(execType.encodeExecutionCalldata(target, callData));
-	}
-
-	function execute(
-		Signer memory signer,
-		bytes memory executionCalldata
-	) internal returns (PackedUserOperation[] memory userOps, bytes32 userOpHash) {
-		userOps = new PackedUserOperation[](1);
-		(userOps[0], userOpHash) = signer.prepareUserOp(executionCalldata);
-
+	function handleOps(Signer memory signer, PackedUserOperation[] memory userOps) internal {
+		vm.prank(signer.eoa);
 		ENTRYPOINT.handleOps(userOps, signer.eoa);
 	}
 
@@ -212,7 +170,7 @@ library SignerHelper {
 
 	function sign(Signer memory signer, bytes32 messageHash) internal pure returns (bytes memory signature) {
 		(uint8 v, bytes32 r, bytes32 s) = vm.sign(signer.privateKey, messageHash.toEthSignedMessageHash());
-		signature = abi.encodePacked(r, s, v);
+		return bytes.concat(r, s, bytes1(v));
 	}
 
 	// nonce: [1 bytes validation mode][3 bytes unused][20 bytes validator][8 bytes nonce]

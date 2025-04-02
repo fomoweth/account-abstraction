@@ -3,31 +3,22 @@ pragma solidity ^0.8.28;
 
 import {IEntryPoint} from "account-abstraction/interfaces/IEntryPoint.sol";
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
-import {AccountIdLib} from "src/libraries/AccountIdLib.sol";
 import {ExecutionLib, Execution} from "src/libraries/ExecutionLib.sol";
 import {Currency} from "src/types/Currency.sol";
 import {ExecutionModeLib, ExecutionMode, CallType, ExecType} from "src/types/ExecutionMode.sol";
-import {ModuleType, PackedModuleTypes} from "src/types/ModuleType.sol";
+import {ModuleType} from "src/types/ModuleType.sol";
 import {NativeWrapper} from "src/modules/fallbacks/NativeWrapper.sol";
-import {STETHWrapper} from "src/modules/fallbacks/STETHWrapper.sol";
 import {Vortex} from "src/Vortex.sol";
 
 import {BaseTest} from "test/shared/env/BaseTest.sol";
-import {Signer} from "test/shared/structs/Signer.sol";
-
 import {MockERC721} from "test/shared/mocks/MockERC721.sol";
 import {MockERC1155} from "test/shared/mocks/MockERC1155.sol";
-import {MockExecutor} from "test/shared/mocks/MockExecutor.sol";
 import {MockFallback} from "test/shared/mocks/MockFallback.sol";
-import {MockHook} from "test/shared/mocks/MockHook.sol";
-import {MockValidator} from "test/shared/mocks/MockValidator.sol";
 import {MockTarget} from "test/shared/mocks/MockTarget.sol";
-
 import {SolArray} from "test/shared/utils/SolArray.sol";
 import {ExecutionUtils} from "test/shared/utils/ExecutionUtils.sol";
 
 contract Account7579Test is BaseTest {
-	using AccountIdLib for string;
 	using ExecutionUtils for ExecType;
 	using SolArray for *;
 
@@ -35,8 +26,22 @@ contract Account7579Test is BaseTest {
 
 	function setUp() public virtual override {
 		super.setUp();
-		MOCK = new MockTarget();
+
 		setUpAccounts();
+
+		bytes4[] memory selectors = NATIVE_WRAPPER.wrapETH.selector.bytes4s(NATIVE_WRAPPER.unwrapWETH.selector);
+
+		CallType[] memory callTypes = CALLTYPE_DELEGATE.callTypes(CALLTYPE_DELEGATE);
+
+		bytes memory installData = encodeInstallModuleParams(
+			TYPE_FALLBACK.moduleTypes(),
+			abi.encode(encodeFallbackSelectors(selectors, callTypes), ""),
+			""
+		);
+
+		COOPER.install(TYPE_FALLBACK, address(NATIVE_WRAPPER), installData);
+
+		MOCK = new MockTarget();
 	}
 
 	function test_deployment() public virtual {
@@ -51,76 +56,76 @@ contract Account7579Test is BaseTest {
 	}
 
 	function test_onETHReceived() public virtual {
-		uint256 balance = address(ALICE.account).balance;
+		uint256 balance = address(COOPER.account).balance;
 		uint256 value = 1 ether;
 
-		(bool success, ) = address(ALICE.account).call{value: value}("");
+		(bool success, ) = address(COOPER.account).call{value: value}("");
 
 		assertTrue(success);
-		assertEq(address(ALICE.account).balance, balance + value);
+		assertEq(address(COOPER.account).balance, balance + value);
 	}
 
 	function test_onERC721Received() public virtual {
 		MockERC721 erc721 = new MockERC721("Fomo WETH", "FOMO");
 		uint256 tokenId = 1;
 
-		erc721.mint(ALICE.eoa, tokenId);
+		erc721.mint(COOPER.eoa, tokenId);
 
-		assertEq(erc721.balanceOf(ALICE.eoa), 1);
-		assertEq(erc721.ownerOf(tokenId), ALICE.eoa);
+		assertEq(erc721.balanceOf(COOPER.eoa), 1);
+		assertEq(erc721.ownerOf(tokenId), COOPER.eoa);
 
 		vm.expectEmit(true, true, true, true);
-		emit MockERC721.Transfer(ALICE.eoa, address(ALICE.account), tokenId);
+		emit MockERC721.Transfer(COOPER.eoa, address(COOPER.account), tokenId);
 
-		vm.prank(ALICE.eoa);
-		erc721.safeTransferFrom(ALICE.eoa, address(ALICE.account), tokenId);
+		vm.prank(COOPER.eoa);
+		erc721.safeTransferFrom(COOPER.eoa, address(COOPER.account), tokenId);
 
-		assertEq(erc721.balanceOf(address(ALICE.account)), 1);
-		assertEq(erc721.ownerOf(tokenId), address(ALICE.account));
+		assertEq(erc721.balanceOf(address(COOPER.account)), 1);
+		assertEq(erc721.ownerOf(tokenId), address(COOPER.account));
 	}
 
 	function test_onERC1155Received() public virtual {
 		MockERC1155 erc1155 = new MockERC1155();
 		uint256 tokenId = 1;
 
-		erc1155.mint(ALICE.eoa, tokenId, 1, "");
-		assertEq(erc1155.balanceOf(ALICE.eoa, tokenId), 1);
+		erc1155.mint(COOPER.eoa, tokenId, 1, "");
+		assertEq(erc1155.balanceOf(COOPER.eoa, tokenId), 1);
 
 		vm.expectEmit(true, true, true, true);
-		emit MockERC1155.TransferSingle(ALICE.eoa, ALICE.eoa, address(ALICE.account), tokenId, 1);
+		emit MockERC1155.TransferSingle(COOPER.eoa, COOPER.eoa, address(COOPER.account), tokenId, 1);
 
-		vm.prank(ALICE.eoa);
-		erc1155.safeTransferFrom(ALICE.eoa, address(ALICE.account), tokenId, 1, "");
+		vm.prank(COOPER.eoa);
+		erc1155.safeTransferFrom(COOPER.eoa, address(COOPER.account), tokenId, 1, "");
 
-		assertEq(erc1155.balanceOf(address(ALICE.account), tokenId), 1);
+		assertEq(erc1155.balanceOf(address(COOPER.account), tokenId), 1);
 	}
 
 	function test_onERC1155BatchReceived() public virtual {
 		MockERC1155 erc1155 = new MockERC1155();
 
-		erc1155.mint(ALICE.eoa, 1, 1, "");
-		erc1155.mint(ALICE.eoa, 2, 1, "");
+		erc1155.mint(COOPER.eoa, 1, 1, "");
+		erc1155.mint(COOPER.eoa, 2, 1, "");
 
-		assertEq(erc1155.balanceOf(ALICE.eoa, 1), 1);
-		assertEq(erc1155.balanceOf(ALICE.eoa, 2), 1);
+		assertEq(erc1155.balanceOf(COOPER.eoa, 1), 1);
+		assertEq(erc1155.balanceOf(COOPER.eoa, 2), 1);
 
 		uint256[] memory tokenIds = SolArray.uint256s(1, 2);
 		uint256[] memory amounts = SolArray.uint256s(1, 1);
 
 		vm.expectEmit(true, true, true, true);
-		emit MockERC1155.TransferBatch(ALICE.eoa, ALICE.eoa, address(ALICE.account), tokenIds, amounts);
+		emit MockERC1155.TransferBatch(COOPER.eoa, COOPER.eoa, address(COOPER.account), tokenIds, amounts);
 
-		vm.prank(ALICE.eoa);
-		erc1155.safeBatchTransferFrom(ALICE.eoa, address(ALICE.account), tokenIds, amounts, "");
+		vm.prank(COOPER.eoa);
+		erc1155.safeBatchTransferFrom(COOPER.eoa, address(COOPER.account), tokenIds, amounts, "");
 
-		assertEq(erc1155.balanceOf(address(ALICE.account), 1), 1);
-		assertEq(erc1155.balanceOf(address(ALICE.account), 2), 1);
+		assertEq(erc1155.balanceOf(address(COOPER.account), 1), 1);
+		assertEq(erc1155.balanceOf(address(COOPER.account), 2), 1);
 	}
 
 	function test_fallback(CallType callType, bytes32 value) public virtual asEntryPoint {
 		vm.assume(callType == CALLTYPE_SINGLE || callType == CALLTYPE_STATIC || callType == CALLTYPE_DELEGATE);
 
-		MockFallback account = MockFallback(payable(address(COOPER.account)));
+		MockFallback account = MockFallback(address(COOPER.account));
 
 		if (callType == CALLTYPE_SINGLE) {
 			vm.expectEmit(true, true, true, true);
@@ -141,49 +146,38 @@ contract Account7579Test is BaseTest {
 	}
 
 	function test_fallback_revertsWhenUnknownSelectorsInvoked() public virtual asEntryPoint {
+		vm.expectRevert(abi.encodeWithSelector(UnknownSelector.selector, NativeWrapper.wrapETH.selector));
+		NativeWrapper(address(MURPHY.account)).wrapETH(1 ether);
+
+		vm.expectRevert(abi.encodeWithSelector(UnknownSelector.selector, NativeWrapper.unwrapWETH.selector));
+		NativeWrapper(address(MURPHY.account)).unwrapWETH(1 ether);
+
 		vm.expectRevert(abi.encodeWithSelector(UnknownSelector.selector, MockFallback.fallbackSingle.selector));
-		MockFallback(payable(address(MURPHY.account))).fallbackSingle(bytes32(vm.randomBytes(32)));
+		MockFallback(address(MURPHY.account)).fallbackSingle(bytes32(vm.randomBytes(32)));
 
 		vm.expectRevert(abi.encodeWithSelector(UnknownSelector.selector, MockFallback.fallbackDelegate.selector));
-		MockFallback(payable(address(MURPHY.account))).fallbackDelegate(bytes32(vm.randomBytes(32)));
+		MockFallback(address(MURPHY.account)).fallbackDelegate(bytes32(vm.randomBytes(32)));
 
 		vm.expectRevert(abi.encodeWithSelector(UnknownSelector.selector, MockFallback.fallbackStatic.selector));
-		MockFallback(payable(address(MURPHY.account))).fallbackStatic(address(MURPHY.account));
+		MockFallback(address(MURPHY.account)).fallbackStatic(address(MURPHY.account));
 
 		vm.expectRevert(abi.encodeWithSelector(UnknownSelector.selector, MockFallback.fallbackSuccess.selector));
-		MockFallback(payable(address(MURPHY.account))).fallbackSuccess();
+		MockFallback(address(MURPHY.account)).fallbackSuccess();
 	}
 
 	function test_executeUserOp() public virtual {
-		COOPER.install(
-			TYPE_FALLBACK,
-			address(NATIVE_WRAPPER),
-			encodeInstallModuleParams(
-				TYPE_FALLBACK.moduleTypes(),
-				abi.encode(
-					encodeFallbackSelectors(
-						NativeWrapper.wrapETH.selector.bytes4s(NativeWrapper.unwrapWETH.selector),
-						CALLTYPE_DELEGATE.callTypes(CALLTYPE_DELEGATE)
-					),
-					""
-				),
-				""
-			)
-		);
-
 		uint256 value = 5 ether;
 		bytes memory callData = abi.encodeCall(NativeWrapper.wrapETH, (value));
-
 		bytes memory userOpCalldata = abi.encodePacked(Vortex.executeUserOp.selector, callData);
-
-		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
-		(userOps[0], ) = COOPER.prepareUserOp(userOpCalldata);
 
 		deal(address(COOPER.account), value);
 		assertEq(address(COOPER.account).balance, value);
 		assertEq(WNATIVE.balanceOf(address(COOPER.account)), 0);
 
-		ENTRYPOINT.handleOps(userOps, COOPER.eoa);
+		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
+		(userOps[0], ) = COOPER.prepareUserOp(userOpCalldata);
+
+		BUNDLER.handleOps(userOps);
 
 		assertEq(address(COOPER.account).balance, 0);
 		assertEq(WNATIVE.balanceOf(address(COOPER.account)), value);
@@ -198,14 +192,14 @@ contract Account7579Test is BaseTest {
 
 		bytes memory userOpCalldata = abi.encodePacked(Vortex.executeUserOp.selector, executionCalldata);
 
-		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
-		(userOps[0], ) = COOPER.prepareUserOp(userOpCalldata);
-
 		deal(address(COOPER.account), address(COOPER.account).balance + value);
 		assertGe(address(COOPER.account).balance, value);
 		assertEq(WNATIVE.balanceOf(address(COOPER.account)), 0);
 
-		ENTRYPOINT.handleOps(userOps, COOPER.eoa);
+		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
+		(userOps[0], ) = COOPER.prepareUserOp(userOpCalldata);
+
+		BUNDLER.handleOps(userOps);
 		assertEq(WNATIVE.balanceOf(address(COOPER.account)), value);
 	}
 
@@ -214,27 +208,22 @@ contract Account7579Test is BaseTest {
 		uint256 value = 5 ether;
 		bytes memory callData = abi.encodeWithSignature("deposit()");
 
-		bytes memory executorCalldata = abi.encodeCall(
-			MockExecutor.executeViaAccount,
-			(COOPER.account, target, value, callData)
-		);
-
 		bytes memory executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(
 			address(MOCK_EXECUTOR),
 			0,
-			executorCalldata
+			abi.encodeCall(MOCK_EXECUTOR.executeViaAccount, (COOPER.account, target, value, callData))
 		);
 
 		bytes memory userOpCalldata = abi.encodePacked(Vortex.executeUserOp.selector, executionCalldata);
-
-		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
-		(userOps[0], ) = COOPER.prepareUserOp(userOpCalldata);
 
 		deal(address(COOPER.account), address(COOPER.account).balance + value);
 		assertGe(address(COOPER.account).balance, value);
 		assertEq(WNATIVE.balanceOf(address(COOPER.account)), 0);
 
-		ENTRYPOINT.handleOps(userOps, COOPER.eoa);
+		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
+		(userOps[0], ) = COOPER.prepareUserOp(userOpCalldata);
+
+		BUNDLER.handleOps(userOps);
 		assertEq(WNATIVE.balanceOf(address(COOPER.account)), value);
 	}
 
@@ -245,9 +234,9 @@ contract Account7579Test is BaseTest {
 		ExecutionMode mode = ExecutionModeLib.encodeCustom(callType, execType);
 		assertTrue(COOPER.account.supportsExecutionMode(mode));
 
-		address expectedSender;
-		bytes memory executionCalldata;
 		bytes memory callData = abi.encodeCall(MockTarget.emitEvent, (shouldRevert));
+		bytes memory executionCalldata;
+		address expectedSender;
 
 		if (callType == CALLTYPE_BATCH) {
 			Execution[] memory executions = new Execution[](1);
@@ -265,7 +254,6 @@ contract Account7579Test is BaseTest {
 
 		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
 		bytes32 userOpHash;
-
 		(userOps[0], userOpHash) = COOPER.prepareUserOp(executionCalldata);
 
 		if (shouldRevert) {
@@ -299,7 +287,7 @@ contract Account7579Test is BaseTest {
 			);
 		}
 
-		ENTRYPOINT.handleOps(userOps, COOPER.eoa);
+		BUNDLER.handleOps(userOps);
 	}
 
 	function test_execute_revertsIfNotCalledByEntryPointOrSelf() public virtual {
@@ -311,53 +299,65 @@ contract Account7579Test is BaseTest {
 		bytes memory executionCalldata = abi.encodePacked(target, value, callData);
 
 		vm.expectRevert(UnauthorizedCallContext.selector);
-		ALICE.account.execute(mode, executionCalldata);
+		COOPER.account.execute(mode, executionCalldata);
 
+		vm.prank(COOPER.eoa);
 		vm.expectRevert(UnauthorizedCallContext.selector);
-		vm.prank(ALICE.eoa);
-		ALICE.account.execute(mode, executionCalldata);
+		COOPER.account.execute(mode, executionCalldata);
 	}
 
-	function test_executeTransferNative() public virtual {
+	function test_execute_transferNative() public virtual {
 		address recipient = makeAddr("recipient");
 		uint256 value = 5 ether;
+		bytes memory executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(recipient, value, "");
 
-		deal(address(ALICE.account), address(ALICE.account).balance + value);
-		assertGe(address(ALICE.account).balance, value);
+		deal(address(COOPER.account), address(COOPER.account).balance + value);
+		assertGe(address(COOPER.account).balance, value);
 		assertEq(recipient.balance, 0);
 
-		ALICE.execute(EXECTYPE_DEFAULT, recipient, value, "");
+		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
+		(userOps[0], ) = COOPER.prepareUserOp(executionCalldata);
+
+		BUNDLER.handleOps(userOps);
 		assertEq(recipient.balance, value);
 	}
 
-	function test_executeTransferCurrency() public virtual {
-		address target = USDC.toAddress();
+	function test_execute_transferERC20() public virtual {
+		address recipient = makeAddr("recipient");
 		uint256 amount = 50000 * 10 ** 6;
-		bytes memory callData = abi.encodeWithSignature("transfer(address,uint256)", ALICE.eoa, amount);
+		bytes memory callData = abi.encodeWithSignature("transfer(address,uint256)", recipient, amount);
+		bytes memory executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(USDC.toAddress(), 0, callData);
 
-		deal(USDC, address(ALICE.account), amount);
-		assertEq(USDC.balanceOf(address(ALICE.account)), amount);
-		assertEq(USDC.balanceOf(ALICE.eoa), 0);
+		deal(USDC, address(COOPER.account), amount);
+		assertEq(USDC.balanceOf(address(COOPER.account)), amount);
+		assertEq(USDC.balanceOf(recipient), 0);
 
-		ALICE.execute(EXECTYPE_DEFAULT, target, 0, callData);
+		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
+		(userOps[0], ) = COOPER.prepareUserOp(executionCalldata);
 
-		assertEq(USDC.balanceOf(address(ALICE.account)), 0);
-		assertEq(USDC.balanceOf(ALICE.eoa), amount);
+		BUNDLER.handleOps(userOps);
+
+		assertEq(USDC.balanceOf(address(COOPER.account)), 0);
+		assertEq(USDC.balanceOf(recipient), amount);
 	}
 
 	function test_executeSingle() public virtual {
-		address target = WNATIVE.toAddress();
 		uint256 value = 5 ether;
 		bytes memory callData = abi.encodeWithSignature("deposit()");
+		bytes memory executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(WNATIVE.toAddress(), value, callData);
 
-		deal(address(ALICE.account), address(ALICE.account).balance + value);
-		assertEq(WNATIVE.balanceOf(address(ALICE.account)), 0);
+		deal(address(COOPER.account), address(COOPER.account).balance + value);
+		assertEq(WNATIVE.balanceOf(address(COOPER.account)), 0);
 
-		ALICE.execute(EXECTYPE_DEFAULT, target, value, callData);
-		assertEq(WNATIVE.balanceOf(address(ALICE.account)), value);
+		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
+		(userOps[0], ) = COOPER.prepareUserOp(executionCalldata);
+
+		BUNDLER.handleOps(userOps);
+		assertEq(WNATIVE.balanceOf(address(COOPER.account)), value);
 	}
 
 	function test_executeBatch() public virtual {
+		address recipient = makeAddr("recipient");
 		address target = WNATIVE.toAddress();
 		uint256 value = 5 ether;
 
@@ -368,14 +368,19 @@ contract Account7579Test is BaseTest {
 		executions[1] = Execution({
 			target: target,
 			value: 0,
-			callData: abi.encodeWithSignature("transfer(address,uint256)", ALICE.eoa, value)
+			callData: abi.encodeWithSignature("transfer(address,uint256)", recipient, value)
 		});
 
-		deal(address(ALICE.account), address(ALICE.account).balance + value);
-		assertEq(WNATIVE.balanceOf(ALICE.eoa), 0);
+		bytes memory executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(executions);
 
-		ALICE.execute(EXECTYPE_DEFAULT, executions);
-		assertEq(WNATIVE.balanceOf(ALICE.eoa), value);
+		deal(address(COOPER.account), address(COOPER.account).balance + value);
+		assertEq(WNATIVE.balanceOf(recipient), 0);
+
+		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
+		(userOps[0], ) = COOPER.prepareUserOp(executionCalldata);
+
+		BUNDLER.handleOps(userOps);
+		assertEq(WNATIVE.balanceOf(recipient), value);
 	}
 
 	function test_executeFromExecutor(CallType callType, ExecType execType) public virtual {
@@ -395,20 +400,20 @@ contract Account7579Test is BaseTest {
 			executions[1] = Execution({target: address(MOCK), value: 0, callData: callData});
 
 			executorCalldata = execType == EXECTYPE_DEFAULT
-				? abi.encodeCall(MockExecutor.executeBatchViaAccount, (COOPER.account, executions))
-				: abi.encodeCall(MockExecutor.tryExecuteBatchViaAccount, (COOPER.account, executions));
+				? abi.encodeCall(MOCK_EXECUTOR.executeBatchViaAccount, (COOPER.account, executions))
+				: abi.encodeCall(MOCK_EXECUTOR.tryExecuteBatchViaAccount, (COOPER.account, executions));
 
 			expectedValue = 2;
 		} else if (callType == CALLTYPE_SINGLE) {
 			executorCalldata = execType == EXECTYPE_DEFAULT
-				? abi.encodeCall(MockExecutor.executeViaAccount, (COOPER.account, address(MOCK), 0, callData))
-				: abi.encodeCall(MockExecutor.tryExecuteViaAccount, (COOPER.account, address(MOCK), 0, callData));
+				? abi.encodeCall(MOCK_EXECUTOR.executeViaAccount, (COOPER.account, address(MOCK), 0, callData))
+				: abi.encodeCall(MOCK_EXECUTOR.tryExecuteViaAccount, (COOPER.account, address(MOCK), 0, callData));
 
 			expectedValue = 1;
 		} else if (callType == CALLTYPE_DELEGATE) {
 			executorCalldata = execType == EXECTYPE_DEFAULT
-				? abi.encodeCall(MockExecutor.executeDelegateViaAccount, (COOPER.account, address(MOCK), callData))
-				: abi.encodeCall(MockExecutor.tryExecuteDelegateViaAccount, (COOPER.account, address(MOCK), callData));
+				? abi.encodeCall(MOCK_EXECUTOR.executeDelegateViaAccount, (COOPER.account, address(MOCK), callData))
+				: abi.encodeCall(MOCK_EXECUTOR.tryExecuteDelegateViaAccount, (COOPER.account, address(MOCK), callData));
 
 			expectedValue = 0;
 		}
@@ -436,13 +441,13 @@ contract Account7579Test is BaseTest {
 			emit MockTarget.Incremented(address(MOCK_EXECUTOR), 1, true);
 		}
 
-		ENTRYPOINT.handleOps(userOps, COOPER.eoa);
+		BUNDLER.handleOps(userOps);
 		assertEq(MOCK.getCounter(), expectedValue);
 	}
 
 	function test_executeFromExecutor_revertsIfCalledByInvalidExecutor() public virtual {
 		bytes memory callData = abi.encodeCall(
-			MockExecutor.executeViaAccount,
+			MOCK_EXECUTOR.executeViaAccount,
 			(MURPHY.account, address(MOCK), 0, abi.encodeCall(MockTarget.increment, ()))
 		);
 
@@ -450,7 +455,6 @@ contract Account7579Test is BaseTest {
 
 		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
 		bytes32 userOpHash;
-
 		(userOps[0], userOpHash) = MURPHY.prepareUserOp(executionCalldata);
 
 		bytes memory revertReason = abi.encodeWithSelector(ModuleNotInstalled.selector, MOCK_EXECUTOR);
@@ -458,47 +462,76 @@ contract Account7579Test is BaseTest {
 		vm.expectEmit(true, true, true, true, address(ENTRYPOINT));
 		emit IEntryPoint.UserOperationRevertReason(userOpHash, address(MURPHY.account), userOps[0].nonce, revertReason);
 
-		ENTRYPOINT.handleOps(userOps, MURPHY.eoa);
+		BUNDLER.handleOps(userOps);
 	}
 
-	function test_executeFromExecutorTransferNative() public virtual {
+	function test_executeFromExecutor_transferNative() public virtual {
 		address recipient = makeAddr("recipient");
 		uint256 value = 5 ether;
+		bytes memory callData = abi.encodeCall(MOCK_EXECUTOR.executeViaAccount, (COOPER.account, recipient, value, ""));
+
+		bytes memory executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(address(MOCK_EXECUTOR), 0, callData);
 
 		deal(address(COOPER.account), address(COOPER.account).balance + value);
 		assertGe(address(COOPER.account).balance, value);
 		assertEq(recipient.balance, 0);
 
-		MOCK_EXECUTOR.executeViaAccount(COOPER.account, recipient, value, "");
+		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
+		(userOps[0], ) = COOPER.prepareUserOp(executionCalldata);
+
+		BUNDLER.handleOps(userOps);
 		assertEq(recipient.balance, value);
 	}
 
-	function test_executeFromExecutorTransfer() public virtual {
-		address target = USDC.toAddress();
+	function test_executeFromExecutor_transferERC20() public virtual {
+		address recipient = makeAddr("recipient");
 		uint256 amount = 50000 * 10 ** 6;
-		bytes memory callData = abi.encodeWithSignature("transfer(address,uint256)", COOPER.eoa, amount);
+
+		bytes memory callData = abi.encodeCall(
+			MOCK_EXECUTOR.executeViaAccount,
+			(
+				COOPER.account,
+				USDC.toAddress(),
+				0,
+				abi.encodeWithSignature("transfer(address,uint256)", recipient, amount)
+			)
+		);
+
+		bytes memory executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(address(MOCK_EXECUTOR), 0, callData);
 
 		deal(USDC, address(COOPER.account), amount);
 		assertEq(USDC.balanceOf(address(COOPER.account)), amount);
-		assertEq(USDC.balanceOf(COOPER.eoa), 0);
+		assertEq(USDC.balanceOf(recipient), 0);
 
-		MOCK_EXECUTOR.executeViaAccount(COOPER.account, target, 0, callData);
-		assertEq(USDC.balanceOf(COOPER.eoa), amount);
+		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
+		(userOps[0], ) = COOPER.prepareUserOp(executionCalldata);
+
+		BUNDLER.handleOps(userOps);
+		assertEq(USDC.balanceOf(recipient), amount);
 	}
 
 	function test_executeSingleFromExecutor() public virtual {
-		address target = WNATIVE.toAddress();
 		uint256 value = 5 ether;
-		bytes memory callData = abi.encodeWithSignature("deposit()");
+
+		bytes memory callData = abi.encodeCall(
+			MOCK_EXECUTOR.executeViaAccount,
+			(COOPER.account, WNATIVE.toAddress(), value, abi.encodeWithSignature("deposit()"))
+		);
+
+		bytes memory executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(address(MOCK_EXECUTOR), 0, callData);
 
 		deal(address(COOPER.account), address(COOPER.account).balance + value);
 		assertEq(WNATIVE.balanceOf(address(COOPER.account)), 0);
 
-		MOCK_EXECUTOR.executeViaAccount(COOPER.account, target, value, callData);
+		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
+		(userOps[0], ) = COOPER.prepareUserOp(executionCalldata);
+
+		BUNDLER.handleOps(userOps);
 		assertEq(WNATIVE.balanceOf(address(COOPER.account)), value);
 	}
 
 	function test_executeBatchFromExecutor() public virtual {
+		address recipient = makeAddr("recipient");
 		address target = WNATIVE.toAddress();
 		uint256 value = 5 ether;
 
@@ -509,19 +542,42 @@ contract Account7579Test is BaseTest {
 		executions[1] = Execution({
 			target: target,
 			value: 0,
-			callData: abi.encodeWithSignature("transfer(address,uint256)", COOPER.eoa, value)
+			callData: abi.encodeWithSignature("transfer(address,uint256)", recipient, value)
 		});
 
+		bytes memory callData = abi.encodeCall(MOCK_EXECUTOR.executeBatchViaAccount, (COOPER.account, executions));
+
+		bytes memory executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(address(MOCK_EXECUTOR), 0, callData);
+
 		deal(address(COOPER.account), address(COOPER.account).balance + value);
-		assertEq(WNATIVE.balanceOf(COOPER.eoa), 0);
+		assertEq(WNATIVE.balanceOf(recipient), 0);
+
+		revertToState();
+
+		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
+		(userOps[0], ) = COOPER.prepareUserOp(executionCalldata);
+
+		BUNDLER.handleOps(userOps);
+		assertEq(WNATIVE.balanceOf(recipient), value);
+
+		revertToState();
 
 		bytes[] memory returnData = MOCK_EXECUTOR.executeBatchViaAccount(COOPER.account, executions);
 		assertEq(returnData.length, 2);
-		assertEq(WNATIVE.balanceOf(COOPER.eoa), value);
+		assertEq(WNATIVE.balanceOf(recipient), value);
 	}
 
 	function test_executeBatchFromExecutorWithEmptyExecutions() public virtual {
 		Execution[] memory executions = new Execution[](0);
+
+		bytes memory callData = abi.encodeCall(MOCK_EXECUTOR.executeBatchViaAccount, (COOPER.account, executions));
+
+		bytes memory executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(address(MOCK_EXECUTOR), 0, callData);
+
+		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
+		(userOps[0], ) = COOPER.prepareUserOp(executionCalldata);
+
+		BUNDLER.handleOps(userOps);
 
 		bytes[] memory returnData = MOCK_EXECUTOR.executeBatchViaAccount(COOPER.account, executions);
 		assertEq(returnData.length, 0);
@@ -619,20 +675,14 @@ contract Account7579Test is BaseTest {
 		assertEq(ALICE.account.isValidSignature(bytes32((MAX_UINT256 / 0xffff) * 0x7739), ""), bytes4(0x77390001));
 	}
 
+	function toContentsHash(Vortex account, bytes32 contents) internal view virtual returns (bytes32) {
+		return keccak256(abi.encodePacked(hex"1901", account.DOMAIN_SEPARATOR(), contents));
+	}
+
 	function toERC1271Hash(
 		Vortex account,
 		bytes32 contents
 	) internal view virtual returns (bytes32 contentsHash, bytes32 messageHash) {
-		(string memory name, string memory version) = account.accountId().parse();
-
-		bytes memory domainFields = abi.encode(
-			keccak256(bytes(name)),
-			keccak256(bytes(version)),
-			block.chainid,
-			account,
-			bytes32(0)
-		);
-
 		bytes32 structHash = keccak256(
 			abi.encodePacked(
 				abi.encode(
@@ -641,7 +691,7 @@ contract Account7579Test is BaseTest {
 					),
 					contents
 				),
-				domainFields
+				getAccountDomainStructFields(account)
 			)
 		);
 
@@ -659,21 +709,24 @@ contract Account7579Test is BaseTest {
 
 	function validateAccountCreation(Vortex account, address owner) internal view virtual {
 		assertContract(address(account));
+
 		assertEq(bytes32ToAddress(vm.load(address(account), ERC1967_IMPLEMENTATION_SLOT)), address(VORTEX));
 		assertEq(account.implementation(), address(VORTEX));
+
 		assertEq(account.accountId(), "fomoweth.vortex.1.0.0");
+
+		assertEq(account.registry(), owner != MURPHY.eoa ? address(REGISTRY) : address(0));
 
 		assertEq(account.rootValidator(), address(K1_VALIDATOR));
 		assertEq(K1_VALIDATOR.getAccountOwner(address(account)), owner);
 		assertTrue(K1_VALIDATOR.isAuthorized(address(account), BUNDLER.eoa));
 
-		if (owner != MURPHY.eoa) assertEq(account.registry(), address(REGISTRY));
-
 		assertTrue(
 			account.supportsModule(TYPE_VALIDATOR) &&
 				account.supportsModule(TYPE_EXECUTOR) &&
 				account.supportsModule(TYPE_FALLBACK) &&
-				account.supportsModule(TYPE_HOOK)
+				account.supportsModule(TYPE_HOOK) &&
+				account.supportsModule(TYPE_STATELESS_VALIDATOR)
 		);
 
 		assertTrue(

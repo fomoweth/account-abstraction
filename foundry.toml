@@ -13,25 +13,34 @@ names = true
 sizes = true
 gas_reports = ["AccountFactory", "MetaFactory", "RegistryFactory", "VortexFactory", "Vortex"]
 fs_permissions = [
-    { access = "read", path = "config/"},
-    { access = "read", path = "out/"},
-    { access = "read", path = "script/"}
+    { access = "read", path = "config"},
+	{ access = "read-write", path = "deployments" },
+    { access = "read", path = "out"},
+    { access = "read", path = "script"}
 ]
 
 [rpc_endpoints]
 ethereum = "${RPC_ETHEREUM}"
 sepolia = "${RPC_SEPOLIA}"
 optimism = "${RPC_OPTIMISM}"
+optimism-sepolia = "${RPC_OPTIMISM_SEPOLIA}"
 polygon = "${RPC_POLYGON}"
-arbitrum = "${RPC_ARBITRUM}"
+polygon-amoy = "${RPC_POLYGON_AMOY}"
 base = "${RPC_BASE}"
+base-sepolia = "${RPC_BASE_SEPOLIA}"
+arbitrum = "${RPC_ARBITRUM}"
+arbitrum-sepolia = "${RPC_ARBITRUM_SEPOLIA}"
 
 [etherscan]
 ethereum = { key = "${ETHERSCAN_API_KEY_ETHEREUM}", url = "${ETHERSCAN_URL_ETHEREUM}" }
 sepolia = { key = "${ETHERSCAN_API_KEY_ETHEREUM}", url = "${ETHERSCAN_URL_SEPOLIA}" }
+optimism-sepolia = { key = "${ETHERSCAN_API_KEY_OPTIMISM}", url = "${ETHERSCAN_URL_OPTIMISM_SEPOLIA}" }
 optimism = { key = "${ETHERSCAN_API_KEY_OPTIMISM}", url = "${ETHERSCAN_URL_OPTIMISM}" }
 polygon = { key = "${ETHERSCAN_API_KEY_POLYGON}", url = "${ETHERSCAN_URL_POLYGON}" }
-arbitrum = { key = "${ETHERSCAN_API_KEY_ARBITRUM}", url = "${ETHERSCAN_URL_ARBITRUM}" }
+polygon-amoy = { key = "${ETHERSCAN_API_KEY_POLYGON}", url = "${ETHERSCAN_URL_POLYGON_AMOY}" }
 base = { key = "${ETHERSCAN_API_KEY_BASE}", url = "${ETHERSCAN_URL_BASE}" }
+base-sepolia = { key = "${ETHERSCAN_API_KEY_BASE}", url = "${ETHERSCAN_URL_BASE_SEPOLIA}" }
+arbitrum = { key = "${ETHERSCAN_API_KEY_ARBITRUM}", url = "${ETHERSCAN_URL_ARBITRUM}" }
+arbitrum-sepolia = { key = "${ETHERSCAN_API_KEY_ARBITRUM}", url = "${ETHERSCAN_URL_ARBITRUM_SEPOLIA}" }
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

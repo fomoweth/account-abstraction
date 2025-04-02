@@ -34,19 +34,17 @@ contract RegistryFactory is IRegistryFactory, AccountFactory, Ownable {
 		address implementation,
 		address bootstrap,
 		address registry,
-		address[] memory attesters,
-		uint8 threshold,
 		address initialOwner
 	) AccountFactory(implementation) {
 		assembly ("memory-safe") {
 			bootstrap := shr(0x60, shl(0x60, bootstrap))
-			if iszero(extcodesize(bootstrap)) {
+			if iszero(bootstrap) {
 				mstore(0x00, 0x5368eac9) // InvalidBootstrap()
 				revert(0x1c, 0x04)
 			}
 
 			registry := shr(0x60, shl(0x60, registry))
-			if iszero(extcodesize(registry)) {
+			if iszero(registry) {
 				mstore(0x00, 0x81e3306a) // InvalidERC7484Registry()
 				revert(0x1c, 0x04)
 			}
@@ -54,13 +52,12 @@ contract RegistryFactory is IRegistryFactory, AccountFactory, Ownable {
 
 		BOOTSTRAP = bootstrap;
 		REGISTRY = registry;
-		_initializeAttesters(registry, attesters, threshold);
 		_initializeOwner(initialOwner);
 	}
 
 	function createAccount(
 		bytes32 salt,
-		bytes calldata data
+		bytes calldata params
 	) public payable virtual override(IAccountFactory, AccountFactory) returns (address payable account) {
 		BootstrapConfig calldata rootValidator;
 		BootstrapConfig[] calldata validators;
@@ -69,24 +66,24 @@ contract RegistryFactory is IRegistryFactory, AccountFactory, Ownable {
 		BootstrapConfig[] calldata hooks;
 
 		assembly ("memory-safe") {
-			let ptr := add(data.offset, calldataload(data.offset))
+			let ptr := add(params.offset, calldataload(params.offset))
 			rootValidator := ptr
 
-			ptr := add(data.offset, calldataload(add(data.offset, 0x20)))
-			validators.length := calldataload(ptr)
+			ptr := add(params.offset, calldataload(add(params.offset, 0x20)))
 			validators.offset := add(ptr, 0x20)
+			validators.length := calldataload(ptr)
 
-			ptr := add(data.offset, calldataload(add(data.offset, 0x40)))
-			executors.length := calldataload(ptr)
+			ptr := add(params.offset, calldataload(add(params.offset, 0x40)))
 			executors.offset := add(ptr, 0x20)
+			executors.length := calldataload(ptr)
 
-			ptr := add(data.offset, calldataload(add(data.offset, 0x60)))
-			fallbacks.length := calldataload(ptr)
+			ptr := add(params.offset, calldataload(add(params.offset, 0x60)))
 			fallbacks.offset := add(ptr, 0x20)
+			fallbacks.length := calldataload(ptr)
 
-			ptr := add(data.offset, calldataload(add(data.offset, 0x80)))
-			hooks.length := calldataload(ptr)
+			ptr := add(params.offset, calldataload(add(params.offset, 0x80)))
 			hooks.offset := add(ptr, 0x20)
+			hooks.length := calldataload(ptr)
 		}
 
 		return createAccount(salt, rootValidator, validators, executors, fallbacks, hooks);
@@ -100,14 +97,14 @@ contract RegistryFactory is IRegistryFactory, AccountFactory, Ownable {
 		BootstrapConfig[] calldata fallbacks,
 		BootstrapConfig[] calldata hooks
 	) public payable virtual returns (address payable account) {
-		address[] memory trustedAttesters = getAttesters();
+		address[] memory attesters = getAttesters();
 		uint8 threshold = getThreshold();
 
-		_checkRegistry(REGISTRY, MODULE_TYPE_VALIDATOR, rootValidator.module, threshold, trustedAttesters);
+		_checkRegistry(REGISTRY, MODULE_TYPE_VALIDATOR, rootValidator.module, threshold, attesters);
 
 		uint256 length = validators.length;
 		for (uint256 i; i < length; ) {
-			_checkRegistry(REGISTRY, MODULE_TYPE_VALIDATOR, validators[i].module, threshold, trustedAttesters);
+			_checkRegistry(REGISTRY, MODULE_TYPE_VALIDATOR, validators[i].module, threshold, attesters);
 
 			unchecked {
 				i = i + 1;
@@ -116,7 +113,7 @@ contract RegistryFactory is IRegistryFactory, AccountFactory, Ownable {
 
 		length = executors.length;
 		for (uint256 i; i < length; ) {
-			_checkRegistry(REGISTRY, MODULE_TYPE_EXECUTOR, executors[i].module, threshold, trustedAttesters);
+			_checkRegistry(REGISTRY, MODULE_TYPE_EXECUTOR, executors[i].module, threshold, attesters);
 
 			unchecked {
 				i = i + 1;
@@ -125,7 +122,7 @@ contract RegistryFactory is IRegistryFactory, AccountFactory, Ownable {
 
 		length = fallbacks.length;
 		for (uint256 i; i < length; ) {
-			_checkRegistry(REGISTRY, MODULE_TYPE_FALLBACK, fallbacks[i].module, threshold, trustedAttesters);
+			_checkRegistry(REGISTRY, MODULE_TYPE_FALLBACK, fallbacks[i].module, threshold, attesters);
 
 			unchecked {
 				i = i + 1;
@@ -134,7 +131,7 @@ contract RegistryFactory is IRegistryFactory, AccountFactory, Ownable {
 
 		length = hooks.length;
 		for (uint256 i; i < length; ) {
-			_checkRegistry(REGISTRY, MODULE_TYPE_HOOK, hooks[i].module, threshold, trustedAttesters);
+			_checkRegistry(REGISTRY, MODULE_TYPE_HOOK, hooks[i].module, threshold, attesters);
 
 			unchecked {
 				i = i + 1;
@@ -148,7 +145,7 @@ contract RegistryFactory is IRegistryFactory, AccountFactory, Ownable {
 			fallbacks,
 			hooks,
 			REGISTRY,
-			trustedAttesters,
+			attesters,
 			threshold
 		);
 
