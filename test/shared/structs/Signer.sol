@@ -170,7 +170,7 @@ library SignerLib {
 
 	function sign(Signer memory signer, bytes32 messageHash) internal pure returns (bytes memory signature) {
 		(uint8 v, bytes32 r, bytes32 s) = vm.sign(signer.privateKey, messageHash.toEthSignedMessageHash());
-		signature = abi.encodePacked(r, s, v);
+		return bytes.concat(r, s, bytes1(v));
 	}
 
 	// nonce: [1 bytes validation mode][3 bytes unused][20 bytes validator][8 bytes nonce]
