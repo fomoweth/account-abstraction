@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {IMetaFactory} from "src/interfaces/factories/IMetaFactory.sol";
+import {IModuleFactory} from "src/interfaces/factories/IModuleFactory.sol";
 import {Execution} from "src/libraries/ExecutionLib.sol";
 import {Currency} from "src/types/Currency.sol";
 import {ModuleType} from "src/types/Types.sol";
@@ -55,7 +55,7 @@ contract UniversalExecutor is ExecutorBase, ReentrancyGuard {
 	Currency public immutable WRAPPED_NATIVE;
 
 	constructor() {
-		bytes memory context = IMetaFactory(msg.sender).parameters();
+		bytes memory context = IModuleFactory(msg.sender).parameters();
 		Currency wrappedNative;
 
 		assembly ("memory-safe") {

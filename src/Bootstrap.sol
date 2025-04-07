@@ -100,11 +100,11 @@ contract Bootstrap is IBootstrap, ModuleManager {
 		);
 	}
 
-	function name() public pure virtual returns (string memory) {
+	function name() external pure returns (string memory) {
 		return "VortexBootstrap";
 	}
 
-	function version() public pure virtual returns (string memory) {
+	function version() external pure returns (string memory) {
 		return "1.0.0";
 	}
 }

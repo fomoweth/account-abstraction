@@ -18,15 +18,18 @@ contract RegistryFactory is IRegistryFactory, AccountFactory, Ownable {
 	bytes32 private constant ATTESTERS_CONFIGURED_TOPIC =
 		0xc14f893b670961f12951ae84c405bc2e99f77d9000a2ae42a34adfa0dbd429b5;
 
-	/// @dev keccak256(abi.encode(uint256(keccak256("eip7579.factory.attesters")) - 1)) & ~bytes32(uint256(0xff))
+	/// @dev keccak256(abi.encode(uint256(keccak256("eip7579.RegistryFactory.attesters")) - 1)) & ~bytes32(uint256(0xff))
 	bytes32 private constant ATTESTERS_STORAGE_SLOT =
-		0x591d670101e679b166bb53529c21081533156f5a77b025e5e95f23dd51cbd500;
+		0x6dbbf25f3a1b1366b2be6e25e98547cb61197fa0f5ea2bbd16d057837cdc2900;
 
-	/// @dev keccak256(abi.encode(uint256(keccak256("eip7579.factory.threshold")) - 1)) & ~bytes32(uint256(0xff))
+	/// @dev keccak256(abi.encode(uint256(keccak256("eip7579.RegistryFactory.threshold")) - 1)) & ~bytes32(uint256(0xff))
 	bytes32 private constant THRESHOLD_STORAGE_SLOT =
-		0xbd0973d179e1f52a52f8122a9dbb94f0219248b29ce16d6f17a987d4a467a200;
+		0x2c69bed17a320cf93ace216d89a2bd4fd1924ca004484d8437f8e5b77a684100;
 
-	address public immutable BOOTSTRAP;
+	/// @dev keccak256(abi.encode(uint256(keccak256("eip7579.RegistryFactory.registry")) - 1)) & ~bytes32(uint256(0xff))
+	bytes32 private constant REGISTRY_STORAGE_SLOT = 0x35566c59a8155c9041c7db8e00a9659ad02c6f3901759bb4c08f38d450348700;
+
+	IBootstrap public immutable BOOTSTRAP;
 
 	address public immutable REGISTRY;
 
@@ -50,7 +53,7 @@ contract RegistryFactory is IRegistryFactory, AccountFactory, Ownable {
 			}
 		}
 
-		BOOTSTRAP = bootstrap;
+		BOOTSTRAP = IBootstrap(bootstrap);
 		REGISTRY = registry;
 		_initializeOwner(initialOwner);
 	}
@@ -138,7 +141,7 @@ contract RegistryFactory is IRegistryFactory, AccountFactory, Ownable {
 			}
 		}
 
-		bytes memory initializer = IBootstrap(BOOTSTRAP).getInitializeCalldata(
+		bytes memory initializer = BOOTSTRAP.getInitializeCalldata(
 			rootValidator,
 			validators,
 			executors,
