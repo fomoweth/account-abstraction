@@ -28,7 +28,16 @@ contract STETHWrapper is FallbackBase {
 			}
 
 			stETH := shr(0x60, shl(0x60, mload(add(context, 0x20))))
+			if iszero(stETH) {
+				mstore(0x00, 0x421ab6d7) // InvalidSTETH()
+				revert(0x1c, 0x04)
+			}
+
 			wstETH := shr(0x60, shl(0x60, mload(add(context, 0x40))))
+			if iszero(wstETH) {
+				mstore(0x00, 0xa5eefc26) // InvalidWSTETH()
+				revert(0x1c, 0x04)
+			}
 		}
 
 		STETH = stETH;
@@ -65,11 +74,6 @@ contract STETHWrapper is FallbackBase {
 
 	function _wrapSTETH(Currency stETH, uint256 amount) internal virtual {
 		assembly ("memory-safe") {
-			if iszero(stETH) {
-				mstore(0x00, 0x226f153d) // UnsupportedExecution()
-				revert(0x1c, 0x04)
-			}
-
 			if lt(selfbalance(), amount) {
 				mstore(0x00, 0xf4d678b8) // InsufficientBalance()
 				revert(0x1c, 0x04)
