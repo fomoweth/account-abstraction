@@ -2,7 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {stdJson} from "forge-std/Script.sol";
-import {BaseScript} from "script/deploy/BaseScript.s.sol";
+import {BaseScript} from "script/BaseScript.s.sol";
 import {Deploy, RegistryFactory} from "test/shared/utils/Deploy.sol";
 
 contract DeployRegistryFactory is BaseScript {
@@ -19,9 +19,7 @@ contract DeployRegistryFactory is BaseScript {
 		);
 
 		string memory output = "deployment";
-		output = constructJson(address(factory), broadcaster, salt);
+		output = constructJson(address(factory), broadcaster, salt, vm.getBlockTimestamp());
 		output.write(getDeploymentsPath(chainAlias()), ".deployments.RegistryFactory");
-
-		getMetaFactory().authorize(address(factory));
 	}
 }

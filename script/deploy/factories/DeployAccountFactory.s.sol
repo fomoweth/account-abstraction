@@ -2,7 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {stdJson} from "forge-std/Script.sol";
-import {BaseScript} from "script/deploy/BaseScript.s.sol";
+import {BaseScript} from "script/BaseScript.s.sol";
 import {Deploy, AccountFactory} from "test/shared/utils/Deploy.sol";
 
 contract DeployAccountFactory is BaseScript {
@@ -13,9 +13,7 @@ contract DeployAccountFactory is BaseScript {
 		factory = Deploy.accountFactory(salt, getAddress("Vortex"));
 
 		string memory output = "deployment";
-		output = constructJson(address(factory), broadcaster, salt);
+		output = constructJson(address(factory), broadcaster, salt, vm.getBlockTimestamp());
 		output.write(getDeploymentsPath(chainAlias()), ".deployments.AccountFactory");
-
-		getMetaFactory().authorize(address(factory));
 	}
 }

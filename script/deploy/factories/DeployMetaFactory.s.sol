@@ -2,7 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {stdJson} from "forge-std/StdJson.sol";
-import {BaseScript} from "script/deploy/BaseScript.s.sol";
+import {BaseScript} from "script/BaseScript.s.sol";
 import {Deploy, MetaFactory} from "test/shared/utils/Deploy.sol";
 
 contract DeployMetaFactory is BaseScript {
@@ -13,7 +13,7 @@ contract DeployMetaFactory is BaseScript {
 		factory = Deploy.metaFactory(salt, broadcaster);
 
 		string memory output = "deployment";
-		output = constructJson(address(factory), broadcaster, salt);
+		output = constructJson(address(factory), broadcaster, salt, vm.getBlockTimestamp());
 		output.write(getDeploymentsPath(chainAlias()), ".deployments.MetaFactory");
 	}
 }

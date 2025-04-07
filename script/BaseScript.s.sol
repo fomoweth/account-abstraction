@@ -2,9 +2,10 @@
 pragma solidity ^0.8.28;
 
 import {Script, console2 as console, stdJson} from "forge-std/Script.sol";
+import {IEntryPoint} from "account-abstraction/interfaces/IEntryPoint.sol";
 import {IRegistry} from "src/interfaces/registries/IRegistry.sol";
-import {ModuleType, ResolverUID, SchemaUID} from "src/types/Types.sol";
 import {MetaFactory} from "src/factories/MetaFactory.sol";
+import {ModuleFactory} from "src/factories/ModuleFactory.sol";
 import {Deploy} from "test/shared/utils/Deploy.sol";
 
 abstract contract BaseScript is Script {
@@ -30,16 +31,12 @@ abstract contract BaseScript is Script {
 	uint256 internal constant ARBITRUM_CHAIN_ID = 42161;
 	uint256 internal constant ARBITRUM_SEPOLIA_CHAIN_ID = 421614;
 
-	address internal constant ENTRYPOINT = 0x0000000071727De22E5E9d8BAf0edAc6f37da032;
+	IEntryPoint internal constant ENTRYPOINT = IEntryPoint(0x0000000071727De22E5E9d8BAf0edAc6f37da032);
 
 	/// @dev Rhinestone Registry
 	IRegistry internal constant REGISTRY = IRegistry(0x000000000069E2a187AEFFb852bF3cCdC95151B2);
 
-	ResolverUID internal constant RESOLVER_UID =
-		ResolverUID.wrap(0xdbca873b13c783c0c9c6ddfc4280e505580bf6cc3dac83f8a0f7b44acaafca4f);
-
-	SchemaUID internal constant SCHEMA_UID =
-		SchemaUID.wrap(0x93d46fcca4ef7d66a413c7bde08bb1ff14bacbd04c4069bb24cd7c21729d7bf1);
+	bytes32 internal constant RESOLVER_UID = 0xdbca873b13c783c0c9c6ddfc4280e505580bf6cc3dac83f8a0f7b44acaafca4f;
 
 	address internal broadcaster = vm.rememberKey(configurePrivateKey());
 
@@ -49,46 +46,6 @@ abstract contract BaseScript is Script {
 		vm.startBroadcast(broadcaster);
 		_;
 		vm.stopBroadcast();
-	}
-
-	function isEthereum() internal view virtual returns (bool) {
-		return block.chainid == ETHEREUM_CHAIN_ID;
-	}
-
-	function isSepolia() internal view virtual returns (bool) {
-		return block.chainid == SEPOLIA_CHAIN_ID;
-	}
-
-	function isOptimism() internal view virtual returns (bool) {
-		return block.chainid == OPTIMISM_CHAIN_ID;
-	}
-
-	function isOptimismSepolia() internal view virtual returns (bool) {
-		return block.chainid == OPTIMISM_SEPOLIA_CHAIN_ID;
-	}
-
-	function isPolygon() internal view virtual returns (bool) {
-		return block.chainid == POLYGON_CHAIN_ID;
-	}
-
-	function isPolygonAmoy() internal view virtual returns (bool) {
-		return block.chainid == POLYGON_AMOY_CHAIN_ID;
-	}
-
-	function isBase() internal view virtual returns (bool) {
-		return block.chainid == BASE_CHAIN_ID;
-	}
-
-	function isBaseSepolia() internal view virtual returns (bool) {
-		return block.chainid == BASE_SEPOLIA_CHAIN_ID;
-	}
-
-	function isArbitrum() internal view virtual returns (bool) {
-		return block.chainid == ARBITRUM_CHAIN_ID;
-	}
-
-	function isArbitrumSepolia() internal view virtual returns (bool) {
-		return block.chainid == ARBITRUM_SEPOLIA_CHAIN_ID;
 	}
 
 	function setUp() public virtual {
@@ -118,16 +75,34 @@ abstract contract BaseScript is Script {
 	function constructJson(
 		address instance,
 		address deployer,
-		bytes32 salt
+		bytes32 salt,
+		uint256 timestamp
+	) internal virtual returns (string memory output) {
+		if (instance == address(0)) (deployer, salt, timestamp) = (address(0), bytes32(0), uint256(0));
+
+		output = "deployment";
+		output.serialize("address", instance);
+		output.serialize("deployer", deployer);
+		output.serialize("salt", salt);
+		return output.serialize("timestamp", timestamp);
+	}
+
+	function constructJson(
+		address instance,
+		address deployer,
+		bytes32 salt,
+		bytes32 txHash,
+		uint256 timestamp
 	) internal virtual returns (string memory output) {
 		output = "deployment";
 		output.serialize("address", instance);
 		output.serialize("deployer", deployer);
 		output.serialize("salt", salt);
-		return output.serialize("timestamp", instance != address(0) ? block.timestamp : 0);
+		output.serialize("txHash", txHash);
+		return output.serialize("timestamp", timestamp);
 	}
 
-	function getAddress(string memory name) internal view returns (address a) {
+	function getAddress(string memory name) internal view virtual returns (address a) {
 		string memory key = string.concat(".deployments.", name, ".address");
 		require((a = config.readAddress(key)) != address(0), ContractNotExists(name));
 	}
@@ -139,11 +114,11 @@ abstract contract BaseScript is Script {
 	}
 
 	function getDeploymentsPath(string memory key) internal view virtual returns (string memory) {
-		return string.concat(vm.projectRoot(), "/deployments/", key, ".json");
+		return string.concat("deployments/", key, ".json");
 	}
 
-	function getMetaFactory() internal view returns (MetaFactory) {
-		return MetaFactory(payable(getAddress("MetaFactory")));
+	function getModuleFactory() internal view virtual returns (ModuleFactory) {
+		return ModuleFactory(getAddress("ModuleFactory"));
 	}
 
 	function chainAlias() internal view virtual returns (string memory) {
@@ -197,24 +172,6 @@ abstract contract BaseScript is Script {
 			return 0x980B62Da83eFf3D4576C647993b0c1D7faf17c73;
 		} else {
 			revert UnsupportedChain(chainId);
-		}
-	}
-
-	function stETH() internal view virtual returns (address token) {
-		uint256 chainId = block.chainid;
-		if (chainId == ETHEREUM_CHAIN_ID) {
-			token = 0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84;
-		} else if (chainId == SEPOLIA_CHAIN_ID) {
-			token = 0x3e3FE7dBc6B4C189E7128855dD526361c49b40Af;
-		}
-	}
-
-	function wstETH() internal view virtual returns (address token) {
-		uint256 chainId = block.chainid;
-		if (chainId == ETHEREUM_CHAIN_ID) {
-			token = 0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0;
-		} else if (chainId == SEPOLIA_CHAIN_ID) {
-			token = 0xB82381A3fBD3FaFA77B3a7bE693342618240067b;
 		}
 	}
 
