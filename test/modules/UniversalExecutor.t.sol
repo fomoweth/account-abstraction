@@ -58,7 +58,7 @@ contract UniversalExecutorTest is BaseTest {
 	function setUp() public virtual override {
 		super.setUp();
 
-		deployVortex(ALICE, 0, INITIAL_VALUE, address(K1_FACTORY), true);
+		deployVortex(ALICE, 0, address(K1_FACTORY), true);
 
 		ALICE.install(
 			TYPE_EXECUTOR,
@@ -72,7 +72,7 @@ contract UniversalExecutorTest is BaseTest {
 	}
 
 	function test_installation() public virtual {
-		deployVortex(MURPHY, 0, INITIAL_VALUE, address(ACCOUNT_FACTORY), false);
+		deployVortex(MURPHY, 0, address(ACCOUNT_FACTORY), false);
 
 		MURPHY.install(
 			TYPE_EXECUTOR,

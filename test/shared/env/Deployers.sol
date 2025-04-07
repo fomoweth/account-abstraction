@@ -7,18 +7,19 @@ import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOper
 import {Arrays} from "src/libraries/Arrays.sol";
 import {BootstrapLib, BootstrapConfig} from "src/libraries/BootstrapLib.sol";
 import {CallType, ExecType} from "src/types/ExecutionMode.sol";
-import {ModuleTypeLib, ModuleType, PackedModuleTypes} from "src/types/ModuleType.sol";
+import {ModuleTypeLib, ModuleType} from "src/types/ModuleType.sol";
+
+import {AccountFactory} from "src/factories/AccountFactory.sol";
+import {K1ValidatorFactory} from "src/factories/K1ValidatorFactory.sol";
+import {MetaFactory} from "src/factories/MetaFactory.sol";
+import {ModuleFactory} from "src/factories/ModuleFactory.sol";
+import {RegistryFactory} from "src/factories/RegistryFactory.sol";
 
 import {Permit2Executor} from "src/modules/executors/Permit2Executor.sol";
 import {UniversalExecutor} from "src/modules/executors/UniversalExecutor.sol";
 import {NativeWrapper} from "src/modules/fallbacks/NativeWrapper.sol";
 import {STETHWrapper} from "src/modules/fallbacks/STETHWrapper.sol";
 import {K1Validator} from "src/modules/validators/K1Validator.sol";
-
-import {AccountFactory} from "src/factories/AccountFactory.sol";
-import {MetaFactory} from "src/factories/MetaFactory.sol";
-import {RegistryFactory} from "src/factories/RegistryFactory.sol";
-import {K1ValidatorFactory} from "src/factories/K1ValidatorFactory.sol";
 
 import {Bootstrap} from "src/Bootstrap.sol";
 import {Vortex} from "src/Vortex.sol";
@@ -40,10 +41,13 @@ abstract contract Deployers is Test, Configured, Constants {
 	using Arrays for address[];
 	using BootstrapLib for address;
 	using BootstrapLib for BootstrapConfig;
+	using Deploy for bytes32;
+	using Deploy for ModuleFactory;
 	using ModuleTypeLib for ModuleType[];
 	using SolArray for *;
 
 	bytes32 internal constant SALT = 0x0000000000000000000000000000000000000000000000000000000000007579;
+	bytes32 internal constant RESOLVER_UID = 0xdbca873b13c783c0c9c6ddfc4280e505580bf6cc3dac83f8a0f7b44acaafca4f;
 
 	uint256 internal constant INITIAL_BALANCE = 1000 ether;
 	uint256 internal constant INITIAL_VALUE = 100 ether;
@@ -61,6 +65,7 @@ abstract contract Deployers is Test, Configured, Constants {
 	NativeWrapper internal NATIVE_WRAPPER;
 	STETHWrapper internal STETH_WRAPPER;
 
+	ModuleFactory internal MODULE_FACTORY;
 	MetaFactory internal META_FACTORY;
 	AccountFactory internal ACCOUNT_FACTORY;
 	K1ValidatorFactory internal K1_FACTORY;
@@ -87,20 +92,19 @@ abstract contract Deployers is Test, Configured, Constants {
 	}
 
 	function setUpAccounts() internal virtual {
-		deployVortex(ALICE, 0, INITIAL_VALUE, address(K1_FACTORY), true);
-		deployVortex(COOPER, 0, INITIAL_VALUE, address(REGISTRY_FACTORY), true);
-		deployVortex(MURPHY, 0, INITIAL_VALUE, address(ACCOUNT_FACTORY), false);
+		deployVortex(ALICE, 0, address(K1_FACTORY), true);
+		deployVortex(COOPER, 0, address(REGISTRY_FACTORY), true);
+		deployVortex(MURPHY, 0, address(ACCOUNT_FACTORY), false);
 	}
 
 	function setUpSigners() internal virtual {
-		ADMIN = createSigner("Admin", "");
-		BUNDLER = createSigner("Bundler", "", INITIAL_BALANCE, 100 ether, 10 ether);
+		ADMIN = createSigner("Admin", "", 0, 0);
+		BUNDLER = createSigner("Bundler", "", 100 ether, 10 ether);
+		ALICE = createSigner("Alice", "wonderland", 0, 0);
+		COOPER = createSigner("Cooper", "gargantua", 0, 0);
+		MURPHY = createSigner("Murphy", "gravity.eq", 0, 0);
 
-		ALICE = createSigner("Alice", "wonderland");
-		COOPER = createSigner("Cooper", "gargantua");
-		MURPHY = createSigner("Murphy", "gravity.eq");
-
-		(ATTESTERS, ATTESTER_ADDRESSES) = createAttesters("Attester", THRESHOLD + 1, INITIAL_BALANCE);
+		(ATTESTERS, ATTESTER_ADDRESSES) = createAttesters(THRESHOLD + 1);
 	}
 
 	function setUpContracts() internal virtual {
@@ -110,20 +114,17 @@ abstract contract Deployers is Test, Configured, Constants {
 	}
 
 	function labelContracts() internal virtual {
+		labelCurrencies();
 		vm.label(address(ENTRYPOINT), "EntryPoint");
 		vm.label(address(REGISTRY), "Registry");
 		vm.label(address(SMART_SESSION), "SmartSession");
 		vm.label(address(PERMIT2), "Permit2");
-		labelCurrencies();
 	}
 
 	function deployContracts() internal virtual impersonate(ADMIN, false) {
-		META_FACTORY = Deploy.metaFactory(SALT, ADMIN.eoa);
-		META_FACTORY.addStake{value: DEFAULT_VALUE}(address(ENTRYPOINT), DEFAULT_STAKE_DELAY);
-
-		VORTEX = Deploy.vortex(SALT);
-		BOOTSTRAP = Deploy.bootstrap(SALT);
-
+		label(address(META_FACTORY = SALT.metaFactory(ADMIN.eoa)), "MetaFactory");
+		label(address(VORTEX = SALT.vortex()), "VortexImplementation");
+		label(address(BOOTSTRAP = SALT.bootstrap()), "Bootstrap");
 		deployModules();
 		deployFactories();
 	}
@@ -131,20 +132,19 @@ abstract contract Deployers is Test, Configured, Constants {
 	function deployVortex(
 		Signer storage signer,
 		uint16 id,
-		uint256 value,
 		address factory,
 		bool useRegistry
 	) internal virtual returns (Vortex) {
 		bytes32 salt = signer.encodeSalt(id);
 		address payable account = META_FACTORY.computeAddress(factory, salt);
-		vm.assertEq(account.code.length, 0);
+		vm.assertTrue(account != address(0) && account.code.length == 0);
 
 		bytes memory initCode = getAccountInitCode(signer.eoa, salt, factory, true, useRegistry);
 
 		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
 		(userOps[0], ) = signer.prepareUserOp(account, initCode, address(K1_VALIDATOR));
 
-		ENTRYPOINT.depositTo{value: value}(account);
+		ENTRYPOINT.depositTo{value: INITIAL_VALUE}(account);
 		ENTRYPOINT.handleOps(userOps, signer.eoa);
 
 		vm.assertEq((signer.account = Vortex(account)).rootValidator(), address(K1_VALIDATOR));
@@ -238,118 +238,102 @@ abstract contract Deployers is Test, Configured, Constants {
 	}
 
 	function deployFactories() internal virtual {
-		ACCOUNT_FACTORY = Deploy.accountFactory(SALT, address(VORTEX));
+		label(address(ACCOUNT_FACTORY = SALT.accountFactory(address(VORTEX))), "AccountFactory");
 
-		K1_FACTORY = Deploy.k1ValidatorFactory(SALT, address(VORTEX), address(BOOTSTRAP), address(K1_VALIDATOR));
+		label(
+			address(K1_FACTORY = SALT.k1ValidatorFactory(address(VORTEX), address(BOOTSTRAP), address(K1_VALIDATOR))),
+			"K1ValidatorFactory"
+		);
 
-		REGISTRY_FACTORY = Deploy.registryFactory(
-			SALT,
-			address(VORTEX),
-			address(BOOTSTRAP),
-			address(REGISTRY),
-			ADMIN.eoa
+		label(
+			address(
+				REGISTRY_FACTORY = SALT.registryFactory(
+					address(VORTEX),
+					address(BOOTSTRAP),
+					address(REGISTRY),
+					ADMIN.eoa
+				)
+			),
+			"RegistryFactory"
 		);
 	}
 
 	function setUpFactories() internal virtual impersonate(ADMIN, false) {
+		META_FACTORY.addStake{value: DEFAULT_VALUE}(address(ENTRYPOINT), DEFAULT_STAKE_DELAY);
 		META_FACTORY.authorize(address(ACCOUNT_FACTORY));
-		META_FACTORY.authorize(address(REGISTRY_FACTORY));
 		META_FACTORY.authorize(address(K1_FACTORY));
-
+		META_FACTORY.authorize(address(REGISTRY_FACTORY));
 		REGISTRY_FACTORY.configureAttesters(ATTESTER_ADDRESSES, THRESHOLD);
 	}
 
 	function deployModules() internal virtual {
-		deployValidators();
-		deployExecutors();
-		deployFallbacks();
-		deployHooks();
+		MODULE_FACTORY = Deploy.moduleFactory(SALT, address(REGISTRY), RESOLVER_UID);
+
+		uint256 length = isEthereum() ? 5 : 4;
+		address[] memory modules = new address[](length);
+		ModuleType[][] memory moduleTypeIds = new ModuleType[][](length);
+
+		modules[0] = label(address(K1_VALIDATOR = MODULE_FACTORY.k1Validator(SALT)), "K1Validator");
+		moduleTypeIds[0] = TYPE_VALIDATOR.moduleTypes(TYPE_STATELESS_VALIDATOR);
+
+		modules[1] = label(address(PERMIT2_EXECUTOR = MODULE_FACTORY.permit2Executor(SALT)), "Permit2Executor");
+		moduleTypeIds[1] = TYPE_EXECUTOR.moduleTypes();
+
+		modules[2] = label(
+			address(UNIVERSAL_EXECUTOR = MODULE_FACTORY.universalExecutor(SALT, WNATIVE.toAddress())),
+			"UniversalExecutor"
+		);
+		moduleTypeIds[2] = TYPE_EXECUTOR.moduleTypes();
+
+		modules[3] = label(
+			address(NATIVE_WRAPPER = MODULE_FACTORY.nativeWrapper(SALT, WNATIVE.toAddress())),
+			"NativeWrapper"
+		);
+		moduleTypeIds[3] = TYPE_FALLBACK.moduleTypes();
+
+		if (length == 5) {
+			modules[4] = label(
+				address(STETH_WRAPPER = MODULE_FACTORY.stETHWrapper(SALT, STETH.toAddress(), WSTETH.toAddress())),
+				"STETHWrapper"
+			);
+			moduleTypeIds[4] = TYPE_FALLBACK.moduleTypes();
+		}
+
+		for (uint256 i; i < ATTESTERS.length; ++i) {
+			ATTESTERS[i].attest(modules, moduleTypeIds);
+		}
+
 		deployMockModules();
 	}
 
-	function deployValidators() internal virtual {
-		registerModule(
-			address(K1_VALIDATOR = Deploy.k1Validator(SALT)),
-			TYPE_VALIDATOR.moduleTypes(TYPE_STATELESS_VALIDATOR)
-		);
-	}
-
-	function deployExecutors() internal virtual {
-		registerModule(address(PERMIT2_EXECUTOR = Deploy.permit2Executor(SALT)), TYPE_EXECUTOR.moduleTypes());
-
-		registerModule(
-			address(UNIVERSAL_EXECUTOR = Deploy.universalExecutor(META_FACTORY, SALT, WNATIVE.toAddress())),
-			TYPE_EXECUTOR.moduleTypes()
-		);
-	}
-
-	function deployFallbacks() internal virtual {
-		registerModule(
-			address(NATIVE_WRAPPER = Deploy.nativeWrapper(META_FACTORY, SALT, WNATIVE.toAddress())),
-			TYPE_FALLBACK.moduleTypes()
-		);
-
-		if (isEthereum()) {
-			registerModule(
-				address(STETH_WRAPPER = Deploy.stETHWrapper(META_FACTORY, SALT, STETH.toAddress(), WSTETH.toAddress())),
-				TYPE_FALLBACK.moduleTypes()
-			);
-		}
-	}
-
-	function deployHooks() internal virtual {}
-
 	function deployMockModules() internal virtual {
 		MOCK_VALIDATOR = MockValidator(
-			deployModule(SALT, "MockValidator", "", TYPE_VALIDATOR.moduleTypes(TYPE_STATELESS_VALIDATOR), true)
+			deployModule("MockValidator", "", TYPE_VALIDATOR.moduleTypes(TYPE_STATELESS_VALIDATOR))
 		);
 
-		MOCK_EXECUTOR = MockExecutor(deployModule(SALT, "MockExecutor", "", TYPE_EXECUTOR.moduleTypes(), true));
+		MOCK_EXECUTOR = MockExecutor(deployModule("MockExecutor", "", TYPE_EXECUTOR.moduleTypes()));
 
-		MOCK_FALLBACK = MockFallback(deployModule(SALT, "MockFallback", "", TYPE_FALLBACK.moduleTypes(), true));
+		MOCK_FALLBACK = MockFallback(deployModule("MockFallback", "", TYPE_FALLBACK.moduleTypes()));
 
-		MOCK_HOOK = MockHook(deployModule(SALT, "MockHook", "", TYPE_HOOK.moduleTypes(), true));
+		MOCK_HOOK = MockHook(deployModule("MockHook", "", TYPE_HOOK.moduleTypes()));
 	}
 
 	function deployModule(
-		bytes32 salt,
 		string memory name,
 		bytes memory args,
-		ModuleType[] memory moduleTypeIds,
-		bool useRegistry
-	) internal returns (address module) {
-		if (useRegistry) {
-			bytes memory initCode = abi.encodePacked(Deploy.getCode(name), args);
-			vm.label((module = REGISTRY.deployModule(salt, RESOLVER_UID, initCode, "", "")), name);
-		} else {
-			bytes memory bytecode = abi.encodePacked(Deploy.getCode(name));
-			vm.label((module = META_FACTORY.deployModule(salt, bytecode, args)), name);
-			REGISTRY.registerModule(RESOLVER_UID, module, "", "");
-		}
+		ModuleType[] memory moduleTypeIds
+	) internal virtual returns (address module) {
+		bytes memory bytecode = vm.getCode(string.concat(name, ".sol:", name));
+		vm.label((module = MODULE_FACTORY.deployModule(SALT, bytecode, args)), name);
 
 		for (uint256 i; i < ATTESTERS.length; ++i) {
 			ATTESTERS[i].attest(module, moduleTypeIds);
 		}
-	}
-
-	function registerModule(address module, ModuleType[] memory moduleTypeIds) internal returns (address) {
-		REGISTRY.registerModule(RESOLVER_UID, module, "", "");
-
-		for (uint256 i; i < ATTESTERS.length; ++i) {
-			ATTESTERS[i].attest(module, moduleTypeIds);
-		}
-
-		return module;
-	}
-
-	function createSigner(string memory name, bytes10 keyword) internal virtual returns (Signer memory signer) {
-		return createSigner(name, keyword, INITIAL_BALANCE, 0, 0);
 	}
 
 	function createSigner(
 		string memory name,
 		bytes10 keyword,
-		uint256 value,
 		uint256 deposit,
 		uint256 stake
 	) internal virtual returns (Signer memory signer) {
@@ -358,37 +342,36 @@ abstract contract Deployers is Test, Configured, Constants {
 		signer.eoa = payable(vm.addr(signer.privateKey));
 		signer.keyword = keyword;
 
-		vm.deal(signer.eoa, value + deposit + stake);
+		vm.deal(signer.eoa, INITIAL_BALANCE + deposit + stake);
 		vm.label(signer.eoa, name);
 
 		if (deposit != 0) signer.addDeposit(deposit, signer.eoa);
-		if (stake != 0) signer.addStake(stake, 1 weeks);
+		if (stake != 0) signer.addStake(stake, DEFAULT_STAKE_DELAY);
 	}
 
 	function createAttesters(
-		string memory prefix,
-		uint256 count,
-		uint256 value
+		uint256 length
 	) internal virtual returns (Attester[] memory attesters, address[] memory addresses) {
-		uint256 privateKey = encodePrivateKey(prefix);
+		string memory prefix = "Attester";
+		uint256 key = encodePrivateKey(prefix);
 
-		attesters = new Attester[](count);
-		addresses = new address[](count);
+		attesters = new Attester[](length);
+		addresses = new address[](length);
 
-		for (uint256 i; i < count; ++i) {
+		for (uint256 i; i < length; ++i) {
 			vm.deal(
-				addresses[i] = attesters[i].eoa = payable(vm.addr(attesters[i].privateKey = privateKey + i)),
-				value
+				addresses[i] = attesters[i].eoa = payable(vm.addr(attesters[i].privateKey = key + i)),
+				INITIAL_BALANCE
 			);
 		}
 
 		addresses.insertionSort();
 		addresses.uniquifySorted();
 
-		for (uint256 i; i < count; ++i) {
+		for (uint256 i; i < length; ++i) {
 			vm.label(addresses[i], string.concat(prefix, " #", vm.toString(i)));
 
-			for (uint256 j = i; j < count; ++j) {
+			for (uint256 j = i; j < length; ++j) {
 				if (attesters[j].eoa == addresses[i]) {
 					Attester memory attester = attesters[j];
 					attesters[j] = attesters[i];

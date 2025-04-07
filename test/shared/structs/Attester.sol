@@ -2,9 +2,8 @@
 pragma solidity ^0.8.28;
 
 import {Vm} from "forge-std/Vm.sol";
-import {IRegistry, AttestationRecord, AttestationRequest} from "src/interfaces/registries/IRegistry.sol";
-import {ModuleTypeLib, ModuleType, PackedModuleTypes} from "src/types/ModuleType.sol";
-import {SchemaUID} from "src/types/UID.sol";
+import {IRegistry, AttestationRequest} from "src/interfaces/registries/IRegistry.sol";
+import {ModuleType, SchemaUID} from "src/types/Types.sol";
 
 using AttestationLib for Attester global;
 
@@ -14,8 +13,6 @@ struct Attester {
 }
 
 library AttestationLib {
-	using ModuleTypeLib for ModuleType[];
-
 	Vm internal constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
 
 	IRegistry internal constant REGISTRY = IRegistry(0x000000000069E2a187AEFFb852bF3cCdC95151B2);
@@ -33,15 +30,33 @@ library AttestationLib {
 
 		uint256 nonce = REGISTRY.attesterNonce(attester.eoa);
 		bytes32 digest = REGISTRY.getDigest(request, attester.eoa);
-		bytes memory signature = sign(attester, digest);
+		bytes memory signature = attester.sign(digest);
 
 		REGISTRY.attest(SCHEMA_UID, attester.eoa, request, signature);
 		vm.assertEq(REGISTRY.attesterNonce(attester.eoa), nonce + 1);
+	}
 
-		AttestationRecord memory record = REGISTRY.findAttestation(request.module, attester.eoa);
-		vm.assertEq(record.attester, attester.eoa);
-		vm.assertEq(record.module, request.module);
-		vm.assertTrue(record.moduleTypes == request.moduleTypes.encode());
+	function attest(Attester memory attester, address[] memory modules, ModuleType[][] memory moduleTypes) internal {
+		uint256 length = modules.length;
+		vm.assertEq(length, moduleTypes.length);
+
+		AttestationRequest[] memory requests = new AttestationRequest[](length);
+
+		for (uint256 i; i < length; ++i) {
+			requests[i] = AttestationRequest({
+				module: modules[i],
+				expirationTime: 0,
+				data: "",
+				moduleTypes: moduleTypes[i]
+			});
+		}
+
+		uint256 nonce = REGISTRY.attesterNonce(attester.eoa);
+		bytes32 digest = REGISTRY.getDigest(requests, attester.eoa);
+		bytes memory signature = attester.sign(digest);
+
+		REGISTRY.attest(SCHEMA_UID, attester.eoa, requests, signature);
+		vm.assertEq(REGISTRY.attesterNonce(attester.eoa), nonce + 1);
 	}
 
 	function sign(Attester memory attester, bytes32 hash) internal pure returns (bytes memory signature) {

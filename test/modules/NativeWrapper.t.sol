@@ -16,7 +16,7 @@ contract NativeWrapperTest is BaseTest {
 	function setUp() public virtual override {
 		super.setUp();
 
-		deployVortex(ALICE, 0, INITIAL_VALUE, address(K1_FACTORY), true);
+		deployVortex(ALICE, 0, address(K1_FACTORY), true);
 
 		bytes4[] memory selectors = NativeWrapper.wrapETH.selector.bytes4s(NativeWrapper.unwrapWETH.selector);
 

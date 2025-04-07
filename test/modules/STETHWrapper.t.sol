@@ -17,7 +17,7 @@ contract STETHWrapperTest is BaseTest {
 	function setUp() public virtual override onlyEthereum {
 		super.setUp();
 
-		deployVortex(ALICE, 0, INITIAL_VALUE, address(K1_FACTORY), true);
+		deployVortex(ALICE, 0, address(K1_FACTORY), true);
 
 		bytes4[] memory selectors = STETHWrapper.wrapSTETH.selector.bytes4s(
 			STETHWrapper.wrapWSTETH.selector,

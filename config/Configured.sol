@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {Vm} from "lib/forge-std/src/Vm.sol";
 import {stdJson} from "lib/forge-std/src/StdJson.sol";
+import {Vm} from "lib/forge-std/src/Vm.sol";
 import {MetadataLib} from "src/libraries/MetadataLib.sol";
 import {Currency} from "src/types/Currency.sol";
 import {AaveV3Config, UniswapConfig} from "test/shared/structs/Protocols.sol";
@@ -134,9 +134,7 @@ abstract contract Configured {
 			revert(string.concat("unsupported chain id: ", vm.toString(config.chainId)));
 		}
 
-		string memory root = vm.projectRoot();
-		string memory path = string.concat(root, "/config/schema/", config.network, ".json");
-		config.json = vm.readFile(path);
+		config.json = vm.readFile(string.concat("config/schema/", config.network, ".json"));
 
 		configureAaveV3();
 		configureUniswap();
@@ -224,7 +222,12 @@ abstract contract Configured {
 	}
 
 	function labelCurrency(Currency currency) internal virtual {
-		if (!currency.isZero()) vm.label(currency.toAddress(), currency.readSymbol());
+		label(currency.toAddress(), currency.readSymbol());
+	}
+
+	function label(address target, string memory name) internal virtual returns (address) {
+		if (target != address(0)) vm.label(target, name);
+		return target;
 	}
 
 	function getChainId() internal view virtual returns (uint256) {

@@ -1,42 +1,24 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {CommonBase} from "forge-std/Base.sol";
 import {IEntryPoint} from "account-abstraction/interfaces/IEntryPoint.sol";
-import {SenderCreator} from "account-abstraction/core/SenderCreator.sol";
-import {IPermit2} from "src/interfaces/external/uniswap/permit2/IPermit2.sol";
-import {IRegistry, IExternalResolver, IExternalSchemaValidator} from "src/interfaces/registries/IRegistry.sol";
+import {IRegistry} from "src/interfaces/registries/IRegistry.sol";
 import {ISmartSession} from "src/interfaces/ISmartSession.sol";
+import {IPermit2} from "src/interfaces/external/uniswap/permit2/IPermit2.sol";
 import {CallType, ExecType} from "src/types/ExecutionMode.sol";
 import {ModuleType, PackedModuleTypes} from "src/types/ModuleType.sol";
-import {ResolverUID, SchemaUID} from "src/types/UID.sol";
 import {ValidationData} from "src/types/ValidationData.sol";
 import {ValidationMode} from "src/types/ValidationMode.sol";
 
-abstract contract Constants is CommonBase {
+abstract contract Constants {
 	IEntryPoint internal constant ENTRYPOINT = IEntryPoint(0x0000000071727De22E5E9d8BAf0edAc6f37da032);
-
-	IPermit2 internal constant PERMIT2 = IPermit2(0x000000000022D473030F116dDEE9F6B43aC78BA3);
-
-	SenderCreator internal constant SENDER_CREATOR = SenderCreator(0xEFC2c1444eBCC4Db75e7613d20C6a62fF67A167C);
 
 	ISmartSession internal constant SMART_SESSION = ISmartSession(0x00000000002B0eCfbD0496EE71e01257dA0E37DE);
 
 	// Rhinestone Registry
 	IRegistry internal constant REGISTRY = IRegistry(0x000000000069E2a187AEFFb852bF3cCdC95151B2);
 
-	// Rhinestone Resolver
-	IExternalResolver internal constant RESOLVER = IExternalResolver(0xF0f468571e764664c93308504642aF941d9f77F1);
-
-	ResolverUID internal constant RESOLVER_UID =
-		ResolverUID.wrap(0xdbca873b13c783c0c9c6ddfc4280e505580bf6cc3dac83f8a0f7b44acaafca4f);
-
-	// Rhinestone Schema Validator
-	IExternalSchemaValidator internal constant SCHEMA =
-		IExternalSchemaValidator(0x86430E19D7D204807bBb8CDa997bb57b7EE785dD);
-
-	SchemaUID internal constant SCHEMA_UID =
-		SchemaUID.wrap(0x93d46fcca4ef7d66a413c7bde08bb1ff14bacbd04c4069bb24cd7c21729d7bf1);
+	IPermit2 internal constant PERMIT2 = IPermit2(0x000000000022D473030F116dDEE9F6B43aC78BA3);
 
 	address internal constant SENTINEL = 0x0000000000000000000000000000000000000001;
 	address internal constant ZERO = 0x0000000000000000000000000000000000000000;

@@ -17,7 +17,7 @@ contract ModuleManagerTest is BaseTest {
 
 	function setUp() public virtual override {
 		super.setUp();
-		deployVortex(MURPHY, 0, INITIAL_VALUE, address(ACCOUNT_FACTORY), false);
+		deployVortex(MURPHY, 0, address(ACCOUNT_FACTORY), false);
 	}
 
 	function test_enableModule() public virtual {

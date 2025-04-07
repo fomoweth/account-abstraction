@@ -31,7 +31,7 @@ contract Permit2ExecutorTest is BaseTest {
 
 		currencies = WNATIVE.currencies(WSTETH, USDC, DAI);
 
-		deployVortex(ALICE, 0, INITIAL_VALUE, address(K1_FACTORY), true);
+		deployVortex(ALICE, 0, address(K1_FACTORY), true);
 
 		ALICE.install(
 			TYPE_EXECUTOR,

@@ -21,7 +21,7 @@ contract Account4337Test is BaseTest {
 
 	function setUp() public virtual override {
 		super.setUp();
-		deployVortex(MURPHY, 0, INITIAL_VALUE, address(ACCOUNT_FACTORY), false);
+		deployVortex(MURPHY, 0, address(ACCOUNT_FACTORY), false);
 		VORTEX_V2 = new VortexV2();
 	}
 

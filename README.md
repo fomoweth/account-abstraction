@@ -54,5 +54,11 @@ $ forge build
 ### Test
 
 ```shell
-$ forge test
+$ forge test --chain <CHAIN-ID || CHAIN-NAME>
+```
+
+### Deploy
+
+```shell
+$ forge script script/DeployAll.s.sol -vv --broadcast --verify --rpc-url <CHAIN-ID || CHAIN-NAME>
 ```
