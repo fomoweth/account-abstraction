@@ -10,7 +10,7 @@ import {TrustedForwarder} from "src/modules/utils/TrustedForwarder.sol";
 import {ModuleBase} from "./ModuleBase.sol";
 
 /// @title HookDestruct
-
+/// @notice ERC-7579 hook module base interface
 abstract contract HookDestruct is IHook, ModuleBase, TrustedForwarder {
 	using CalldataDecoder for bytes;
 	using ExecutionLib for bytes;

@@ -44,7 +44,6 @@ function lte(Currency x, Currency y) pure returns (bool z) {
 
 /// @title CurrencyLibrary
 /// @dev Modified from https://github.com/Uniswap/v4-core/blob/main/src/types/Currency.sol
-
 library CurrencyLibrary {
 	function approve(Currency currency, address spender, uint256 value) internal {
 		assembly ("memory-safe") {

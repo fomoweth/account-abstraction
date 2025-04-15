@@ -1,17 +1,22 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {IERC4337Account} from "src/interfaces/IERC4337Account.sol";
+import {IVortex} from "src/interfaces/IVortex.sol";
 import {AccessControl} from "./AccessControl.sol";
 
 /// @title AccountBase
 
-abstract contract AccountBase is IERC4337Account, AccessControl {
+abstract contract AccountBase is IVortex, AccessControl {
+	string internal constant ACCOUNT_IMPLEMENTATION_ID = "fomoweth.vortex.1.0.0";
+
+	/// @notice Pays to the EntryPoint the missing funds for this transaction
+	/// @param missingAccountFunds The minimum value this modifier should send the EntryPoint
 	modifier payPrefund(uint256 missingAccountFunds) {
 		_;
 		_payPrefund(missingAccountFunds);
 	}
 
+	/// @inheritdoc IVortex
 	function addDeposit() external payable {
 		assembly ("memory-safe") {
 			if iszero(call(gas(), ENTRYPOINT, callvalue(), codesize(), 0x00, codesize(), 0x00)) {
@@ -20,6 +25,7 @@ abstract contract AccountBase is IERC4337Account, AccessControl {
 		}
 	}
 
+	/// @inheritdoc IVortex
 	function withdrawTo(address recipient, uint256 amount) external payable onlyEntryPointOrSelf {
 		assembly ("memory-safe") {
 			let ptr := mload(0x40)
@@ -35,6 +41,7 @@ abstract contract AccountBase is IERC4337Account, AccessControl {
 		}
 	}
 
+	/// @inheritdoc IVortex
 	function getDeposit() external view returns (uint256 deposit) {
 		assembly ("memory-safe") {
 			let ptr := mload(0x40)
@@ -47,6 +54,7 @@ abstract contract AccountBase is IERC4337Account, AccessControl {
 		}
 	}
 
+	/// @inheritdoc IVortex
 	function getNonce(uint192 key) external view returns (uint256 nonce) {
 		assembly ("memory-safe") {
 			let ptr := mload(0x40)

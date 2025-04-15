@@ -7,7 +7,6 @@ import {ModuleManager} from "src/core/ModuleManager.sol";
 
 /// @title Bootstrap
 /// @notice Provides configuration and initialization for smart accounts
-
 contract Bootstrap is IBootstrap, ModuleManager {
 	function initialize(
 		BootstrapConfig calldata rootValidator,

@@ -5,7 +5,6 @@ import {AssociatedArrayLib} from "./AssociatedArrayLib.sol";
 
 /// @title EnumerableSet4337
 /// @dev Implementation from https://github.com/erc7579/enumerablemap/blob/main/src/EnumerableSet4337.sol
-
 library EnumerableSet4337 {
 	using AssociatedArrayLib for AssociatedArrayLib.Bytes32Array;
 

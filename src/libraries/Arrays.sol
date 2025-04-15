@@ -5,7 +5,6 @@ import {Currency} from "src/types/Currency.sol";
 
 /// @title Arrays
 /// @dev Implementation from https://github.com/Vectorized/solady/blob/main/src/utils/LibSort.sol
-
 library Arrays {
 	function insertionSort(uint256[] memory array) internal pure {
 		// prettier-ignore

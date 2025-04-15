@@ -23,7 +23,6 @@ function neqValidationData(ValidationData x, ValidationData y) pure returns (boo
 
 /// @title ValidationDataLib
 /// @notice Provides functions for encoding and decoding validations
-
 library ValidationDataLib {
 	uint48 internal constant MAX_UINT48 = (1 << 48) - 1;
 

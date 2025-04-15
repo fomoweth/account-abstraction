@@ -9,49 +9,46 @@ import {ReentrancyGuard} from "src/modules/utils/ReentrancyGuard.sol";
 import {ExecutorBase} from "src/modules/base/ExecutorBase.sol";
 
 /// @title UniversalExecutor
-
+/// @notice Executor module that allows smart account to perform swaps via UniversalRouter
 contract UniversalExecutor is ExecutorBase, ReentrancyGuard {
+	/// @notice Thrown when the provided currency is invalid
+	error InvalidCurrency();
+
+	/// @notice Thrown when the provided protocol ID is invalid
 	error UnsupportedProtocol(uint256 protocol);
 
-	/// @dev keccak256("AccountRouterConfigured(address,address)")
-	bytes32 private constant ACCOUNT_ROUTER_CONFIGURED_TOPIC =
-		0xa8fd23d42b508ba2c717741779865ad45b6fc96f34a0124e880f44cad86076d4;
-
-	/// @dev keccak256(abi.encode(uint256(keccak256("eip7579.executor.accountRouters")) - 1)) & ~bytes32(uint256(0xff))
-	bytes32 internal constant ACCOUNT_ROUTERS_STORAGE_SLOT =
-		0x9c3dee6d7c92c0e43518da88f538f333487ac138b7cb037184debd2b16ed0d00;
+	mapping(address account => address router) internal _accountRouters;
 
 	/// UniversalRouter Commands
-
-	bytes1 internal constant V3_SWAP_EXACT_IN = 0x00;
-	bytes1 internal constant V3_SWAP_EXACT_OUT = 0x01;
-	bytes1 internal constant SWEEP = 0x04;
-	bytes1 internal constant V2_SWAP_EXACT_IN = 0x08;
-	bytes1 internal constant V2_SWAP_EXACT_OUT = 0x09;
-	bytes1 internal constant PERMIT2_PERMIT = 0x0a;
-	bytes1 internal constant WRAP_ETH = 0x0b;
-	bytes1 internal constant UNWRAP_WETH = 0x0c;
-	bytes1 internal constant V4_SWAP = 0x10;
+	bytes1 private constant V3_SWAP_EXACT_IN = 0x00;
+	bytes1 private constant V3_SWAP_EXACT_OUT = 0x01;
+	bytes1 private constant SWEEP = 0x04;
+	bytes1 private constant V2_SWAP_EXACT_IN = 0x08;
+	bytes1 private constant V2_SWAP_EXACT_OUT = 0x09;
+	bytes1 private constant PERMIT2_PERMIT = 0x0a;
+	bytes1 private constant WRAP_ETH = 0x0b;
+	bytes1 private constant UNWRAP_WETH = 0x0c;
+	bytes1 private constant V4_SWAP = 0x10;
 
 	/// V4 Router Actions
+	bytes1 private constant V4_SWAP_EXACT_IN = 0x07;
+	bytes1 private constant V4_SWAP_EXACT_OUT = 0x09;
+	bytes1 private constant SETTLE_ALL = 0x0c;
+	bytes1 private constant TAKE_ALL = 0x0f;
 
-	bytes1 internal constant V4_SWAP_EXACT_IN = 0x07;
-	bytes1 internal constant V4_SWAP_EXACT_OUT = 0x09;
-	bytes1 internal constant SETTLE_ALL = 0x0c;
-	bytes1 internal constant TAKE_ALL = 0x0f;
+	address private constant MSG_SENDER = 0x0000000000000000000000000000000000000001;
+	address private constant ADDRESS_THIS = 0x0000000000000000000000000000000000000002;
 
-	address internal constant MSG_SENDER = 0x0000000000000000000000000000000000000001;
-	address internal constant ADDRESS_THIS = 0x0000000000000000000000000000000000000002;
+	uint256 private constant CONTRACT_BALANCE = 0x8000000000000000000000000000000000000000000000000000000000000000;
 
-	uint256 internal constant CONTRACT_BALANCE = 0x8000000000000000000000000000000000000000000000000000000000000000;
+	uint256 private constant SOURCE_ROUTER = 0x00;
+	uint256 private constant SOURCE_SENDER = 0x01;
 
-	uint256 internal constant SOURCE_ROUTER = 0x00;
-	uint256 internal constant SOURCE_SENDER = 0x01;
+	uint256 private constant PROTOCOL_V4 = 0x04;
+	uint256 private constant PROTOCOL_V3 = 0x03;
+	uint256 private constant PROTOCOL_V2 = 0x02;
 
-	uint256 internal constant PROTOCOL_V4 = 0x04;
-	uint256 internal constant PROTOCOL_V3 = 0x03;
-	uint256 internal constant PROTOCOL_V2 = 0x02;
-
+	/// @notice The address of the wrapped native token
 	Currency public immutable WRAPPED_NATIVE;
 
 	constructor() {
@@ -65,39 +62,52 @@ contract UniversalExecutor is ExecutorBase, ReentrancyGuard {
 			}
 
 			wrappedNative := shr(0x60, shl(0x60, mload(add(context, 0x20))))
+			if iszero(wrappedNative) {
+				mstore(0x00, 0xf5993428) // InvalidCurrency()
+				revert(0x1c, 0x04)
+			}
 		}
 
 		WRAPPED_NATIVE = wrappedNative;
 	}
 
+	/// @notice Initialize the module with the given data
+	/// @param data The data to initialize the module with
 	function onInstall(bytes calldata data) external payable {
 		require(!_isInitialized(msg.sender), AlreadyInitialized(msg.sender));
 		require(data.length == 20, InvalidDataLength());
-		_setAccountRouter(_checkAccountRouter(address(bytes20(data))));
+		_accountRouters[msg.sender] = _checkAccountRouter(address(bytes20(data)));
 	}
 
+	/// @notice De-initialize the module with the given data
 	function onUninstall(bytes calldata) external payable {
 		require(_isInitialized(msg.sender), NotInitialized(msg.sender));
-		_setAccountRouter(address(0));
+		delete _accountRouters[msg.sender];
 	}
 
+	/// @notice Check if the module is initialized for the given smart account
+	/// @param account The address of the smart account
+	/// @return True if the module is initialized, false otherwise
 	function isInitialized(address account) external view returns (bool) {
 		return _isInitialized(account);
 	}
 
-	function setAccountRouter(address router) external {
+	/// @notice Registers the UniversalRouter for the smart account
+	/// @param newRouter The address of the UniversalRouter
+	function setAccountRouter(address newRouter) external {
 		require(_isInitialized(msg.sender), NotInitialized(msg.sender));
-		_setAccountRouter(_checkAccountRouter(router));
+		_accountRouters[msg.sender] = _checkAccountRouter(newRouter);
 	}
 
+	/// @notice Returns the UniversalRouter registered by the smart account
+	/// @param account The address of the smart account
+	/// @return router The address of the UniversalRouter
 	function getAccountRouter(address account) public view virtual returns (address router) {
-		assembly ("memory-safe") {
-			mstore(0x00, shr(0x60, shl(0x60, account)))
-			mstore(0x20, ACCOUNT_ROUTERS_STORAGE_SLOT)
-			router := sload(keccak256(0x00, 0x40))
-		}
+		return _accountRouters[account];
 	}
 
+	/// @notice Performs exact-input swap via UniversalRouter
+	/// @param params Encoded swap data
 	function swapExactInput(bytes calldata params) external payable nonReentrant returns (bytes[] memory returnData) {
 		(
 			uint256 protocol,
@@ -117,6 +127,8 @@ contract UniversalExecutor is ExecutorBase, ReentrancyGuard {
 		}
 	}
 
+	/// @notice Performs exact-output swap via UniversalRouter
+	/// @param params Encoded swap data
 	function swapExactOutput(bytes calldata params) external payable nonReentrant returns (bytes[] memory returnData) {
 		(
 			uint256 protocol,
@@ -134,6 +146,25 @@ contract UniversalExecutor is ExecutorBase, ReentrancyGuard {
 		} else {
 			revert UnsupportedProtocol(protocol);
 		}
+	}
+
+	/// @notice Returns the name of the module
+	/// @return The name of the module
+	function name() external pure returns (string memory) {
+		return "UniversalExecutor";
+	}
+
+	/// @notice Returns the version of the module
+	/// @return The version of the module
+	function version() external pure returns (string memory) {
+		return "1.0.0";
+	}
+
+	/// @notice Checks if the module is of the specified type
+	/// @param moduleTypeId The module type ID to check
+	/// @return True if the module is of the specified type, false otherwise
+	function isModuleType(ModuleType moduleTypeId) external pure returns (bool) {
+		return moduleTypeId == MODULE_TYPE_EXECUTOR;
 	}
 
 	function _v4SwapExactInput(
@@ -634,29 +665,8 @@ contract UniversalExecutor is ExecutorBase, ReentrancyGuard {
 		return _execute(router, msg.value, _encodeExecutionCommands(commands, inputs, deadline));
 	}
 
-	function name() external pure returns (string memory) {
-		return "UniversalExecutor";
-	}
-
-	function version() external pure returns (string memory) {
-		return "1.0.0";
-	}
-
-	function isModuleType(ModuleType moduleTypeId) external pure returns (bool) {
-		return moduleTypeId == TYPE_EXECUTOR;
-	}
-
 	function _isInitialized(address account) internal view virtual returns (bool result) {
 		return getAccountRouter(account) != address(0);
-	}
-
-	function _setAccountRouter(address router) internal virtual {
-		assembly ("memory-safe") {
-			mstore(0x00, shr(0x60, shl(0x60, caller())))
-			mstore(0x20, ACCOUNT_ROUTERS_STORAGE_SLOT)
-			sstore(keccak256(0x00, 0x40), router)
-			log3(0x00, 0x00, ACCOUNT_ROUTER_CONFIGURED_TOPIC, caller(), router)
-		}
 	}
 
 	function _checkAccountRouter(address router) internal view virtual returns (address) {

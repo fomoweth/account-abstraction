@@ -6,14 +6,21 @@ import {Currency} from "src/types/Currency.sol";
 import {ModuleType} from "src/types/Types.sol";
 import {FallbackBase} from "src/modules/base/FallbackBase.sol";
 
-/// @title STETHWrapper
-
-contract STETHWrapper is FallbackBase {
+/// @title STETHWrapperFallback
+/// @notice Fallback module that allows smart accounts to wrap and unwrap stETH and wstETH
+contract STETHWrapperFallback is FallbackBase {
+	/// @notice Thrown when trying to wrap/unwrap tokens by insufficient amount
 	error InsufficientBalance();
+
+	/// @notice Thrown when the provided currency is invalid
+	error InvalidCurrency();
 
 	mapping(address account => bool isInstalled) internal _isInstalled;
 
+	/// @notice The address of the stETH
 	Currency public immutable STETH;
+
+	/// @notice The address of the wstETH
 	Currency public immutable WSTETH;
 
 	constructor() {
@@ -29,13 +36,13 @@ contract STETHWrapper is FallbackBase {
 
 			stETH := shr(0x60, shl(0x60, mload(add(context, 0x20))))
 			if iszero(stETH) {
-				mstore(0x00, 0x421ab6d7) // InvalidSTETH()
+				mstore(0x00, 0xf5993428) // InvalidCurrency()
 				revert(0x1c, 0x04)
 			}
 
 			wstETH := shr(0x60, shl(0x60, mload(add(context, 0x40))))
 			if iszero(wstETH) {
-				mstore(0x00, 0xa5eefc26) // InvalidWSTETH()
+				mstore(0x00, 0xf5993428) // InvalidCurrency()
 				revert(0x1c, 0x04)
 			}
 		}
@@ -44,32 +51,62 @@ contract STETHWrapper is FallbackBase {
 		WSTETH = wstETH;
 	}
 
+	/// @notice Initialize the module with the given data
 	function onInstall(bytes calldata) external payable {
 		require(!_isInitialized(msg.sender), AlreadyInitialized(msg.sender));
 		_isInstalled[msg.sender] = true;
 	}
 
+	/// @notice De-initialize the module with the given data
 	function onUninstall(bytes calldata) external payable {
 		require(_isInitialized(msg.sender), NotInitialized(msg.sender));
 		_isInstalled[msg.sender] = false;
 	}
 
+	/// @notice Check if the module is initialized for the given smart account
+	/// @param account The address of the smart account
+	/// @return True if the module is initialized, false otherwise
 	function isInitialized(address account) external view returns (bool) {
 		return _isInitialized(account);
 	}
 
+	/// @notice Wraps the given amount of ETH and receive stETH by transferring ETH
+	/// @param amount The amount of the ETH
 	function wrapSTETH(uint256 amount) external payable {
 		_wrapSTETH(STETH, amount);
 	}
 
+	/// @notice Wraps the given amount of stETH and receive wstETH by invoking `wrap(uint256)`
+	/// @param amount The amount of the stETH
 	function wrapWSTETH(uint256 amount) external payable {
 		require(STETH.balanceOfSelf() >= amount, InsufficientBalance());
 		_wrapWSTETH(WSTETH, amount);
 	}
 
+	/// @notice Unwraps the given amount of wstETH and receive stETH by invoking `unwrap(uint256)`
+	/// @param amount The amount of the wstETH
 	function unwrapWSTETH(uint256 amount) external payable {
 		require(WSTETH.balanceOfSelf() >= amount, InsufficientBalance());
 		_unwrapWSTETH(WSTETH, amount);
+	}
+
+	/// @notice Returns the name of the module
+	/// @return The name of the module
+	function name() external pure returns (string memory) {
+		return "STETHWrapperFallback";
+	}
+
+	/// @notice Returns the version of the module
+	/// @return The version of the module
+	function version() external pure returns (string memory) {
+		return "1.0.0";
+	}
+
+	/// @notice Checks if the module is of the specified type
+	/// @param moduleTypeId The module type ID to check
+	/// @return True if the module is of the specified type, false otherwise
+	function isModuleType(ModuleType moduleTypeId) external pure returns (bool) {
+		return moduleTypeId == MODULE_TYPE_FALLBACK;
 	}
 
 	function _wrapSTETH(Currency stETH, uint256 amount) internal virtual {
@@ -79,13 +116,8 @@ contract STETHWrapper is FallbackBase {
 				revert(0x1c, 0x04)
 			}
 
-			let ptr := mload(0x40)
-
-			mstore(ptr, 0xa1903eab00000000000000000000000000000000000000000000000000000000) // submit(address)
-
-			if iszero(call(gas(), stETH, amount, ptr, 0x24, 0x00, 0x20)) {
-				returndatacopy(ptr, 0x00, returndatasize())
-				revert(ptr, returndatasize())
+			if iszero(call(gas(), stETH, amount, codesize(), 0x00, codesize(), 0x00)) {
+				revert(codesize(), 0x00)
 			}
 		}
 	}
@@ -116,18 +148,6 @@ contract STETHWrapper is FallbackBase {
 				revert(ptr, returndatasize())
 			}
 		}
-	}
-
-	function name() external pure returns (string memory) {
-		return "STETHWrapper";
-	}
-
-	function version() external pure returns (string memory) {
-		return "1.0.0";
-	}
-
-	function isModuleType(ModuleType moduleTypeId) external pure returns (bool) {
-		return moduleTypeId == TYPE_FALLBACK;
 	}
 
 	function _isInitialized(address account) internal view returns (bool) {

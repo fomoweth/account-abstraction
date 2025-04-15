@@ -21,7 +21,6 @@ function neqValidationMode(ValidationMode x, ValidationMode y) pure returns (boo
 }
 
 /// @title ValidationModeLib
-
 library ValidationModeLib {
 	// [1 bytes validation mode][3 bytes unused][20 bytes validator][8 bytes nonce]
 	function encodeNonceKey(ValidationMode mode, address validator) internal pure returns (uint192 key) {

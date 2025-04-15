@@ -7,6 +7,8 @@ import {ModuleType} from "src/types/Types.sol";
 /// @title AccessControl
 
 abstract contract AccessControl {
+	error InvalidEntryPoint();
+
 	address internal constant ENTRYPOINT = 0x0000000071727De22E5E9d8BAf0edAc6f37da032;
 	address internal constant SENTINEL = 0x0000000000000000000000000000000000000001;
 

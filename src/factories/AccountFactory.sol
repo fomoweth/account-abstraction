@@ -2,17 +2,19 @@
 pragma solidity ^0.8.28;
 
 import {IAccountFactory} from "src/interfaces/factories/IAccountFactory.sol";
+import {StakingAdapter} from "src/core/StakingAdapter.sol";
 
 /// @title AccountFactory
-
-contract AccountFactory is IAccountFactory {
+/// @notice Manages smart account creation compliant with ERC-4337 and ERC-7579 using a factory pattern
+contract AccountFactory is IAccountFactory, StakingAdapter {
 	/// @dev keccak256("AccountCreated(address,bytes32)")
 	bytes32 internal constant ACCOUNT_CREATED_TOPIC =
 		0x8fe66a5d954d6d3e0306797e31e226812a9916895165c96c367ef52807631951;
 
+	/// @notice The ERC-7579 implementation
 	address public immutable ACCOUNT_IMPLEMENTATION;
 
-	constructor(address implementation) {
+	constructor(address implementation, address initialOwner) StakingAdapter(initialOwner) {
 		assembly ("memory-safe") {
 			implementation := shr(0x60, shl(0x60, implementation))
 			if iszero(implementation) {
@@ -24,11 +26,27 @@ contract AccountFactory is IAccountFactory {
 		ACCOUNT_IMPLEMENTATION = implementation;
 	}
 
+	/// @inheritdoc IAccountFactory
 	function createAccount(
 		bytes32 salt,
 		bytes calldata params
 	) public payable virtual returns (address payable account) {
 		return _createAccount(ACCOUNT_IMPLEMENTATION, salt, params);
+	}
+
+	/// @inheritdoc IAccountFactory
+	function computeAddress(bytes32 salt) public view virtual returns (address payable account) {
+		return _computeAddress(ACCOUNT_IMPLEMENTATION, salt);
+	}
+
+	/// @inheritdoc IAccountFactory
+	function name() public pure virtual returns (string memory) {
+		return "AccountFactory";
+	}
+
+	/// @inheritdoc IAccountFactory
+	function version() public pure virtual returns (string memory) {
+		return "1.0.0";
 	}
 
 	function _createAccount(
@@ -68,26 +86,20 @@ contract AccountFactory is IAccountFactory {
 					}
 
 					log3(codesize(), 0x00, ACCOUNT_CREATED_TOPIC, account, salt)
-
 					break
 				}
 
 				if iszero(callvalue()) { break }
 				if iszero(call(gas(), account, callvalue(), codesize(), 0x00, codesize(), 0x00)) {
-					mstore(0x00, 0xb12d13eb) // ETHTransferFailed()
+					mstore(0x00, 0xb12d13eb) // EthTransferFailed()
 					revert(0x1c, 0x04)
 				}
-
 				break
 			}
 
 			mstore(0x40, ptr)
 			mstore(0x60, 0x00)
 		}
-	}
-
-	function computeAddress(bytes32 salt) public view virtual returns (address payable account) {
-		return _computeAddress(ACCOUNT_IMPLEMENTATION, salt);
 	}
 
 	function _computeAddress(

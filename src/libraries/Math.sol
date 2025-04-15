@@ -2,8 +2,7 @@
 pragma solidity ^0.8.28;
 
 /// @title Math
-/// @notice Provides functions to perform math operations
-
+/// @notice Provides functions to perform math operations.
 library Math {
 	uint256 internal constant MAX_UINT256 = (1 << 256) - 1;
 

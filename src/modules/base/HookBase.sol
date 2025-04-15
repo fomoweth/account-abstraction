@@ -6,7 +6,7 @@ import {TrustedForwarder} from "src/modules/utils/TrustedForwarder.sol";
 import {ModuleBase} from "./ModuleBase.sol";
 
 /// @title HookBase
-
+/// @notice ERC-7579 hook module base interface
 abstract contract HookBase is IHook, ModuleBase, TrustedForwarder {
 	function preCheck(
 		address msgSender,

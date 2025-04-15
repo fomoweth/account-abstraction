@@ -4,7 +4,7 @@ pragma solidity ^0.8.28;
 import {ExecutionMode, CallType, ModuleType, PackedModuleTypes} from "src/types/Types.sol";
 
 /// @title CalldataDecoder
-
+/// @notice Library for abi decoding in calldata.
 library CalldataDecoder {
 	function decodeSelector(bytes calldata params) internal pure returns (bytes4 selector) {
 		assembly ("memory-safe") {

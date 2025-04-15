@@ -3,7 +3,6 @@ pragma solidity ^0.8.28;
 
 /// @title AssociatedArrayLib
 /// @dev Implementation from https://github.com/erc7579/enumerablemap/blob/main/src/AssociatedArrayLib.sol
-
 library AssociatedArrayLib {
 	struct Array {
 		uint256 _spacer;

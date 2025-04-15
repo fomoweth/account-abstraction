@@ -5,7 +5,7 @@ import {IFallback} from "src/interfaces/IERC7579Modules.sol";
 import {ModuleBase} from "./ModuleBase.sol";
 
 /// @title FallbackBase
-
+/// @notice ERC-7579 fallback module base interface
 abstract contract FallbackBase is IFallback, ModuleBase {
 	function _msgSender() internal view virtual returns (address sender) {
 		assembly ("memory-safe") {

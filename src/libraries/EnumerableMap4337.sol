@@ -5,7 +5,6 @@ import {EnumerableSet4337} from "./EnumerableSet4337.sol";
 
 /// @title EnumerableMap
 /// @dev Implementation from https://github.com/erc7579/enumerablemap/blob/main/src/EnumerableMap4337.sol
-
 library EnumerableMap4337 {
 	using EnumerableSet4337 for EnumerableSet4337.Bytes32Set;
 

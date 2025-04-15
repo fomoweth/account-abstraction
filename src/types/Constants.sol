@@ -15,7 +15,8 @@ ExecType constant EXECTYPE_DEFAULT = ExecType.wrap(0x00);
 ExecType constant EXECTYPE_TRY = ExecType.wrap(0x01);
 
 ModeSelector constant MODE_SELECTOR_DEFAULT = ModeSelector.wrap(bytes4(0x00000000));
-ModeSelector constant MODE_SELECTOR_OFFSET = ModeSelector.wrap(0xeda86f9b); // bytes4(keccak256("default.mode.offset"))
+// bytes4(keccak256("default.mode.offset"))
+ModeSelector constant MODE_SELECTOR_OFFSET = ModeSelector.wrap(0xeda86f9b);
 ModePayload constant MODE_PAYLOAD_DEFAULT = ModePayload.wrap(bytes22(0));
 
 ModuleType constant MODULE_TYPE_VALIDATOR = ModuleType.wrap(0x01);

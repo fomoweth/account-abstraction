@@ -2,18 +2,19 @@
 pragma solidity ^0.8.28;
 
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
+import {EIP712} from "solady/utils/EIP712.sol";
+import {UUPSUpgradeable} from "solady/utils/UUPSUpgradeable.sol";
 import {CalldataDecoder} from "src/libraries/CalldataDecoder.sol";
 import {ExecutionLib} from "src/libraries/ExecutionLib.sol";
-import {CALLTYPE_SINGLE, CALLTYPE_BATCH, CALLTYPE_DELEGATE, EXECTYPE_DEFAULT} from "src/types/Constants.sol";
+import {CALLTYPE_SINGLE, CALLTYPE_BATCH, CALLTYPE_DELEGATE} from "src/types/Constants.sol";
 import {ExecutionMode, CallType, ExecType, ModuleType, ValidationData} from "src/types/Types.sol";
-import {EIP712} from "src/utils/EIP712.sol";
-import {UUPSUpgradeable} from "src/utils/UUPSUpgradeable.sol";
+import {AccessControl} from "./AccessControl.sol";
 import {AccountBase} from "./AccountBase.sol";
 import {ModuleManager} from "./ModuleManager.sol";
 
 /// @title AccountCore
 
-abstract contract AccountCore is AccountBase, EIP712, ModuleManager, UUPSUpgradeable {
+abstract contract AccountCore is EIP712, ModuleManager, UUPSUpgradeable {
 	using CalldataDecoder for bytes;
 	using ExecutionLib for ExecType;
 
@@ -24,6 +25,7 @@ abstract contract AccountCore is AccountBase, EIP712, ModuleManager, UUPSUpgrade
 	bytes4 internal constant ERC1271_SUCCESS = 0x1626ba7e;
 	bytes4 internal constant ERC1271_FAILED = 0xFFFFFFFF;
 
+	/// @notice Does pre-checks and post-checks using installed hooks on the account
 	modifier withHook() {
 		if (_isEntryPointOrSelf()) {
 			address[] memory hooks = _globalHooks();
@@ -48,13 +50,23 @@ abstract contract AccountCore is AccountBase, EIP712, ModuleManager, UUPSUpgrade
 				mstore(0x00, 0xf92ee8a9) // InvalidInitialization()
 				revert(0x1c, 0x04)
 			}
-		}
 
-		EXECTYPE_DEFAULT.executeDelegate(data);
+			let bootstrap := shr(0x60, calldataload(data.offset))
+			data.offset := add(data.offset, 0x14)
+			data.length := sub(data.length, 0x14)
 
-		assembly ("memory-safe") {
+			let ptr := mload(0x40)
+			mstore(0x40, add(ptr, data.length))
+
+			calldatacopy(ptr, data.offset, data.length)
+
+			if iszero(delegatecall(gas(), bootstrap, ptr, data.length, codesize(), 0x00)) {
+				returndatacopy(ptr, 0x00, returndatasize())
+				revert(ptr, returndatasize())
+			}
+
 			if iszero(extcodesize(sload(ROOT_VALIDATOR_STORAGE_SLOT))) {
-				mstore(0x00, 0x19b991a8) // InitializationFailed()
+				mstore(0x00, 0x19b991a8) // InvalidInitialization()
 				revert(0x1c, 0x04)
 			}
 		}

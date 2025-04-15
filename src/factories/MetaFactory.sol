@@ -5,25 +5,16 @@ import {IMetaFactory} from "src/interfaces/factories/IMetaFactory.sol";
 import {StakingAdapter} from "src/core/StakingAdapter.sol";
 
 /// @title MetaFactory
-/// @notice Manages the creation of Modular Smart Accounts compliant with ERC-7579 and ERC-4337 using a factory pattern
-
+/// @notice Manages the creation of ERC-4337 and ERC-7579 compliant smart accounts through authorized factories, and the registration of factory permissions
 contract MetaFactory is IMetaFactory, StakingAdapter {
-	/// @dev keccak256("FactoryAuthorized(address)")
-	bytes32 private constant FACTORY_AUTHORIZED_TOPIC =
-		0x2fa23115f2b369fc34eda97ccf6bc2fab82882719f0547f3e45a9a400086aeae;
-
-	/// @dev keccak256("FactoryRevoked(address)")
-	bytes32 private constant FACTORY_REVOKED_TOPIC = 0xd25dd45a1811dc9170ab90c454ef2024f3086a79da5279a8d42f39bdda8f36d1;
-
-	/// @dev keccak256(abi.encode(uint256(keccak256("eip7579.MetaFactory.authority")) - 1)) & ~bytes32(uint256(0xff))
-	bytes32 private constant AUTHORITY_STORAGE_SLOT =
-		0xed9afa57181e1288cca2500b59ae100696098cf8a47aa6472021d8957422f100;
+	mapping(address factory => bool) internal _isAuthorized;
 
 	constructor(address initialOwner) StakingAdapter(initialOwner) {}
 
+	/// @inheritdoc IMetaFactory
 	function createAccount(bytes calldata params) external payable returns (address payable account) {
 		assembly ("memory-safe") {
-			if lt(params.length, 0x38) {
+			if lt(params.length, 0x58) {
 				mstore(0x00, 0xdfe93090) // InvalidDataLength()
 				revert(0x1c, 0x04)
 			}
@@ -32,8 +23,13 @@ contract MetaFactory is IMetaFactory, StakingAdapter {
 			params.offset := add(params.offset, 0x14)
 			params.length := sub(params.length, 0x14)
 
+			if iszero(shl(0x60, factory)) {
+				mstore(0x00, 0x7a44db95) // InvalidFactory()
+				revert(0x1c, 0x04)
+			}
+
 			mstore(0x00, factory)
-			mstore(0x20, AUTHORITY_STORAGE_SLOT)
+			mstore(0x20, _isAuthorized.slot)
 
 			if iszero(sload(keccak256(0x00, 0x40))) {
 				mstore(0x00, 0x644c0c49) // FactoryNotAuthorized(address)
@@ -42,6 +38,7 @@ contract MetaFactory is IMetaFactory, StakingAdapter {
 			}
 
 			let ptr := mload(0x40)
+
 			calldatacopy(ptr, params.offset, params.length)
 
 			if iszero(call(gas(), factory, callvalue(), ptr, params.length, 0x00, 0x20)) {
@@ -53,8 +50,14 @@ contract MetaFactory is IMetaFactory, StakingAdapter {
 		}
 	}
 
+	/// @inheritdoc IMetaFactory
 	function computeAddress(address factory, bytes32 salt) external view returns (address payable account) {
 		assembly ("memory-safe") {
+			if iszero(shl(0x60, factory)) {
+				mstore(0x00, 0x7a44db95) // InvalidFactory()
+				revert(0x1c, 0x04)
+			}
+
 			let ptr := mload(0x40)
 
 			mstore(ptr, 0x7fde56da00000000000000000000000000000000000000000000000000000000) // computeAddress(bytes32)
@@ -69,43 +72,43 @@ contract MetaFactory is IMetaFactory, StakingAdapter {
 		}
 	}
 
-	function authorize(address factory) external onlyOwner {
-		assembly ("memory-safe") {
-			factory := shr(0x60, shl(0x60, factory))
-			if iszero(factory) {
-				mstore(0x00, 0x7a44db95) // InvalidFactory()
-				revert(0x1c, 0x04)
-			}
-
-			mstore(0x00, factory)
-			mstore(0x20, AUTHORITY_STORAGE_SLOT)
-
-			sstore(keccak256(0x00, 0x40), 0x01)
-			log2(0x00, 0x00, FACTORY_AUTHORIZED_TOPIC, factory)
-		}
+	/// @inheritdoc IMetaFactory
+	function authorize(address factory) external payable onlyOwner {
+		_checkAuthority(factory, true);
+		_isAuthorized[factory] = true;
+		emit FactoryAuthorized(factory);
 	}
 
-	function revoke(address factory) external onlyOwner {
-		assembly ("memory-safe") {
-			factory := shr(0x60, shl(0x60, factory))
-			if iszero(factory) {
-				mstore(0x00, 0x7a44db95) // InvalidFactory()
-				revert(0x1c, 0x04)
-			}
-
-			mstore(0x00, factory)
-			mstore(0x20, AUTHORITY_STORAGE_SLOT)
-
-			sstore(keccak256(0x00, 0x40), 0x00)
-			log2(0x00, 0x00, FACTORY_REVOKED_TOPIC, factory)
-		}
+	/// @inheritdoc IMetaFactory
+	function revoke(address factory) external payable onlyOwner {
+		_checkAuthority(factory, false);
+		_isAuthorized[factory] = false;
+		emit FactoryRevoked(factory);
 	}
 
-	function isAuthorized(address factory) external view returns (bool result) {
-		assembly ("memory-safe") {
-			mstore(0x00, shr(0x60, shl(0x60, factory)))
-			mstore(0x20, AUTHORITY_STORAGE_SLOT)
-			result := sload(keccak256(0x00, 0x40))
-		}
+	/// @inheritdoc IMetaFactory
+	function isAuthorized(address factory) public view virtual returns (bool) {
+		return _isAuthorized[factory];
+	}
+
+	/// @inheritdoc IMetaFactory
+	function checkAuthority(address factory) external view {
+		_checkAuthority(factory, false);
+	}
+
+	/// @inheritdoc IMetaFactory
+	function name() external pure returns (string memory) {
+		return "MetaFactory";
+	}
+
+	/// @inheritdoc IMetaFactory
+	function version() external pure returns (string memory) {
+		return "1.0.0";
+	}
+
+	function _checkAuthority(address factory, bool flag) internal view virtual {
+		require(factory != address(0), InvalidFactory());
+		if (!flag) require(isAuthorized(factory), FactoryNotAuthorized(factory));
+		else require(!isAuthorized(factory), FactoryAlreadyAuthorized(factory));
 	}
 }

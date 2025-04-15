@@ -2,7 +2,7 @@
 pragma solidity ^0.8.28;
 
 /// @title ReentrancyGuard
-
+/// @notice Helps to prevent reentrant calls to a function
 abstract contract ReentrancyGuard {
 	error ReentrancyGuardReentrantCall();
 

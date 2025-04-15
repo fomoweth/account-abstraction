@@ -73,8 +73,10 @@ function neqModePayload(ModePayload x, ModePayload y) pure returns (bool z) {
 
 /// @title ExecutionModeLib
 /// @notice Provides functions to encode and decode execution mode
-
 library ExecutionModeLib {
+	error UnsupportedCallType(CallType callType);
+	error UnsupportedExecType(ExecType execType);
+
 	function encode(
 		CallType callType,
 		ExecType execType,
