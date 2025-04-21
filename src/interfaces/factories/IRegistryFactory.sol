@@ -16,8 +16,11 @@ interface IRegistryFactory is IAccountFactory {
 	/// @notice Thrown when the number of attesters exceeds the allowed limit
 	error ExceededMaxAttesters();
 
+	/// @notice Thrown when the provided attester address is invalid
+	error InvalidAttester();
+
 	/// @notice Thrown when the provided list of attester addresses is invalid
-	error InvalidAttesters();
+	error InvalidTrustedAttesters();
 
 	/// @notice Thrown when the threshold value is outside the valid range
 	error InvalidThreshold();
@@ -42,7 +45,9 @@ interface IRegistryFactory is IAccountFactory {
 		BootstrapConfig[] calldata validators,
 		BootstrapConfig[] calldata executors,
 		BootstrapConfig[] calldata fallbacks,
-		BootstrapConfig[] calldata hooks
+		BootstrapConfig[] calldata hooks,
+		BootstrapConfig calldata preValidationHook1271,
+		BootstrapConfig calldata preValidationHook4337
 	) external payable returns (address payable account);
 
 	/// @notice Sets the list of trusted attesters and the authorization threshold
@@ -69,7 +74,7 @@ interface IRegistryFactory is IAccountFactory {
 
 	/// @notice Returns the list of currently authorized attesters
 	/// @return attesters The list of trusted attester addresses
-	function getAttesters() external view returns (address[] memory attesters);
+	function getTrustedAttesters() external view returns (address[] memory attesters);
 
 	/// @notice Returns the currently configured attestation threshold
 	/// @return threshold The number of attestations required for authorization

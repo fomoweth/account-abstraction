@@ -10,7 +10,6 @@ interface IK1ValidatorFactory is IAccountFactory {
 	/// @param salt The unique value used for deterministic deployment of the smart account
 	/// @param eoaOwner The externally owned account (EOA) set as the smart account owner
 	/// @param senders The list of addresses authorized as senders for the K1Validator module
-	/// @param registry The address of the ERC-7484 registry to be associated with the smart account
 	/// @param attesters The list of trusted attester addresses for identity or permission verification
 	/// @param threshold The minimum number of attesters required to validate an assertion or operation
 	/// @return account The address of the newly deployed smart account
@@ -18,7 +17,6 @@ interface IK1ValidatorFactory is IAccountFactory {
 		bytes32 salt,
 		address eoaOwner,
 		address[] calldata senders,
-		address registry,
 		address[] calldata attesters,
 		uint8 threshold
 	) external payable returns (address payable);

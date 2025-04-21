@@ -2,17 +2,22 @@
 pragma solidity ^0.8.28;
 
 import {IK1ValidatorFactory} from "src/interfaces/factories/IK1ValidatorFactory.sol";
-import {IERC7484} from "src/interfaces/registries/IERC7484.sol";
 import {IBootstrap} from "src/interfaces/IBootstrap.sol";
 import {IVortex} from "src/interfaces/IVortex.sol";
 import {BootstrapLib, BootstrapConfig} from "src/libraries/BootstrapLib.sol";
-import {ModuleType, MODULE_TYPE_VALIDATOR, MODULE_TYPE_STATELESS_VALIDATOR} from "src/types/ModuleType.sol";
+import {ModuleType} from "src/types/ModuleType.sol";
 import {IAccountFactory, AccountFactory} from "./AccountFactory.sol";
 
 /// @title K1ValidatorFactory
 /// @notice Manages smart account creation compliant with ERC-4337 and ERC-7579 with K1Validator
 contract K1ValidatorFactory is IK1ValidatorFactory, AccountFactory {
 	using BootstrapLib for address;
+
+	/// @notice Thrown when the provided list of sender addresses is invalid
+	error InvalidSafeSenders();
+
+	/// @notice Thrown when the provided list of attester addresses is invalid
+	error InvalidTrustedAttesters();
 
 	/// @notice The K1Validator module contract
 	address public immutable K1_VALIDATOR;
@@ -21,7 +26,7 @@ contract K1ValidatorFactory is IK1ValidatorFactory, AccountFactory {
 	IBootstrap public immutable BOOTSTRAP;
 
 	/// @notice The ERC-7484 registry contract
-	IERC7484 public immutable REGISTRY;
+	address public immutable REGISTRY;
 
 	constructor(
 		address implementation,
@@ -52,7 +57,7 @@ contract K1ValidatorFactory is IK1ValidatorFactory, AccountFactory {
 
 		K1_VALIDATOR = k1Validator;
 		BOOTSTRAP = IBootstrap(bootstrap);
-		REGISTRY = IERC7484(registry);
+		REGISTRY = registry;
 	}
 
 	/// @inheritdoc IAccountFactory
@@ -62,7 +67,6 @@ contract K1ValidatorFactory is IK1ValidatorFactory, AccountFactory {
 	) public payable virtual override(IAccountFactory, AccountFactory) returns (address payable account) {
 		address eoaOwner;
 		address[] calldata senders;
-		address registry;
 		address[] calldata attesters;
 		uint8 threshold;
 
@@ -73,16 +77,14 @@ contract K1ValidatorFactory is IK1ValidatorFactory, AccountFactory {
 			senders.offset := add(ptr, 0x20)
 			senders.length := calldataload(ptr)
 
-			registry := shr(0x60, shl(0x60, calldataload(add(params.offset, 0x40))))
-
-			ptr := add(params.offset, calldataload(add(params.offset, 0x60)))
+			ptr := add(params.offset, calldataload(add(params.offset, 0x40)))
 			attesters.offset := add(ptr, 0x20)
 			attesters.length := calldataload(ptr)
 
-			threshold := and(calldataload(add(params.offset, 0x80)), 0xff)
+			threshold := and(calldataload(add(params.offset, 0x60)), 0xff)
 		}
 
-		return createAccount(salt, eoaOwner, senders, registry, attesters, threshold);
+		return createAccount(salt, eoaOwner, senders, attesters, threshold);
 	}
 
 	/// @inheritdoc IK1ValidatorFactory
@@ -90,7 +92,6 @@ contract K1ValidatorFactory is IK1ValidatorFactory, AccountFactory {
 		bytes32 salt,
 		address eoaOwner,
 		address[] calldata senders,
-		address registry,
 		address[] calldata attesters,
 		uint8 threshold
 	) public payable virtual returns (address payable account) {
@@ -101,21 +102,21 @@ contract K1ValidatorFactory is IK1ValidatorFactory, AccountFactory {
 				revert(0x1c, 0x04)
 			}
 
-			registry := shr(0x60, shl(0x60, registry))
-			if and(iszero(registry), iszero(iszero(threshold))) {
-				mstore(0x00, 0x81e3306a) // InvalidERC7484Registry()
+			if iszero(senders.length) {
+				mstore(0x00, 0x06817baf) // InvalidSafeSenders()
 				revert(0x1c, 0x04)
 			}
 
-			if gt(threshold, attesters.length) {
+			if iszero(attesters.length) {
+				mstore(0x00, 0x1e9d6299) // InvalidTrustedAttesters()
+				revert(0x1c, 0x04)
+			}
+
+			if or(iszero(threshold), gt(threshold, attesters.length)) {
 				mstore(0x00, 0xaabd5a09) // InvalidThreshold()
 				revert(0x1c, 0x04)
 			}
 		}
-
-		ModuleType[] memory moduleTypeIds = new ModuleType[](2);
-		moduleTypeIds[0] = MODULE_TYPE_VALIDATOR;
-		moduleTypeIds[1] = MODULE_TYPE_STATELESS_VALIDATOR;
 
 		bytes memory data = abi.encodePacked(eoaOwner);
 		uint256 length = senders.length;
@@ -131,9 +132,9 @@ contract K1ValidatorFactory is IK1ValidatorFactory, AccountFactory {
 		bytes memory params = abi.encodeCall(
 			IVortex.initializeAccount,
 			(
-				BOOTSTRAP.getInitializeScopedCalldata(
-					K1_VALIDATOR.build(moduleTypeIds, data, ""),
-					registry,
+				BOOTSTRAP.getInitializeWithRootValidatorCalldata(
+					K1_VALIDATOR.build(data, ""),
+					REGISTRY,
 					attesters,
 					threshold
 				)

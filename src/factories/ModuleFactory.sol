@@ -3,13 +3,10 @@ pragma solidity ^0.8.28;
 
 import {IModuleFactory} from "src/interfaces/factories/IModuleFactory.sol";
 import {IERC7484} from "src/interfaces/registries/IERC7484.sol";
-// import {IRegistry} from "src/interfaces/registries/IRegistry.sol";
-// import {ResolverUID} from "src/types/UID.sol";
-import {Ownable} from "solady/auth/Ownable.sol";
 
 /// @title ModuleFactory
 /// @notice Manages deploying and registering ERC-7579 modules
-contract ModuleFactory is IModuleFactory, Ownable {
+contract ModuleFactory is IModuleFactory {
 	/// @dev keccak256("ModuleDeployed(address,bytes32)")
 	bytes32 private constant MODULE_DEPLOYED_TOPIC = 0x4f980749b81a25271e0bfdc77dd2910421a2226fe562a239470c55be0903c6cd;
 
@@ -22,30 +19,16 @@ contract ModuleFactory is IModuleFactory, Ownable {
 	/// @notice The ERC-7484 registry contract
 	address public immutable REGISTRY;
 
-	// IERC7484 public immutable REGISTRY;
-
-	constructor(address registry, address initialOwner) {
+	constructor(address registry) {
 		assembly ("memory-safe") {
 			registry := shr(0x60, shl(0x60, registry))
 			if iszero(registry) {
 				mstore(0x00, 0x81e3306a) // InvalidERC7484Registry()
 				revert(0x1c, 0x04)
 			}
-
-			// if iszero(resolverUID) {
-			// 	mstore(0x00, 0x7ded78fd) // InvalidResolverUID()
-			// 	revert(0x1c, 0x04)
-			// }
-
-			// if iszero(schemaUID) {
-			// 	mstore(0x00, 0x80d9b7d7) // InvalidSchemaUID()
-			// 	revert(0x1c, 0x04)
-			// }
 		}
 
-		// REGISTRY = IERC7484(registry);
 		REGISTRY = registry;
-		_initializeOwner(initialOwner);
 	}
 
 	/// @inheritdoc IModuleFactory
