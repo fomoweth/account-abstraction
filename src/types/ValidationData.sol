@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {VALIDATION_SUCCESS, VALIDATION_FAILED} from "./Constants.sol";
-
 type ValidationData is uint256;
 
 using ValidationDataLib for ValidationData global;

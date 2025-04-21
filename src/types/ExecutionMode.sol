@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {CALLTYPE_SINGLE, CALLTYPE_BATCH, CALLTYPE_STATIC, CALLTYPE_DELEGATE} from "src/types/Constants.sol";
-import {EXECTYPE_DEFAULT, EXECTYPE_TRY} from "src/types/Constants.sol";
-import {MODE_SELECTOR_DEFAULT, MODE_PAYLOAD_DEFAULT} from "src/types/Constants.sol";
-
 type ExecutionMode is bytes32;
 
 type CallType is bytes1;
@@ -16,7 +12,6 @@ type ModeSelector is bytes4;
 type ModePayload is bytes22;
 
 using ExecutionModeLib for ExecutionMode global;
-using ExecutionModeLib for CallType global;
 
 using {eqCallType as ==, neqCallType as !=} for CallType global;
 using {eqExecType as ==, neqExecType as !=} for ExecType global;
@@ -76,6 +71,17 @@ function neqModePayload(ModePayload x, ModePayload y) pure returns (bool z) {
 library ExecutionModeLib {
 	error UnsupportedCallType(CallType callType);
 	error UnsupportedExecType(ExecType execType);
+
+	CallType internal constant CALLTYPE_SINGLE = CallType.wrap(0x00);
+	CallType internal constant CALLTYPE_BATCH = CallType.wrap(0x01);
+	CallType internal constant CALLTYPE_STATIC = CallType.wrap(0xFE);
+	CallType internal constant CALLTYPE_DELEGATE = CallType.wrap(0xFF);
+
+	ExecType internal constant EXECTYPE_DEFAULT = ExecType.wrap(0x00);
+	ExecType internal constant EXECTYPE_TRY = ExecType.wrap(0x01);
+
+	ModeSelector internal constant MODE_SELECTOR_DEFAULT = ModeSelector.wrap(bytes4(0x00000000));
+	ModePayload internal constant MODE_PAYLOAD_DEFAULT = ModePayload.wrap(bytes22(0));
 
 	function encode(
 		CallType callType,

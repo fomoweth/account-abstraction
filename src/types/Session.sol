@@ -26,10 +26,11 @@ enum PolicyType {
 	ERC1271
 }
 
-using IdLib for ActionPolicyId global;
-using IdLib for Erc1271PolicyId global;
-using IdLib for PermissionId global;
-using IdLib for UserOpPolicyId global;
+using SessionLib for SmartSessionMode global;
+using SessionLib for PermissionId global;
+using SessionLib for ActionPolicyId global;
+using SessionLib for Erc1271PolicyId global;
+using SessionLib for UserOpPolicyId global;
 
 using {eqPermissionId as ==, neqPermissionId as !=} for PermissionId global;
 using {eqActionId as ==, neqActionId as !=} for ActionId global;
@@ -110,9 +111,9 @@ function neqConfigId(ConfigId x, ConfigId y) pure returns (bool z) {
 	}
 }
 
-/// @title IdLib
-
-library IdLib {
+/// @title SessionLib
+/// @notice Provides utility functions for SmartSession module
+library SessionLib {
 	bytes4 internal constant VALUE_SELECTOR = 0xFFFFFFFF;
 
 	function isUseMode(SmartSessionMode mode) internal pure returns (bool) {
@@ -120,11 +121,11 @@ library IdLib {
 	}
 
 	function isEnableMode(SmartSessionMode mode) internal pure returns (bool) {
-		return (mode == SmartSessionMode.ENABLE || mode == SmartSessionMode.UNSAFE_ENABLE);
+		return mode == SmartSessionMode.ENABLE || mode == SmartSessionMode.UNSAFE_ENABLE;
 	}
 
 	function useRegistry(SmartSessionMode mode) internal pure returns (bool) {
-		return (mode == SmartSessionMode.ENABLE);
+		return mode == SmartSessionMode.ENABLE;
 	}
 
 	function unpackMode(
@@ -139,40 +140,39 @@ library IdLib {
 		}
 	}
 
-	function encodeUse(PermissionId permissionId, bytes memory sig) internal pure returns (bytes memory userOpSig) {
-		userOpSig = abi.encodePacked(SmartSessionMode.USE, permissionId, sig);
+	function encodeUse(PermissionId permissionId, bytes memory signature) internal pure returns (bytes memory userOpSig) {
+		return abi.encodePacked(SmartSessionMode.USE, permissionId, signature);
 	}
 
 	function toUserOpPolicyId(PermissionId permissionId) internal pure returns (UserOpPolicyId userOpPolicyId) {
-		userOpPolicyId = UserOpPolicyId.wrap(PermissionId.unwrap(permissionId));
+		return UserOpPolicyId.wrap(PermissionId.unwrap(permissionId));
 	}
 
 	function toActionId(address target, bytes calldata callData) internal pure returns (ActionId actionId) {
-		if (callData.length < 4) return toActionId(target, VALUE_SELECTOR);
-		else return toActionId(target, callData[:4]);
+		return toActionId(target, callData.length < 4 ? VALUE_SELECTOR : bytes4(callData[:4]));
 	}
 
-	function toActionId(address target, bytes4 functionSelector) internal pure returns (ActionId actionId) {
-		actionId = ActionId.wrap(keccak256(abi.encodePacked(target, functionSelector)));
+	function toActionId(address target, bytes4 selector) internal pure returns (ActionId actionId) {
+		return ActionId.wrap(keccak256(abi.encodePacked(target, selector)));
 	}
 
 	function toActionPolicyId(
 		PermissionId permissionId,
 		ActionId actionId
 	) internal pure returns (ActionPolicyId policyId) {
-		policyId = ActionPolicyId.wrap(keccak256(abi.encodePacked(permissionId, actionId)));
+		return ActionPolicyId.wrap(keccak256(abi.encodePacked(permissionId, actionId)));
 	}
 
 	function toErc1271PolicyId(PermissionId permissionId) internal pure returns (Erc1271PolicyId erc1271PolicyId) {
-		erc1271PolicyId = Erc1271PolicyId.wrap(keccak256(abi.encodePacked("ERC1271: ", permissionId)));
+		return Erc1271PolicyId.wrap(keccak256(abi.encodePacked("ERC1271: ", permissionId)));
 	}
 
 	function toConfigId(UserOpPolicyId userOpPolicyId, address account) internal pure returns (ConfigId configId) {
-		configId = ConfigId.wrap(keccak256(abi.encodePacked(account, userOpPolicyId)));
+		return ConfigId.wrap(keccak256(abi.encodePacked(account, userOpPolicyId)));
 	}
 
 	function toConfigId(ActionPolicyId actionPolicyId, address account) internal pure returns (ConfigId configId) {
-		configId = ConfigId.wrap(keccak256(abi.encodePacked(account, actionPolicyId)));
+		return ConfigId.wrap(keccak256(abi.encodePacked(account, actionPolicyId)));
 	}
 
 	function toConfigId(
@@ -180,22 +180,22 @@ library IdLib {
 		ActionId actionId,
 		address account
 	) internal pure returns (ConfigId configId) {
-		configId = toConfigId(toActionPolicyId(permissionId, actionId), account);
+		return toConfigId(toActionPolicyId(permissionId, actionId), account);
 	}
 
 	function toConfigId(Erc1271PolicyId erc1271PolicyId, address account) internal pure returns (ConfigId configId) {
-		configId = ConfigId.wrap(keccak256(abi.encodePacked(account, erc1271PolicyId)));
+		return ConfigId.wrap(keccak256(abi.encodePacked(account, erc1271PolicyId)));
 	}
 
 	function toConfigId(UserOpPolicyId userOpPolicyId) internal view returns (ConfigId configId) {
-		configId = toConfigId(userOpPolicyId, msg.sender);
+		return toConfigId(userOpPolicyId, msg.sender);
 	}
 
 	function toConfigId(PermissionId permissionId, ActionId actionId) internal view returns (ConfigId configId) {
-		configId = toConfigId(toActionPolicyId(permissionId, actionId), msg.sender);
+		return toConfigId(toActionPolicyId(permissionId, actionId), msg.sender);
 	}
 
 	function toConfigId(Erc1271PolicyId erc1271PolicyId) internal view returns (ConfigId configId) {
-		configId = toConfigId(erc1271PolicyId, msg.sender);
+		return toConfigId(erc1271PolicyId, msg.sender);
 	}
 }

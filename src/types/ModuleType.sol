@@ -1,16 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {
-	MODULE_TYPE_VALIDATOR,
-	MODULE_TYPE_EXECUTOR,
-	MODULE_TYPE_FALLBACK,
-	MODULE_TYPE_HOOK,
-	MODULE_TYPE_POLICY,
-	MODULE_TYPE_SIGNER,
-	MODULE_TYPE_STATELESS_VALIDATOR
-} from "./Constants.sol";
-
 type ModuleType is uint256;
 
 type PackedModuleTypes is uint32;
