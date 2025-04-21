@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {CallType, ExecType, ModuleType} from "src/types/Types.sol";
+import {CallType, ExecType, ModuleType} from "src/types/DataTypes.sol";
 
 abstract contract EventsAndErrors {
 	// UUPSUpgradeable Proxy
@@ -15,13 +15,15 @@ abstract contract EventsAndErrors {
 	event AccountCreated(address indexed account, bytes32 indexed salt);
 
 	// Vortex
-	event ModuleInstalled(ModuleType indexed moduleTypeId, address indexed module);
-	event ModuleUninstalled(ModuleType indexed moduleTypeId, address indexed module);
+	event ModuleInstalled(ModuleType moduleTypeId, address module);
+	event ModuleUninstalled(ModuleType moduleTypeId, address module);
 	event RegistryConfigured(address indexed registry);
 	event RootValidatorConfigured(address indexed rootValidator);
 	event HookConfigured(address indexed module, address indexed hook);
 	event TrustedForwarderConfigured(address indexed account, address indexed forwarder);
 	event TryExecuteUnsuccessful(uint256 index, bytes returnData);
+
+	error Unauthorized();
 
 	// UUPSUpgradeable Proxy
 	error InvalidImplementation();
@@ -40,17 +42,8 @@ abstract contract EventsAndErrors {
 	error InvalidEOAOwner();
 	error InvalidRecipient();
 
-	// RegistryFactory
-	error InvalidAttester();
-	error InvalidThreshold();
-	error AttestersNotSorted();
-	error ModuleNotAuthorized(address module, ModuleType moduleTypeId);
-	error AttesterAlreadyExists(address attester);
-	error AttesterNotExists(address attester);
-
-	// Vortex
-	error ModuleAlreadyInstalled(address module);
-	error ModuleNotInstalled(address module);
+	error ModuleAlreadyInstalled(ModuleType moduleTypeId, address module);
+	error ModuleNotInstalled(ModuleType moduleTypeId, address module);
 
 	error InvalidModule();
 	error InvalidModuleType();
@@ -58,14 +51,11 @@ abstract contract EventsAndErrors {
 	error UnsupportedModuleType(ModuleType moduleTypeId);
 	error InvalidDataLength();
 
-	error ForbiddenFallback();
 	error ForbiddenSelector(bytes4 selector);
 	error InvalidSelector();
 	error UnknownSelector(bytes4 selector);
 
 	error InvalidRootValidator();
-	error InvalidFlagType(bytes1 flag);
-	error InvalidFlag();
 	error InvalidSignature();
 	error EnableNotApproved();
 	error InvalidInitialization();

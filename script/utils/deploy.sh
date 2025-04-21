@@ -1,0 +1,69 @@
+#!/bin/bash
+
+source .env
+
+# SCRIPT="Deploy"
+# SCRIPT=$1
+CHAIN=$1
+SCRIPT=${2:-Deploy}
+
+case "$CHAIN" in
+	ethereum)
+		CHAIN_ID=1
+		RPC_URL=$ETHEREUM_RPC_URL
+		EXPLORER_URL=$ETHERSCAN_URL
+		;;
+	sepolia)
+		CHAIN_ID=11155111
+		RPC_URL=$SEPOLIA_RPC_URL
+		EXPLORER_URL=$ETHERSCAN_SEPOLIA_URL
+		;;
+	optimism)
+		CHAIN_ID=10
+		RPC_URL=$OPTIMISM_RPC_URL
+		EXPLORER_URL=$OPTIMISTIC_ETHERSCAN_URL
+		;;
+	optimism-sepolia)
+		CHAIN_ID=11155420
+		RPC_URL=$OPTIMISM_SEPOLIA_RPC_URL
+		EXPLORER_URL=$OPTIMISTIC_ETHERSCAN_SEPOLIA_URL
+		;;
+	polygon)
+		CHAIN_ID=137
+		RPC_URL=$POLYGON_RPC_URL
+		EXPLORER_URL=$POLYGONSCAN_URL
+		;;
+	polygon-amoy)
+		CHAIN_ID=80002
+		RPC_URL=$POLYGON_AMOY_RPC_URL
+		EXPLORER_URL=$POLYGONSCAN_AMOY_URL
+		;;
+	base)
+		CHAIN_ID=8453
+		RPC_URL=$BASE_RPC_URL
+		EXPLORER_URL=$BASESCAN_URL
+		;;
+	base-sepolia)
+		CHAIN_ID=84532
+		RPC_URL=$BASE_SEPOLIA_RPC_URL
+		EXPLORER_URL=$BASESCAN_SEPOLIA_URL
+		;;
+	arbitrum)
+		CHAIN_ID=42161
+		RPC_URL=$ARBITRUM_RPC_URL
+		EXPLORER_URL=$ARBISCAN_URL
+		;;
+	arbitrum-sepolia)
+		CHAIN_ID=421614
+		RPC_URL=$ARBITRUM_SEPOLIA_RPC_URL
+		EXPLORER_URL=$ARBISCAN_SEPOLIA_URL
+		;;
+	*)
+		echo "Unsupported chain: $CHAIN"
+		exit 1
+		;;
+esac
+
+forge script script/$SCRIPT.s.sol --broadcast --verify --rpc-url $RPC_URL
+
+node --env-file=.env script/utils/extract.js --chain $CHAIN_ID --rpc-url $RPC_URL --name $SCRIPT

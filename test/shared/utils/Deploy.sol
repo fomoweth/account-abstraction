@@ -18,7 +18,7 @@ import {NativeWrapperFallback} from "src/modules/fallbacks/NativeWrapperFallback
 import {STETHWrapperFallback} from "src/modules/fallbacks/STETHWrapperFallback.sol";
 import {ECDSAValidator} from "src/modules/validators/ECDSAValidator.sol";
 import {K1Validator} from "src/modules/validators/K1Validator.sol";
-import {Bootstrap} from "src/Bootstrap.sol";
+import {Bootstrap} from "src/utils/Bootstrap.sol";
 import {Vortex} from "src/Vortex.sol";
 
 library Deploy {

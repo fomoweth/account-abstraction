@@ -3,44 +3,43 @@ pragma solidity ^0.8.28;
 
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 import {CallType, ExecType} from "src/types/ExecutionMode.sol";
-import {STETHWrapper} from "src/modules/fallbacks/STETHWrapper.sol";
+import {STETHWrapperFallback} from "src/modules/fallbacks/STETHWrapperFallback.sol";
 import {Vortex} from "src/Vortex.sol";
 
 import {BaseTest} from "test/shared/env/BaseTest.sol";
 import {ExecutionUtils} from "test/shared/utils/ExecutionUtils.sol";
 import {SolArray} from "test/shared/utils/SolArray.sol";
 
-contract STETHWrapperTest is BaseTest {
+contract STETHWrapperFallbackTest is BaseTest {
 	using ExecutionUtils for ExecType;
 	using SolArray for *;
 
 	function setUp() public virtual override onlyEthereum {
 		super.setUp();
 
-		deployVortex(ALICE, 0, address(K1_FACTORY), true);
+		deployVortex(ALICE);
 
-		bytes4[] memory selectors = STETHWrapper.wrapSTETH.selector.bytes4s(
-			STETHWrapper.wrapWSTETH.selector,
-			STETHWrapper.unwrapWSTETH.selector
+		bytes4[] memory selectors = STETHWrapperFallback.wrapSTETH.selector.bytes4s(
+			STETHWrapperFallback.wrapWSTETH.selector,
+			STETHWrapperFallback.unwrapWSTETH.selector
 		);
 
 		CallType[] memory callTypes = CALLTYPE_DELEGATE.callTypes(CALLTYPE_DELEGATE, CALLTYPE_DELEGATE);
 
-		bytes memory installData = encodeInstallModuleParams(
-			TYPE_FALLBACK.moduleTypes(),
+		bytes memory installData = encodeModuleParams(
 			abi.encode(encodeFallbackSelectors(selectors, callTypes), ""),
 			""
 		);
 
-		ALICE.install(TYPE_FALLBACK, address(STETH_WRAPPER), installData);
+		ALICE.install(TYPE_FALLBACK, address(aux.stETHWrapper), installData);
 
 		vm.prank(address(ALICE.account));
 		STETH.approve(WSTETH.toAddress(), MAX_UINT256);
 	}
 
 	function test_immutables() public virtual {
-		assertEq(STETH_WRAPPER.STETH(), STETH);
-		assertEq(STETH_WRAPPER.WSTETH(), WSTETH);
+		assertEq(aux.stETHWrapper.STETH(), STETH);
+		assertEq(aux.stETHWrapper.WSTETH(), WSTETH);
 	}
 
 	function test_wrapSTETH() public virtual {
@@ -48,7 +47,7 @@ contract STETHWrapperTest is BaseTest {
 		assertEq(address(ALICE.account).balance, DEFAULT_VALUE);
 		assertEq(STETH.balanceOf(address(ALICE.account)), 0);
 
-		STETHWrapper(address(ALICE.account)).wrapSTETH(DEFAULT_VALUE);
+		STETHWrapperFallback(address(ALICE.account)).wrapSTETH(DEFAULT_VALUE);
 
 		assertEq(address(ALICE.account).balance, 0);
 		assertGt(STETH.balanceOf(address(ALICE.account)), 0);
@@ -59,7 +58,7 @@ contract STETHWrapperTest is BaseTest {
 		assertEq(address(ALICE.account).balance, DEFAULT_VALUE);
 		assertEq(STETH.balanceOf(address(ALICE.account)), 0);
 
-		bytes memory callData = abi.encodeCall(STETHWrapper.wrapSTETH, (DEFAULT_VALUE));
+		bytes memory callData = abi.encodeCall(STETHWrapperFallback.wrapSTETH, (DEFAULT_VALUE));
 		bytes memory executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(address(ALICE.account), 0, callData);
 
 		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
@@ -76,7 +75,7 @@ contract STETHWrapperTest is BaseTest {
 		assertEq(address(ALICE.account).balance, DEFAULT_VALUE);
 		assertEq(STETH.balanceOf(address(ALICE.account)), 0);
 
-		bytes memory callData = abi.encodeCall(STETHWrapper.wrapSTETH, (DEFAULT_VALUE));
+		bytes memory callData = abi.encodeCall(STETHWrapperFallback.wrapSTETH, (DEFAULT_VALUE));
 		bytes memory userOpCalldata = abi.encodePacked(Vortex.executeUserOp.selector, callData);
 
 		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
@@ -94,7 +93,7 @@ contract STETHWrapperTest is BaseTest {
 		assertEq(WSTETH.balanceOf(address(ALICE.account)), 0);
 
 		uint256 value = STETH.balanceOf(address(ALICE.account));
-		STETHWrapper(address(ALICE.account)).wrapWSTETH(value);
+		STETHWrapperFallback(address(ALICE.account)).wrapWSTETH(value);
 
 		assertLt(STETH.balanceOf(address(ALICE.account)), value);
 		assertGt(WSTETH.balanceOf(address(ALICE.account)), 0);
@@ -106,7 +105,7 @@ contract STETHWrapperTest is BaseTest {
 		assertEq(WSTETH.balanceOf(address(ALICE.account)), 0);
 
 		uint256 value = STETH.balanceOf(address(ALICE.account));
-		bytes memory callData = abi.encodeCall(STETHWrapper.wrapWSTETH, (value));
+		bytes memory callData = abi.encodeCall(STETHWrapperFallback.wrapWSTETH, (value));
 		bytes memory executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(address(ALICE.account), 0, callData);
 
 		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
@@ -124,7 +123,7 @@ contract STETHWrapperTest is BaseTest {
 		assertEq(WSTETH.balanceOf(address(ALICE.account)), 0);
 
 		uint256 value = STETH.balanceOf(address(ALICE.account));
-		bytes memory callData = abi.encodeCall(STETHWrapper.wrapWSTETH, (value));
+		bytes memory callData = abi.encodeCall(STETHWrapperFallback.wrapWSTETH, (value));
 		bytes memory userOpCalldata = abi.encodePacked(Vortex.executeUserOp.selector, callData);
 
 		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
@@ -141,7 +140,7 @@ contract STETHWrapperTest is BaseTest {
 		assertEq(WSTETH.balanceOf(address(ALICE.account)), DEFAULT_VALUE);
 		assertEq(STETH.balanceOf(address(ALICE.account)), 0);
 
-		STETHWrapper(address(ALICE.account)).unwrapWSTETH(DEFAULT_VALUE);
+		STETHWrapperFallback(address(ALICE.account)).unwrapWSTETH(DEFAULT_VALUE);
 
 		assertEq(WSTETH.balanceOf(address(ALICE.account)), 0);
 		assertGt(STETH.balanceOf(address(ALICE.account)), 0);
@@ -152,7 +151,7 @@ contract STETHWrapperTest is BaseTest {
 		assertEq(WSTETH.balanceOf(address(ALICE.account)), DEFAULT_VALUE);
 		assertEq(STETH.balanceOf(address(ALICE.account)), 0);
 
-		bytes memory callData = abi.encodeCall(STETHWrapper.unwrapWSTETH, (DEFAULT_VALUE));
+		bytes memory callData = abi.encodeCall(STETHWrapperFallback.unwrapWSTETH, (DEFAULT_VALUE));
 		bytes memory executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(address(ALICE.account), 0, callData);
 
 		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
@@ -169,7 +168,7 @@ contract STETHWrapperTest is BaseTest {
 		assertEq(WSTETH.balanceOf(address(ALICE.account)), DEFAULT_VALUE);
 		assertEq(STETH.balanceOf(address(ALICE.account)), 0);
 
-		bytes memory callData = abi.encodeCall(STETHWrapper.unwrapWSTETH, (DEFAULT_VALUE));
+		bytes memory callData = abi.encodeCall(STETHWrapperFallback.unwrapWSTETH, (DEFAULT_VALUE));
 		bytes memory userOpCalldata = abi.encodePacked(Vortex.executeUserOp.selector, callData);
 
 		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);

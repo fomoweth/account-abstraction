@@ -5,7 +5,6 @@ import {Test} from "forge-std/Test.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 import {IHook} from "src/interfaces/IERC7579Modules.sol";
-import {AccountIdLib} from "src/libraries/AccountIdLib.sol";
 import {Currency} from "src/types/Currency.sol";
 import {Vortex} from "src/Vortex.sol";
 
@@ -16,8 +15,6 @@ import {Deployers} from "./Deployers.sol";
 import {EventsAndErrors} from "./EventsAndErrors.sol";
 
 abstract contract BaseTest is Test, Assertions, Deployers, EventsAndErrors {
-	using AccountIdLib for string;
-
 	string internal constant ENABLE_MODULE_NOTATION =
 		"EnableModule(uint256 moduleTypeId,address module,bytes32 initDataHash,bytes32 userOpHash)";
 	bytes32 internal constant ENABLE_MODULE_TYPEHASH = keccak256(bytes(ENABLE_MODULE_NOTATION));
@@ -84,10 +81,11 @@ abstract contract BaseTest is Test, Assertions, Deployers, EventsAndErrors {
 		if (currency.isZero()) {
 			deal(account, value);
 		} else if (currency == STETH) {
-			(, bytes memory returndata) = currency.toAddress().staticcall(abi.encodeWithSelector(0xf5eb42dc, account));
+			address steth = currency.toAddress();
+			(, bytes memory returndata) = steth.staticcall(abi.encodeWithSelector(0xf5eb42dc, account));
 			uint256 balancePrior = abi.decode(returndata, (uint256));
 			bytes32 balanceSlot = keccak256(abi.encode(account, uint256(0)));
-			vm.store(currency.toAddress(), balanceSlot, bytes32(value));
+			vm.store(steth, balanceSlot, bytes32(value));
 
 			if (adjust) {
 				uint256 totalSupply = currency.totalSupply();
@@ -98,7 +96,7 @@ abstract contract BaseTest is Test, Assertions, Deployers, EventsAndErrors {
 					totalSupply += (value - balancePrior);
 				}
 
-				vm.store(currency.toAddress(), STETH_TOTAL_SHARES_SLOT, bytes32(totalSupply));
+				vm.store(steth, STETH_TOTAL_SHARES_SLOT, bytes32(totalSupply));
 			}
 		} else {
 			deal(currency.toAddress(), account, value, adjust);
@@ -113,8 +111,6 @@ abstract contract BaseTest is Test, Assertions, Deployers, EventsAndErrors {
 		bytes32 userOpHash,
 		Vm.Log[] memory logs
 	) internal virtual returns (bool success, uint256 actualGasCost, uint256 actualGasUsed, bytes memory revertReason) {
-		// Vm.Log[] memory logs = vm.getRecordedLogs();
-
 		for (uint256 i; i < logs.length; ++i) {
 			if (logs[i].topics[0] == USER_OPERATION_EVENT_TOPIC) {
 				(, success, actualGasCost, actualGasUsed) = abi.decode(logs[i].data, (uint256, bool, uint256, uint256));
@@ -125,8 +121,17 @@ abstract contract BaseTest is Test, Assertions, Deployers, EventsAndErrors {
 	}
 
 	function getAccountDomainStructFields(Vortex account) internal view virtual returns (bytes memory) {
-		(string memory name, string memory version) = account.accountId().parse();
-		return abi.encode(keccak256(bytes(name)), keccak256(bytes(version)), block.chainid, account, bytes32(0));
+		(
+			,
+			string memory name,
+			string memory version,
+			uint256 chainId,
+			address verifyingContract,
+			bytes32 salt,
+
+		) = account.eip712Domain();
+
+		return abi.encode(keccak256(bytes(name)), keccak256(bytes(version)), chainId, verifyingContract, salt);
 	}
 
 	function preparePermitSingle(

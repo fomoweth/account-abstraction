@@ -1,0 +1,77 @@
+{
+	"chainId": 421614,
+	"deployments": {
+		"AccountFactory": {
+			"address": "0x83B4f5D15692Acd0C36402E3E2f7BeA5eE3e7cD4",
+			"deployer": "0xFcF506c3fd32F158D6Aa4e112eE4fA27fFed4e1C",
+			"salt": "0xfde2263de0b2cf17312ee28ad1847a4799e639ebc79e0853e8820992200e3284",
+			"timestamp": 1744226598
+		},
+		"Bootstrap": {
+			"address": "0x7C230568318A0137b21f6D75d9293de070d629AA",
+			"deployer": "0xFcF506c3fd32F158D6Aa4e112eE4fA27fFed4e1C",
+			"salt": "0xfde2263de0b2cf17312ee28ad1847a4799e639ebc79e0853e8820992200e3284",
+			"timestamp": 1744226598
+		},
+		"K1Validator": {
+			"address": "0x731a2C2031863E7E81537dED7436B0CE5Fb7fb52",
+			"deployer": "0xFcF506c3fd32F158D6Aa4e112eE4fA27fFed4e1C",
+			"salt": "0xfde2263de0b2cf17312ee28ad1847a4799e639ebc79e0853e8820992200e3284",
+			"timestamp": 1744226598
+		},
+		"K1ValidatorFactory": {
+			"address": "0x5dBcBeb915F0a5087598071a55af6f76541b2593",
+			"deployer": "0xFcF506c3fd32F158D6Aa4e112eE4fA27fFed4e1C",
+			"salt": "0xfde2263de0b2cf17312ee28ad1847a4799e639ebc79e0853e8820992200e3284",
+			"timestamp": 1744226598
+		},
+		"MetaFactory": {
+			"address": "0xd97f4c30d99831d501eF9b1f06504E26345EaEe4",
+			"deployer": "0xFcF506c3fd32F158D6Aa4e112eE4fA27fFed4e1C",
+			"salt": "0xfde2263de0b2cf17312ee28ad1847a4799e639ebc79e0853e8820992200e3284",
+			"timestamp": 1744226598
+		},
+		"ModuleFactory": {
+			"address": "0x95C1882628c4061f48900ad40c62F458205151f4",
+			"deployer": "0xFcF506c3fd32F158D6Aa4e112eE4fA27fFed4e1C",
+			"salt": "0xfde2263de0b2cf17312ee28ad1847a4799e639ebc79e0853e8820992200e3284",
+			"timestamp": 1744226598
+		},
+		"NativeWrapperFallback": {
+			"address": "0x7f5FDA3c3C5A61D2B50Ad08b3764328D990c685a",
+			"deployer": "0xFcF506c3fd32F158D6Aa4e112eE4fA27fFed4e1C",
+			"salt": "0xfde2263de0b2cf17312ee28ad1847a4799e639ebc79e0853e8820992200e3284",
+			"timestamp": 1744226598
+		},
+		"Permit2Executor": {
+			"address": "0x2FA641F600e113c04873515AdE7FE4eEB01cC258",
+			"deployer": "0xFcF506c3fd32F158D6Aa4e112eE4fA27fFed4e1C",
+			"salt": "0xfde2263de0b2cf17312ee28ad1847a4799e639ebc79e0853e8820992200e3284",
+			"timestamp": 1744226598
+		},
+		"RegistryFactory": {
+			"address": "0xe8B17b17e6F528F995e420B61021fE2AB3e78fEa",
+			"deployer": "0xFcF506c3fd32F158D6Aa4e112eE4fA27fFed4e1C",
+			"salt": "0xfde2263de0b2cf17312ee28ad1847a4799e639ebc79e0853e8820992200e3284",
+			"timestamp": 1744226598
+		},
+		"STETHWrapperFallback": {
+			"address": "0x0327AFb74ecD59C4af8ADA28e605D20d61b06BC8",
+			"deployer": "0xFcF506c3fd32F158D6Aa4e112eE4fA27fFed4e1C",
+			"salt": "0xfde2263de0b2cf17312ee28ad1847a4799e639ebc79e0853e8820992200e3284",
+			"timestamp": 1744226598
+		},
+		"UniversalExecutor": {
+			"address": "0x4Aaf48f28d90aB4244d24BA9bff8941b73f0690b",
+			"deployer": "0xFcF506c3fd32F158D6Aa4e112eE4fA27fFed4e1C",
+			"salt": "0xfde2263de0b2cf17312ee28ad1847a4799e639ebc79e0853e8820992200e3284",
+			"timestamp": 1744226598
+		},
+		"Vortex": {
+			"address": "0xe078E90779348fd3F76c2d63D89650e23b54Fa70",
+			"deployer": "0xFcF506c3fd32F158D6Aa4e112eE4fA27fFed4e1C",
+			"salt": "0xfde2263de0b2cf17312ee28ad1847a4799e639ebc79e0853e8820992200e3284",
+			"timestamp": 1744226598
+		}
+	}
+}

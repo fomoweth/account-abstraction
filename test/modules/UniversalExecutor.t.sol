@@ -15,6 +15,7 @@ import {IUniswapV2Pair} from "src/interfaces/external/uniswap/v2/IUniswapV2Pair.
 import {IUniversalRouter} from "src/interfaces/external/uniswap/IUniversalRouter.sol";
 import {Currency} from "src/types/Currency.sol";
 import {ExecType} from "src/types/ExecutionMode.sol";
+import {UniversalExecutor} from "src/modules/executors/UniversalExecutor.sol";
 
 import {BaseTest} from "test/shared/env/BaseTest.sol";
 import {PermitSingle} from "test/shared/structs/Protocols.sol";
@@ -58,37 +59,37 @@ contract UniversalExecutorTest is BaseTest {
 	function setUp() public virtual override {
 		super.setUp();
 
-		deployVortex(ALICE, 0, address(K1_FACTORY), true);
+		deployVortex(ALICE);
 
 		ALICE.install(
 			TYPE_EXECUTOR,
-			address(UNIVERSAL_EXECUTOR),
-			encodeInstallModuleParams(TYPE_EXECUTOR.moduleTypes(), abi.encodePacked(UNIVERSAL_ROUTER), "")
+			address(aux.universalExecutor),
+			encodeModuleParams(abi.encodePacked(UNIVERSAL_ROUTER), "")
 		);
 	}
 
 	function test_immutable() public virtual {
-		assertEq(UNIVERSAL_EXECUTOR.WRAPPED_NATIVE(), WNATIVE);
+		assertEq(aux.universalExecutor.WRAPPED_NATIVE(), WNATIVE);
 	}
 
 	function test_installation() public virtual {
-		deployVortex(MURPHY, 0, address(ACCOUNT_FACTORY), false);
+		deployVortex(MURPHY);
 
 		MURPHY.install(
 			TYPE_EXECUTOR,
-			address(UNIVERSAL_EXECUTOR),
-			encodeInstallModuleParams(TYPE_EXECUTOR.moduleTypes(), abi.encodePacked(UNIVERSAL_ROUTER), "")
+			address(aux.universalExecutor),
+			encodeModuleParams(abi.encodePacked(UNIVERSAL_ROUTER), "")
 		);
 
-		assertTrue(MURPHY.account.isModuleInstalled(TYPE_EXECUTOR, address(UNIVERSAL_EXECUTOR), ""));
-		assertTrue(UNIVERSAL_EXECUTOR.isInitialized(address(MURPHY.account)));
-		assertEq(UNIVERSAL_EXECUTOR.getAccountRouter(address(MURPHY.account)), UNIVERSAL_ROUTER);
+		assertTrue(MURPHY.account.isModuleInstalled(TYPE_EXECUTOR, address(aux.universalExecutor), ""));
+		assertTrue(aux.universalExecutor.isInitialized(address(MURPHY.account)));
+		assertEq(aux.universalExecutor.getAccountRouter(address(MURPHY.account)), UNIVERSAL_ROUTER);
 
-		MURPHY.uninstall(TYPE_EXECUTOR, address(UNIVERSAL_EXECUTOR), encodeUninstallModuleParams("", ""));
+		MURPHY.uninstall(TYPE_EXECUTOR, address(aux.universalExecutor), encodeUninstallModuleParams("", ""));
 
-		assertFalse(MURPHY.account.isModuleInstalled(TYPE_EXECUTOR, address(UNIVERSAL_EXECUTOR), ""));
-		assertFalse(UNIVERSAL_EXECUTOR.isInitialized(address(MURPHY.account)));
-		assertEq(UNIVERSAL_EXECUTOR.getAccountRouter(address(MURPHY.account)), address(0));
+		assertFalse(MURPHY.account.isModuleInstalled(TYPE_EXECUTOR, address(aux.universalExecutor), ""));
+		assertFalse(aux.universalExecutor.isInitialized(address(MURPHY.account)));
+		assertEq(aux.universalExecutor.getAccountRouter(address(MURPHY.account)), address(0));
 	}
 
 	function test_setAccountRouter() public virtual {
@@ -98,42 +99,42 @@ contract UniversalExecutorTest is BaseTest {
 
 		(userOps[0], ) = ALICE.prepareUserOp(
 			EXECTYPE_DEFAULT.encodeExecutionCalldata(
-				address(UNIVERSAL_EXECUTOR),
+				address(aux.universalExecutor),
 				0,
-				abi.encodeCall(UNIVERSAL_EXECUTOR.setAccountRouter, (ROUTER_V1))
+				abi.encodeCall(UniversalExecutor.setAccountRouter, (ROUTER_V1))
 			)
 		);
 
 		BUNDLER.handleOps(userOps);
-		assertEq(UNIVERSAL_EXECUTOR.getAccountRouter(address(ALICE.account)), ROUTER_V1);
+		assertEq(aux.universalExecutor.getAccountRouter(address(ALICE.account)), ROUTER_V1);
 
 		(userOps[0], ) = ALICE.prepareUserOp(
 			EXECTYPE_DEFAULT.encodeExecutionCalldata(
-				address(UNIVERSAL_EXECUTOR),
+				address(aux.universalExecutor),
 				0,
-				abi.encodeCall(UNIVERSAL_EXECUTOR.setAccountRouter, (UNIVERSAL_ROUTER))
+				abi.encodeCall(UniversalExecutor.setAccountRouter, (UNIVERSAL_ROUTER))
 			)
 		);
 
 		BUNDLER.handleOps(userOps);
-		assertEq(UNIVERSAL_EXECUTOR.getAccountRouter(address(ALICE.account)), UNIVERSAL_ROUTER);
+		assertEq(aux.universalExecutor.getAccountRouter(address(ALICE.account)), UNIVERSAL_ROUTER);
 
 		(userOps[0], ) = ALICE.prepareUserOp(
 			EXECTYPE_DEFAULT.encodeExecutionCalldata(
-				address(UNIVERSAL_EXECUTOR),
+				address(aux.universalExecutor),
 				0,
-				abi.encodeCall(UNIVERSAL_EXECUTOR.setAccountRouter, (address(0)))
+				abi.encodeCall(UniversalExecutor.setAccountRouter, (address(0)))
 			)
 		);
 
 		BUNDLER.handleOps(userOps);
-		assertEq(UNIVERSAL_EXECUTOR.getAccountRouter(address(ALICE.account)), UNIVERSAL_ROUTER);
+		assertEq(aux.universalExecutor.getAccountRouter(address(ALICE.account)), UNIVERSAL_ROUTER);
 
 		vm.prank(address(ALICE.account));
 		vm.expectRevert(InvalidAccountRouter.selector);
 
-		UNIVERSAL_EXECUTOR.setAccountRouter(address(0));
-		assertEq(UNIVERSAL_EXECUTOR.getAccountRouter(address(ALICE.account)), UNIVERSAL_ROUTER);
+		aux.universalExecutor.setAccountRouter(address(0));
+		assertEq(aux.universalExecutor.getAccountRouter(address(ALICE.account)), UNIVERSAL_ROUTER);
 	}
 
 	function test_v4SwapExactInput_singleHop() public virtual onlyEthereumOrArbitrum {
@@ -381,7 +382,7 @@ contract UniversalExecutorTest is BaseTest {
 		bytes memory permitParams;
 
 		vm.expectRevert(InsufficientAmountIn.selector);
-		UNIVERSAL_EXECUTOR.swapExactInput(encodeSwapParams(PROTOCOL_V4, swapParams, permitParams, DEADLINE));
+		aux.universalExecutor.swapExactInput(encodeSwapParams(PROTOCOL_V4, swapParams, permitParams, DEADLINE));
 
 		swapParams = abi.encode(
 			ExactInputParams({
@@ -393,7 +394,7 @@ contract UniversalExecutorTest is BaseTest {
 		);
 
 		vm.expectRevert(InsufficientAmountOutMin.selector);
-		UNIVERSAL_EXECUTOR.swapExactInput(encodeSwapParams(PROTOCOL_V4, swapParams, permitParams, DEADLINE));
+		aux.universalExecutor.swapExactInput(encodeSwapParams(PROTOCOL_V4, swapParams, permitParams, DEADLINE));
 
 		swapParams = abi.encode(
 			ExactInputParams({
@@ -405,7 +406,7 @@ contract UniversalExecutorTest is BaseTest {
 		);
 
 		vm.expectRevert(InsufficientCallValue.selector);
-		UNIVERSAL_EXECUTOR.swapExactInput{value: amountIn / 2}(
+		aux.universalExecutor.swapExactInput{value: amountIn / 2}(
 			encodeSwapParams(PROTOCOL_V4, swapParams, permitParams, DEADLINE)
 		);
 
@@ -419,7 +420,7 @@ contract UniversalExecutorTest is BaseTest {
 		);
 
 		vm.expectRevert(InvalidPermitParams.selector);
-		UNIVERSAL_EXECUTOR.swapExactInput(encodeSwapParams(PROTOCOL_V4, swapParams, permitParams, DEADLINE));
+		aux.universalExecutor.swapExactInput(encodeSwapParams(PROTOCOL_V4, swapParams, permitParams, DEADLINE));
 	}
 
 	function test_v4SwapExactOutput_revertsWhenInsufficientAmountsGiven()
@@ -470,7 +471,7 @@ contract UniversalExecutorTest is BaseTest {
 		bytes memory permitParams;
 
 		vm.expectRevert(InsufficientAmountOut.selector);
-		UNIVERSAL_EXECUTOR.swapExactOutput(encodeSwapParams(PROTOCOL_V4, swapParams, permitParams, DEADLINE));
+		aux.universalExecutor.swapExactOutput(encodeSwapParams(PROTOCOL_V4, swapParams, permitParams, DEADLINE));
 
 		swapParams = abi.encode(
 			ExactOutputParams({
@@ -482,7 +483,7 @@ contract UniversalExecutorTest is BaseTest {
 		);
 
 		vm.expectRevert(InsufficientAmountInMax.selector);
-		UNIVERSAL_EXECUTOR.swapExactOutput(encodeSwapParams(PROTOCOL_V4, swapParams, permitParams, DEADLINE));
+		aux.universalExecutor.swapExactOutput(encodeSwapParams(PROTOCOL_V4, swapParams, permitParams, DEADLINE));
 
 		swapParams = abi.encode(
 			ExactOutputParams({
@@ -494,7 +495,7 @@ contract UniversalExecutorTest is BaseTest {
 		);
 
 		vm.expectRevert(InsufficientCallValue.selector);
-		UNIVERSAL_EXECUTOR.swapExactOutput{value: amountInMax / 2}(
+		aux.universalExecutor.swapExactOutput{value: amountInMax / 2}(
 			encodeSwapParams(PROTOCOL_V4, swapParams, permitParams, DEADLINE)
 		);
 
@@ -516,7 +517,7 @@ contract UniversalExecutorTest is BaseTest {
 		);
 
 		vm.expectRevert(InvalidPermitParams.selector);
-		UNIVERSAL_EXECUTOR.swapExactOutput(encodeSwapParams(PROTOCOL_V4, swapParams, permitParams, DEADLINE));
+		aux.universalExecutor.swapExactOutput(encodeSwapParams(PROTOCOL_V4, swapParams, permitParams, DEADLINE));
 	}
 
 	function test_v3SwapExactInput_singleHop() public virtual {
@@ -761,22 +762,22 @@ contract UniversalExecutorTest is BaseTest {
 		bytes memory permitParams;
 
 		vm.expectRevert(InsufficientAmountIn.selector);
-		UNIVERSAL_EXECUTOR.swapExactInput(encodeSwapParams(PROTOCOL_V3, swapParams, permitParams, DEADLINE));
+		aux.universalExecutor.swapExactInput(encodeSwapParams(PROTOCOL_V3, swapParams, permitParams, DEADLINE));
 
 		swapParams = abi.encodePacked(bytes4(uint32(path.length)), path, uint128(amountIn), uint128(0));
 
 		vm.expectRevert(InsufficientAmountOutMin.selector);
-		UNIVERSAL_EXECUTOR.swapExactInput(encodeSwapParams(PROTOCOL_V3, swapParams, permitParams, DEADLINE));
+		aux.universalExecutor.swapExactInput(encodeSwapParams(PROTOCOL_V3, swapParams, permitParams, DEADLINE));
 
 		swapParams = abi.encodePacked(bytes4(uint32(path.length)), path, uint128(amountIn), uint128(amountOutMin));
 
 		vm.expectRevert(InsufficientCallValue.selector);
-		UNIVERSAL_EXECUTOR.swapExactInput{value: amountIn / 2}(
+		aux.universalExecutor.swapExactInput{value: amountIn / 2}(
 			encodeSwapParams(PROTOCOL_V3, swapParams, permitParams, DEADLINE)
 		);
 
 		vm.expectRevert(InvalidPermitParams.selector);
-		UNIVERSAL_EXECUTOR.swapExactInput(encodeSwapParams(PROTOCOL_V3, swapParams, permitParams, DEADLINE));
+		aux.universalExecutor.swapExactInput(encodeSwapParams(PROTOCOL_V3, swapParams, permitParams, DEADLINE));
 	}
 
 	function test_v3SwapExactOutput_revertsWhenInsufficientAmountsGiven() public virtual impersonate(ALICE, true) {
@@ -803,22 +804,22 @@ contract UniversalExecutorTest is BaseTest {
 		bytes memory permitParams;
 
 		vm.expectRevert(InsufficientAmountOut.selector);
-		UNIVERSAL_EXECUTOR.swapExactOutput(encodeSwapParams(PROTOCOL_V3, swapParams, permitParams, DEADLINE));
+		aux.universalExecutor.swapExactOutput(encodeSwapParams(PROTOCOL_V3, swapParams, permitParams, DEADLINE));
 
 		swapParams = abi.encodePacked(bytes4(uint32(path.length)), path, uint128(amountOut), uint128(0));
 
 		vm.expectRevert(InsufficientAmountInMax.selector);
-		UNIVERSAL_EXECUTOR.swapExactOutput(encodeSwapParams(PROTOCOL_V3, swapParams, permitParams, DEADLINE));
+		aux.universalExecutor.swapExactOutput(encodeSwapParams(PROTOCOL_V3, swapParams, permitParams, DEADLINE));
 
 		swapParams = abi.encodePacked(bytes4(uint32(path.length)), path, uint128(amountOut), uint128(amountInMax));
 
 		vm.expectRevert(InsufficientCallValue.selector);
-		UNIVERSAL_EXECUTOR.swapExactOutput{value: amountInMax / 2}(
+		aux.universalExecutor.swapExactOutput{value: amountInMax / 2}(
 			encodeSwapParams(PROTOCOL_V3, swapParams, permitParams, DEADLINE)
 		);
 
 		vm.expectRevert(InvalidPermitParams.selector);
-		UNIVERSAL_EXECUTOR.swapExactOutput(encodeSwapParams(PROTOCOL_V3, swapParams, permitParams, DEADLINE));
+		aux.universalExecutor.swapExactOutput(encodeSwapParams(PROTOCOL_V3, swapParams, permitParams, DEADLINE));
 	}
 
 	function test_v2SwapExactInput_singleHop() public virtual onlyEthereum {
@@ -986,22 +987,22 @@ contract UniversalExecutorTest is BaseTest {
 		bytes memory permitParams;
 
 		vm.expectRevert(InsufficientAmountIn.selector);
-		UNIVERSAL_EXECUTOR.swapExactInput(encodeSwapParams(PROTOCOL_V2, swapParams, permitParams, DEADLINE));
+		aux.universalExecutor.swapExactInput(encodeSwapParams(PROTOCOL_V2, swapParams, permitParams, DEADLINE));
 
 		swapParams = abi.encodePacked(abi.encode(currencies), uint128(amountIn), uint128(0));
 
 		vm.expectRevert(InsufficientAmountOutMin.selector);
-		UNIVERSAL_EXECUTOR.swapExactInput(encodeSwapParams(PROTOCOL_V2, swapParams, permitParams, DEADLINE));
+		aux.universalExecutor.swapExactInput(encodeSwapParams(PROTOCOL_V2, swapParams, permitParams, DEADLINE));
 
 		swapParams = abi.encodePacked(abi.encode(currencies), uint128(amountIn), uint128(amountOutMin));
 
 		vm.expectRevert(InsufficientCallValue.selector);
-		UNIVERSAL_EXECUTOR.swapExactInput{value: amountIn / 2}(
+		aux.universalExecutor.swapExactInput{value: amountIn / 2}(
 			encodeSwapParams(PROTOCOL_V2, swapParams, permitParams, DEADLINE)
 		);
 
 		vm.expectRevert(InvalidPermitParams.selector);
-		UNIVERSAL_EXECUTOR.swapExactInput(encodeSwapParams(PROTOCOL_V2, swapParams, permitParams, DEADLINE));
+		aux.universalExecutor.swapExactInput(encodeSwapParams(PROTOCOL_V2, swapParams, permitParams, DEADLINE));
 	}
 
 	function test_v2SwapExactOutput_revertsWhenInsufficientAmountsGiven()
@@ -1036,22 +1037,22 @@ contract UniversalExecutorTest is BaseTest {
 		bytes memory permitParams;
 
 		vm.expectRevert(InsufficientAmountOut.selector);
-		UNIVERSAL_EXECUTOR.swapExactOutput(encodeSwapParams(PROTOCOL_V2, swapParams, permitParams, DEADLINE));
+		aux.universalExecutor.swapExactOutput(encodeSwapParams(PROTOCOL_V2, swapParams, permitParams, DEADLINE));
 
 		swapParams = abi.encodePacked(abi.encode(currencies), uint128(amountOut), uint128(0));
 
 		vm.expectRevert(InsufficientAmountInMax.selector);
-		UNIVERSAL_EXECUTOR.swapExactOutput(encodeSwapParams(PROTOCOL_V2, swapParams, permitParams, DEADLINE));
+		aux.universalExecutor.swapExactOutput(encodeSwapParams(PROTOCOL_V2, swapParams, permitParams, DEADLINE));
 
 		swapParams = abi.encodePacked(abi.encode(currencies), uint128(amountOut), uint128(amountInMax));
 
 		vm.expectRevert(InsufficientCallValue.selector);
-		UNIVERSAL_EXECUTOR.swapExactOutput{value: amountInMax / 2}(
+		aux.universalExecutor.swapExactOutput{value: amountInMax / 2}(
 			encodeSwapParams(PROTOCOL_V2, swapParams, permitParams, DEADLINE)
 		);
 
 		vm.expectRevert(InvalidPermitParams.selector);
-		UNIVERSAL_EXECUTOR.swapExactOutput(encodeSwapParams(PROTOCOL_V2, swapParams, permitParams, DEADLINE));
+		aux.universalExecutor.swapExactOutput(encodeSwapParams(PROTOCOL_V2, swapParams, permitParams, DEADLINE));
 	}
 
 	function performSwap(
@@ -1066,8 +1067,8 @@ contract UniversalExecutorTest is BaseTest {
 			: (currencies[0], currencies[currencies.length - 1]);
 
 		bytes memory callData = isExactIn
-			? abi.encodeCall(UNIVERSAL_EXECUTOR.swapExactInput, (params))
-			: abi.encodeCall(UNIVERSAL_EXECUTOR.swapExactOutput, (params));
+			? abi.encodeCall(UniversalExecutor.swapExactInput, (params))
+			: abi.encodeCall(UniversalExecutor.swapExactOutput, (params));
 
 		bytes memory executionCalldata;
 
@@ -1080,11 +1081,15 @@ contract UniversalExecutorTest is BaseTest {
 				callData: abi.encodeWithSelector(APPROVE_SELECTOR, PERMIT2, MAX_UINT256)
 			});
 
-			executions[1] = Execution({target: address(UNIVERSAL_EXECUTOR), value: value, callData: callData});
+			executions[1] = Execution({target: address(aux.universalExecutor), value: value, callData: callData});
 
 			executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(executions);
 		} else {
-			executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(address(UNIVERSAL_EXECUTOR), value, callData);
+			executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(
+				address(aux.universalExecutor),
+				value,
+				callData
+			);
 		}
 
 		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
