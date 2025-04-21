@@ -1,19 +1,21 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import {IModule, IStatelessValidator, IValidator} from "src/interfaces/IERC7579Modules.sol";
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 import {EnumerableSet4337} from "src/libraries/EnumerableSet4337.sol";
+import {MessageHashUtils} from "src/libraries/MessageHashUtils.sol";
 import {SignatureChecker} from "src/libraries/SignatureChecker.sol";
-import {ModuleType, ValidationData} from "src/types/Types.sol";
+import {ModuleType, ValidationData} from "src/types/DataTypes.sol";
 import {ERC7739Validator} from "src/modules/base/ERC7739Validator.sol";
 
 /// @title K1Validator
 /// @notice Verifies user operation signatures for smart accounts
 /// @dev Modified from https://github.com/erc7579/erc7739Validator/blob/main/src/SampleK1ValidatorWithERC7739.sol
-contract K1Validator is ERC7739Validator {
+contract K1Validator is IValidator, IStatelessValidator, ERC7739Validator {
 	using EnumerableSet4337 for EnumerableSet4337.AddressSet;
+	using MessageHashUtils for bytes32;
 	using SignatureChecker for address;
-	using SignatureChecker for bytes32;
 
 	/// @notice Thrown when the provided owner is invalid
 	error InvalidAccountOwner();
@@ -34,27 +36,55 @@ contract K1Validator is ERC7739Validator {
 
 	EnumerableSet4337.AddressSet private _authorizedSenders;
 
-	/// @notice Initialize the module with the given data
-	/// @param data The data to initialize the module with
+	/// @inheritdoc IModule
 	function onInstall(bytes calldata data) external payable {
 		require(!_isInitialized(msg.sender), AlreadyInitialized(msg.sender));
-		require(_checkDataLength(data), InvalidDataLength());
+		require(_checkSendersLength(data), InvalidDataLength());
 		_setAccountOwner(_checkAccountOwner(address(bytes20(data))));
 		while ((data = data[20:]).length != 0) _authorize(address(bytes20(data)));
 	}
 
-	/// @notice De-initialize the module with the given data
+	/// @inheritdoc IModule
 	function onUninstall(bytes calldata) external payable {
 		require(_isInitialized(msg.sender), NotInitialized(msg.sender));
 		_setAccountOwner(address(0));
 		_authorizedSenders.removeAll(msg.sender);
 	}
 
-	/// @notice Check if the module is initialized for the given smart account
-	/// @param account The address of the smart account
-	/// @return True if the module is initialized, false otherwise
+	/// @inheritdoc IModule
 	function isInitialized(address account) external view returns (bool) {
 		return _isInitialized(account);
+	}
+
+	/// @inheritdoc IValidator
+	function validateUserOp(
+		PackedUserOperation calldata userOp,
+		bytes32 userOpHash
+	) external payable returns (ValidationData validationData) {
+		bool result = _erc1271IsValidSignatureNowCalldata(userOpHash, _erc1271UnwrapSignature(userOp.signature));
+
+		assembly ("memory-safe") {
+			validationData := iszero(result)
+		}
+	}
+
+	/// @inheritdoc IValidator
+	function isValidSignatureWithSender(
+		address sender,
+		bytes32 hash,
+		bytes calldata signature
+	) external view returns (bytes4 magicValue) {
+		return _erc1271IsValidSignatureWithSender(sender, hash, _erc1271UnwrapSignature(signature));
+	}
+
+	/// @inheritdoc IStatelessValidator
+	function validateSignatureWithData(
+		bytes32 hash,
+		bytes calldata signature,
+		bytes calldata data
+	) external view returns (bool) {
+		require(data.length == 20, InvalidDataLength());
+		return _validateSignatureForOwner(address(bytes20(data)), hash, signature);
 	}
 
 	/// @notice Transfers ownership of the validator to a new owner
@@ -69,47 +99,6 @@ contract K1Validator is ERC7739Validator {
 	/// @return The owner of the smart account
 	function getAccountOwner(address account) external view returns (address) {
 		return _getAccountOwner(account);
-	}
-
-	/// @notice Validates user operation
-	/// @param userOp The PackedUserOperation to be validated
-	/// @param userOpHash The hash of the PackedUserOperation to be validated
-	/// @return validationData The result of the signature validation
-	function validateUserOp(
-		PackedUserOperation calldata userOp,
-		bytes32 userOpHash
-	) external payable returns (ValidationData validationData) {
-		bool result = _validateSignatureForOwner(_getAccountOwner(msg.sender), userOpHash, userOp.signature);
-
-		assembly ("memory-safe") {
-			validationData := iszero(result)
-		}
-	}
-
-	/// @notice Validates a signature using ERC-1271
-	/// @param sender The address that sent the ERC-1271 request to the smart account
-	/// @param hash The hash of the message
-	/// @param signature The signature of the message
-	/// @return magicValue The ERC-1271 `MAGIC_VALUE` if the signature is valid
-	function isValidSignatureWithSender(
-		address sender,
-		bytes32 hash,
-		bytes calldata signature
-	) external view returns (bytes4 magicValue) {
-		return _erc1271IsValidSignatureWithSender(sender, hash, _erc1271UnwrapSignature(signature));
-	}
-
-	/// @notice ISessionValidator interface for smart session
-	/// @param hash The hash of the data to validate
-	/// @param signature The signature of the data
-	/// @param data The data to validate against (owner address in this case)
-	function validateSignatureWithData(
-		bytes32 hash,
-		bytes calldata signature,
-		bytes calldata data
-	) external view returns (bool) {
-		require(data.length == 20, InvalidDataLength());
-		return _validateSignatureForOwner(address(bytes20(data)), hash, signature);
 	}
 
 	/// @notice Adds a sender to the _authorizedSenders list for the smart account
@@ -153,9 +142,7 @@ contract K1Validator is ERC7739Validator {
 		return "1.0.0";
 	}
 
-	/// @notice Checks if the module is of the specified type
-	/// @param moduleTypeId The module type ID to check
-	/// @return True if the module is of the specified type, false otherwise
+	/// @inheritdoc IModule
 	function isModuleType(ModuleType moduleTypeId) external pure returns (bool) {
 		return moduleTypeId == MODULE_TYPE_VALIDATOR || moduleTypeId == MODULE_TYPE_STATELESS_VALIDATOR;
 	}
@@ -166,8 +153,8 @@ contract K1Validator is ERC7739Validator {
 		bytes calldata signature
 	) internal view virtual returns (bool) {
 		return
-			owner.isValidSignatureNow(hash, signature) ||
-			owner.isValidSignatureNow(hash.toEthSignedMessageHash(), signature);
+			owner.isValidSignatureNowCalldata(hash, signature) ||
+			owner.isValidSignatureNowCalldata(hash.toEthSignedMessageHash(), signature);
 	}
 
 	function _erc1271IsValidSignatureNowCalldata(
@@ -211,7 +198,7 @@ contract K1Validator is ERC7739Validator {
 		return _getAccountOwner(account) != address(0);
 	}
 
-	function _checkDataLength(bytes calldata data) internal pure virtual returns (bool result) {
+	function _checkSendersLength(bytes calldata data) internal pure virtual returns (bool result) {
 		assembly ("memory-safe") {
 			if iszero(lt(data.length, 0x14)) {
 				let quotient := shr(0x40, mul(data.length, 0xCCCCCCCCCCCCD00))

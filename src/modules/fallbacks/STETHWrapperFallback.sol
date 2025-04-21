@@ -1,21 +1,20 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import {IFallback, IModule} from "src/interfaces/IERC7579Modules.sol";
 import {IModuleFactory} from "src/interfaces/factories/IModuleFactory.sol";
 import {Currency} from "src/types/Currency.sol";
-import {ModuleType} from "src/types/Types.sol";
+import {ModuleType} from "src/types/ModuleType.sol";
 import {FallbackBase} from "src/modules/base/FallbackBase.sol";
 
 /// @title STETHWrapperFallback
 /// @notice Fallback module that allows smart accounts to wrap and unwrap stETH and wstETH
-contract STETHWrapperFallback is FallbackBase {
+contract STETHWrapperFallback is IFallback, FallbackBase {
 	/// @notice Thrown when trying to wrap/unwrap tokens by insufficient amount
 	error InsufficientBalance();
 
 	/// @notice Thrown when the provided currency is invalid
 	error InvalidCurrency();
-
-	mapping(address account => bool isInstalled) internal _isInstalled;
 
 	/// @notice The address of the stETH
 	Currency public immutable STETH;
@@ -51,23 +50,15 @@ contract STETHWrapperFallback is FallbackBase {
 		WSTETH = wstETH;
 	}
 
-	/// @notice Initialize the module with the given data
-	function onInstall(bytes calldata) external payable {
-		require(!_isInitialized(msg.sender), AlreadyInitialized(msg.sender));
-		_isInstalled[msg.sender] = true;
-	}
+	/// @inheritdoc IModule
+	function onInstall(bytes calldata) external payable {}
 
-	/// @notice De-initialize the module with the given data
-	function onUninstall(bytes calldata) external payable {
-		require(_isInitialized(msg.sender), NotInitialized(msg.sender));
-		_isInstalled[msg.sender] = false;
-	}
+	/// @inheritdoc IModule
+	function onUninstall(bytes calldata) external payable {}
 
-	/// @notice Check if the module is initialized for the given smart account
-	/// @param account The address of the smart account
-	/// @return True if the module is initialized, false otherwise
-	function isInitialized(address account) external view returns (bool) {
-		return _isInitialized(account);
+	/// @inheritdoc IModule
+	function isInitialized(address) external pure returns (bool) {
+		return true;
 	}
 
 	/// @notice Wraps the given amount of ETH and receive stETH by transferring ETH
@@ -102,9 +93,7 @@ contract STETHWrapperFallback is FallbackBase {
 		return "1.0.0";
 	}
 
-	/// @notice Checks if the module is of the specified type
-	/// @param moduleTypeId The module type ID to check
-	/// @return True if the module is of the specified type, false otherwise
+	/// @inheritdoc IModule
 	function isModuleType(ModuleType moduleTypeId) external pure returns (bool) {
 		return moduleTypeId == MODULE_TYPE_FALLBACK;
 	}
@@ -148,9 +137,5 @@ contract STETHWrapperFallback is FallbackBase {
 				revert(ptr, returndatasize())
 			}
 		}
-	}
-
-	function _isInitialized(address account) internal view returns (bool) {
-		return _isInstalled[account];
 	}
 }

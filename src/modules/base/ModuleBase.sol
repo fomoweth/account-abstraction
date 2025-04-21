@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {IModule} from "src/interfaces/IERC7579Modules.sol";
 import {ModuleType} from "src/types/ModuleType.sol";
 
 /// @title ModuleBase
 /// @notice ERC-7579 module base interface
-abstract contract ModuleBase is IModule {
+abstract contract ModuleBase {
 	/// @notice Thrown when the requested execution type is not supported by the module
 	error UnsupportedExecution();
 
@@ -20,4 +19,6 @@ abstract contract ModuleBase is IModule {
 	ModuleType internal constant MODULE_TYPE_POLICY = ModuleType.wrap(0x05);
 	ModuleType internal constant MODULE_TYPE_SIGNER = ModuleType.wrap(0x06);
 	ModuleType internal constant MODULE_TYPE_STATELESS_VALIDATOR = ModuleType.wrap(0x07);
+	ModuleType internal constant MODULE_TYPE_PREVALIDATION_HOOK_ERC1271 = ModuleType.wrap(0x08);
+	ModuleType internal constant MODULE_TYPE_PREVALIDATION_HOOK_ERC4337 = ModuleType.wrap(0x09);
 }

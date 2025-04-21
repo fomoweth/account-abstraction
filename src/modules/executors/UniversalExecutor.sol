@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import {IExecutor, IModule} from "src/interfaces/IERC7579Modules.sol";
 import {IModuleFactory} from "src/interfaces/factories/IModuleFactory.sol";
 import {Execution} from "src/libraries/ExecutionLib.sol";
 import {Currency} from "src/types/Currency.sol";
-import {ModuleType} from "src/types/Types.sol";
+import {ModuleType} from "src/types/ModuleType.sol";
 import {ReentrancyGuard} from "src/modules/utils/ReentrancyGuard.sol";
 import {ExecutorBase} from "src/modules/base/ExecutorBase.sol";
 
 /// @title UniversalExecutor
 /// @notice Executor module that allows smart account to perform swaps via UniversalRouter
-contract UniversalExecutor is ExecutorBase, ReentrancyGuard {
+contract UniversalExecutor is IExecutor, ExecutorBase, ReentrancyGuard {
 	/// @notice Thrown when the provided currency is invalid
 	error InvalidCurrency();
 
@@ -71,23 +72,20 @@ contract UniversalExecutor is ExecutorBase, ReentrancyGuard {
 		WRAPPED_NATIVE = wrappedNative;
 	}
 
-	/// @notice Initialize the module with the given data
-	/// @param data The data to initialize the module with
+	/// @inheritdoc IModule
 	function onInstall(bytes calldata data) external payable {
 		require(!_isInitialized(msg.sender), AlreadyInitialized(msg.sender));
 		require(data.length == 20, InvalidDataLength());
 		_accountRouters[msg.sender] = _checkAccountRouter(address(bytes20(data)));
 	}
 
-	/// @notice De-initialize the module with the given data
+	/// @inheritdoc IModule
 	function onUninstall(bytes calldata) external payable {
 		require(_isInitialized(msg.sender), NotInitialized(msg.sender));
 		delete _accountRouters[msg.sender];
 	}
 
-	/// @notice Check if the module is initialized for the given smart account
-	/// @param account The address of the smart account
-	/// @return True if the module is initialized, false otherwise
+	/// @inheritdoc IModule
 	function isInitialized(address account) external view returns (bool) {
 		return _isInitialized(account);
 	}
@@ -160,9 +158,7 @@ contract UniversalExecutor is ExecutorBase, ReentrancyGuard {
 		return "1.0.0";
 	}
 
-	/// @notice Checks if the module is of the specified type
-	/// @param moduleTypeId The module type ID to check
-	/// @return True if the module is of the specified type, false otherwise
+	/// @inheritdoc IModule
 	function isModuleType(ModuleType moduleTypeId) external pure returns (bool) {
 		return moduleTypeId == MODULE_TYPE_EXECUTOR;
 	}

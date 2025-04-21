@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {IValidator, IStatelessValidator} from "src/interfaces/IERC7579Modules.sol";
 import {IVortex} from "src/interfaces/IVortex.sol";
 import {AccountIdLib} from "src/libraries/AccountIdLib.sol";
-import {ModuleBase} from "./ModuleBase.sol";
+import {ValidatorBase} from "./ValidatorBase.sol";
 
 /// @title ERC7739Validator
 /// @notice Provides nested typed data sign support for ERC-7579 validators
 /// @dev Modified from https://github.com/erc7579/erc7739Validator/blob/main/src/ERC7739Validator.sol
-abstract contract ERC7739Validator is IValidator, IStatelessValidator, ModuleBase {
+abstract contract ERC7739Validator is ValidatorBase {
 	using AccountIdLib for string;
+
+	/// @notice Thrown when the provided signature is invalid
+	error InvalidSignature();
 
 	/// @dev keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)")
 	bytes32 internal constant DOMAIN_TYPEHASH = 0x8b73c3c69bb8fe3d512ecc4cf759cc79239f7b179b0ffacaa9a75d522b39400f;
@@ -19,9 +21,21 @@ abstract contract ERC7739Validator is IValidator, IStatelessValidator, ModuleBas
 	bytes32 internal constant PERSONAL_SIGN_TYPEHASH =
 		0x983e65e5148e570cd828ead231ee759a8d7958721a768f93bc4483ba005c32de;
 
+	address internal constant MULTICALLER_WITH_SIGNER = 0x000000000000D9ECebf3C23529de49815Dac1c4c;
+
+	bytes4 internal constant SUPPORTS_ERC7739 = 0x77390000;
 	bytes4 internal constant SUPPORTS_ERC7739_V1 = 0x77390001;
 
-	address internal constant MULTICALLER_WITH_SIGNER = 0x000000000000D9ECebf3C23529de49815Dac1c4c;
+	/// @dev Backwards compatibility stuff
+	/// For automatic detection that the smart account supports the nested EIP-712 workflow.
+	/// By default, it returns `bytes32(bytes4(keccak256("supportsNestedTypedDataSign()")))`,
+	/// denoting support for the default behavior, as implemented in
+	/// `_erc1271IsValidSignatureViaNestedEIP712`, which is called in `isValidSignature`.
+	/// Future extensions should return a different non-zero `result` to denote different behavior.
+	/// This method intentionally returns bytes32 to allow freedom for future extensions.
+	function supportsNestedTypedDataSign() public view virtual returns (bytes32 result) {
+		result = bytes4(0xd620c85a);
+	}
 
 	/// @dev Returns whether the `signature` is valid for the `hash.
 	/// Use this in your validator's `isValidSignatureWithSender` implementation.
@@ -47,7 +61,6 @@ abstract contract ERC7739Validator is IValidator, IStatelessValidator, ModuleBas
 		// sig malleability prevention
 		assembly ("memory-safe") {
 			if gt(
-				// same as `s := mload(add(signature, 0x40))` but for calldata
 				calldataload(add(signature.offset, 0x20)),
 				0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0
 			) {
@@ -64,45 +77,6 @@ abstract contract ERC7739Validator is IValidator, IStatelessValidator, ModuleBas
 			// `success ? bytes4(keccak256("isValidSignature(bytes32,bytes)")) : 0xffffffff`.
 			// We use `0xffffffff` for invalid, in convention with the reference implementation.
 			magicValue := shl(0xe0, or(0x1626ba7e, sub(0x00, iszero(success))))
-		}
-	}
-
-	/// @dev Returns whether the `msg.sender` is considered safe, such
-	/// that we don't need to use the nested EIP-712 workflow.
-	/// Override to return true for more callers.
-	/// See: https://mirror.xyz/curiousapple.eth/pFqAdW2LiJ-6S4sg_u1z08k4vK6BCJ33LcyXpnNb8yU
-	function _erc1271CallerIsSafe(address sender) internal view virtual returns (bool result) {
-		assembly ("memory-safe") {
-			// The canonical `MulticallerWithSigner` at 0x000000000000D9ECebf3C23529de49815Dac1c4c
-			// is known to include the account in the hash to be signed.
-			result := or(eq(sender, caller()), eq(sender, MULTICALLER_WITH_SIGNER))
-		}
-	}
-
-	/// @dev Returns whether the `hash` and `signature` are valid.
-	///      Obtains the authorized signer's credentials and calls some
-	///      module's specific internal function to validate the signature
-	///      against credentials.
-	/// Override for your module's custom logic.
-	function _erc1271IsValidSignatureNowCalldata(
-		bytes32 hash,
-		bytes calldata signature
-	) internal view virtual returns (bool);
-
-	/// @dev Unwraps and returns the signature.
-	function _erc1271UnwrapSignature(bytes calldata signature) internal view virtual returns (bytes calldata result) {
-		result = signature;
-		assembly ("memory-safe") {
-			// Unwraps the ERC6492 wrapper if it exists.
-			// See: https://eips.ethereum.org/EIPS/eip-6492
-			if eq(
-				calldataload(add(result.offset, sub(result.length, 0x20))),
-				mul(0x6492, div(not(shr(address(), address())), 0xffff)) // `0x6492...6492`.
-			) {
-				let ptr := add(result.offset, calldataload(add(result.offset, 0x40)))
-				result.length := calldataload(ptr)
-				result.offset := add(ptr, 0x20)
-			}
 		}
 	}
 
@@ -276,12 +250,8 @@ abstract contract ERC7739Validator is IValidator, IStatelessValidator, ModuleBas
 			mstore(0x40, m)
 		}
 
-		result = _erc1271IsValidSignatureNowCalldata(
-			t == uint256(0)
-				? _hashTypedDataForAccount(msg.sender, hash) // `PersonalSign` workflow.
-				: hash,
-			signature
-		);
+		if (t == uint256(0)) hash = _hashTypedDataForAccount(msg.sender, hash); // `PersonalSign` workflow.
+		return _erc1271IsValidSignatureNowCalldata(hash, signature);
 	}
 
 	/// @dev Performs the signature validation without nested EIP-712 to allow for easy sign ins.
@@ -322,8 +292,36 @@ abstract contract ERC7739Validator is IValidator, IStatelessValidator, ModuleBas
 		}
 	}
 
-	/// @notice Hashes typed data according to eip-712
-	///         Uses account's domain separator
+	/// @dev Returns whether the `msg.sender` is considered safe, such
+	/// that we don't need to use the nested EIP-712 workflow.
+	/// Override to return true for more callers.
+	/// See: https://mirror.xyz/curiousapple.eth/pFqAdW2LiJ-6S4sg_u1z08k4vK6BCJ33LcyXpnNb8yU
+	function _erc1271CallerIsSafe(address sender) internal view virtual returns (bool result) {
+		assembly ("memory-safe") {
+			// The canonical `MulticallerWithSigner` at 0x000000000000D9ECebf3C23529de49815Dac1c4c
+			// is known to include the account in the hash to be signed.
+			result := or(eq(sender, caller()), eq(sender, MULTICALLER_WITH_SIGNER))
+		}
+	}
+
+	/// @dev Unwraps and returns the signature.
+	function _erc1271UnwrapSignature(bytes calldata signature) internal view virtual returns (bytes calldata result) {
+		result = signature;
+		assembly ("memory-safe") {
+			// Unwraps the ERC6492 wrapper if it exists.
+			// See: https://eips.ethereum.org/EIPS/eip-6492
+			if eq(
+				calldataload(add(result.offset, sub(result.length, 0x20))),
+				mul(0x6492, div(not(shr(address(), address())), 0xffff)) // `0x6492...6492`.
+			) {
+				let ptr := add(result.offset, calldataload(add(result.offset, 0x40)))
+				result.offset := add(ptr, 0x20)
+				result.length := calldataload(ptr)
+			}
+		}
+	}
+
+	/// @dev Hashes typed data according to eip-712; uses account's domain separator
 	/// @param account the smart account, who's domain separator will be used
 	/// @param structHash the typed data struct hash
 	function _hashTypedDataForAccount(
@@ -341,24 +339,21 @@ abstract contract ERC7739Validator is IValidator, IStatelessValidator, ModuleBas
 			mstore(add(ptr, 0x80), account)
 			digest := keccak256(ptr, 0xa0) // domain separator
 
-			// Hash typed data
-			mstore(0x00, 0x1901000000000000) // Store "\x19\x01".
-			mstore(0x1a, digest) // Store the domain separator.
-			mstore(0x3a, structHash) // Store the struct hash.
-			digest := keccak256(0x18, 0x42)
+			mstore(0x00, 0x1901000000000000)
+			mstore(0x1a, digest)
+			mstore(0x3a, structHash)
+			digest := keccak256(0x18, 0x42) // hash typed data
 
 			mstore(0x3a, 0x00)
 		}
 	}
 
-	/// @dev Backwards compatibility stuff
-	/// For automatic detection that the smart account supports the nested EIP-712 workflow.
-	/// By default, it returns `bytes32(bytes4(keccak256("supportsNestedTypedDataSign()")))`,
-	/// denoting support for the default behavior, as implemented in
-	/// `_erc1271IsValidSignatureViaNestedEIP712`, which is called in `isValidSignature`.
-	/// Future extensions should return a different non-zero `result` to denote different behavior.
-	/// This method intentionally returns bytes32 to allow freedom for future extensions.
-	function supportsNestedTypedDataSign() public view virtual returns (bytes32 result) {
-		result = bytes4(0xd620c85a);
-	}
+	/// @dev Returns whether the `hash` and `signature` are valid.
+	///      Obtains the authorized signer's credentials and calls some
+	///      module's specific internal function to validate the signature
+	///      against credentials.
+	function _erc1271IsValidSignatureNowCalldata(
+		bytes32 hash,
+		bytes calldata signature
+	) internal view virtual returns (bool);
 }

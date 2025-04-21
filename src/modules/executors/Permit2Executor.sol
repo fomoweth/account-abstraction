@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import {IExecutor, IModule} from "src/interfaces/IERC7579Modules.sol";
 import {Execution} from "src/libraries/ExecutionLib.sol";
 import {Currency} from "src/types/Currency.sol";
-import {ModuleType} from "src/types/Types.sol";
+import {ModuleType} from "src/types/ModuleType.sol";
 import {ReentrancyGuard} from "src/modules/utils/ReentrancyGuard.sol";
 import {ExecutorBase} from "src/modules/base/ExecutorBase.sol";
 
 /// @title Permit2Executor
 /// @notice Executor module that allows smart accounts to handle ERC20 token permissions via Permit2
-contract Permit2Executor is ExecutorBase, ReentrancyGuard {
+contract Permit2Executor is IExecutor, ExecutorBase, ReentrancyGuard {
 	struct PermitDetails {
 		Currency currency;
 		uint160 amount;
@@ -29,29 +30,27 @@ contract Permit2Executor is ExecutorBase, ReentrancyGuard {
 		uint256 sigDeadline;
 	}
 
-	mapping(address account => bool isInstalled) internal _isInstalled;
+	mapping(address account => bool) internal _isInstalled;
 
-	address internal constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
+	address private constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
 
-	bytes4 internal constant APPROVE_SELECTOR = 0x87517c45;
-	bytes4 internal constant PERMIT_SINGLE_SELECTOR = 0x2b67b570;
-	bytes4 internal constant PERMIT_BATCH_SELECTOR = 0x2a2d80d1;
+	bytes4 private constant APPROVE_SELECTOR = 0x87517c45;
+	bytes4 private constant PERMIT_SINGLE_SELECTOR = 0x2b67b570;
+	bytes4 private constant PERMIT_BATCH_SELECTOR = 0x2a2d80d1;
 
-	/// @notice Initialize the module with the given data
+	/// @inheritdoc IModule
 	function onInstall(bytes calldata) external payable {
 		require(!_isInitialized(msg.sender), AlreadyInitialized(msg.sender));
 		_isInstalled[msg.sender] = true;
 	}
 
-	/// @notice De-initialize the module with the given data
+	/// @inheritdoc IModule
 	function onUninstall(bytes calldata) external payable {
 		require(_isInitialized(msg.sender), NotInitialized(msg.sender));
 		_isInstalled[msg.sender] = false;
 	}
 
-	/// @notice Check if the module is initialized for the given smart account
-	/// @param account The address of the smart account
-	/// @return True if the module is initialized, false otherwise
+	/// @inheritdoc IModule
 	function isInitialized(address account) external view returns (bool) {
 		return _isInitialized(account);
 	}
@@ -160,18 +159,16 @@ contract Permit2Executor is ExecutorBase, ReentrancyGuard {
 		return "1.0.0";
 	}
 
-	/// @notice Checks if the module is of the specified type
-	/// @param moduleTypeId The module type ID to check
-	/// @return True if the module is of the specified type, false otherwise
+	/// @inheritdoc IModule
 	function isModuleType(ModuleType moduleTypeId) external pure returns (bool) {
 		return moduleTypeId == MODULE_TYPE_EXECUTOR;
 	}
 
-	function _isInitialized(address account) internal view returns (bool) {
+	function _isInitialized(address account) internal view virtual returns (bool) {
 		return _isInstalled[account];
 	}
 
-	function _computeCurrenciesLength(bytes calldata data) internal pure returns (uint256 quotient) {
+	function _computeCurrenciesLength(bytes calldata data) internal pure virtual returns (uint256 quotient) {
 		assembly ("memory-safe") {
 			quotient := shr(0x40, mul(data.length, 0xCCCCCCCCCCCCD00))
 			let remainder := sub(data.length, mul(quotient, 0x14))

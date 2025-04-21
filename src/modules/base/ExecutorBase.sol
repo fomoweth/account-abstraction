@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {IExecutor} from "src/interfaces/IERC7579Modules.sol";
 import {IVortex} from "src/interfaces/IVortex.sol";
 import {Execution} from "src/libraries/ExecutionLib.sol";
 import {ExecutionModeLib, ExecutionMode, CallType, ExecType} from "src/types/ExecutionMode.sol";
@@ -9,7 +8,7 @@ import {ModuleBase} from "./ModuleBase.sol";
 
 /// @title ExecutorBase
 /// @notice ERC-7579 executor module base interface
-abstract contract ExecutorBase is IExecutor, ModuleBase {
+abstract contract ExecutorBase is ModuleBase {
 	CallType internal constant CALLTYPE_SINGLE = CallType.wrap(0x00);
 	CallType internal constant CALLTYPE_BATCH = CallType.wrap(0x01);
 	CallType internal constant CALLTYPE_STATIC = CallType.wrap(0xFE);
@@ -32,8 +31,7 @@ abstract contract ExecutorBase is IExecutor, ModuleBase {
 		uint256 value,
 		bytes memory callData
 	) internal virtual returns (bytes[] memory returnData) {
-		// ExecutionMode mode = ExecutionModeLib.encodeSingle();
-		ExecutionMode mode = ExecutionModeLib.encodeCustom(CALLTYPE_SINGLE, EXECTYPE_DEFAULT);
+		ExecutionMode mode = ExecutionModeLib.encodeSingle();
 		bytes memory executionCalldata = abi.encodePacked(target, value, callData);
 
 		return IVortex(account).executeFromExecutor{value: msg.value}(mode, executionCalldata);
@@ -48,8 +46,7 @@ abstract contract ExecutorBase is IExecutor, ModuleBase {
 		address target,
 		bytes memory callData
 	) internal virtual returns (bytes[] memory returnData) {
-		// ExecutionMode mode = ExecutionModeLib.encodeDelegate();
-		ExecutionMode mode = ExecutionModeLib.encodeCustom(CALLTYPE_DELEGATE, EXECTYPE_DEFAULT);
+		ExecutionMode mode = ExecutionModeLib.encodeDelegate();
 		bytes memory executionCalldata = abi.encodePacked(target, callData);
 
 		return IVortex(account).executeFromExecutor{value: msg.value}(mode, executionCalldata);
@@ -63,8 +60,7 @@ abstract contract ExecutorBase is IExecutor, ModuleBase {
 		address account,
 		Execution[] memory executions
 	) internal virtual returns (bytes[] memory returnData) {
-		// ExecutionMode mode = ExecutionModeLib.encodeBatch();
-		ExecutionMode mode = ExecutionModeLib.encodeCustom(CALLTYPE_BATCH, EXECTYPE_DEFAULT);
+		ExecutionMode mode = ExecutionModeLib.encodeBatch();
 		bytes memory executionCalldata = abi.encode(executions);
 
 		return IVortex(account).executeFromExecutor{value: msg.value}(mode, executionCalldata);
