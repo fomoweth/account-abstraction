@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {ModuleType} from "src/types/Types.sol";
-import {HookBase} from "src/modules/base/HookBase.sol";
+import {IHook} from "src/interfaces/IERC7579Modules.sol";
+import {ModuleType} from "src/types/ModuleType.sol";
+import {ModuleBase} from "src/modules/base/ModuleBase.sol";
+import {TrustedForwarder} from "src/modules/utils/TrustedForwarder.sol";
 
-contract MockHook is HookBase {
+contract MockHook is IHook, ModuleBase, TrustedForwarder {
 	event LogPreCheck(address account, bytes accountData, address msgSender, uint256 msgValue, bytes msgData);
 	event LogPostCheck(address account, bytes context);
 
@@ -18,19 +20,19 @@ contract MockHook is HookBase {
 	mapping(address account => bytes data) internal _accountData;
 
 	/// @dev bytes32(uint256(keccak256("account")) - 1)
-	bytes32 public constant ACCOUNT_SLOT = 0xd844bb55167ab332117049e2ccd3d8863d241bcc80f46302310a6d942a90e850;
+	bytes32 private constant ACCOUNT_SLOT = 0xd844bb55167ab332117049e2ccd3d8863d241bcc80f46302310a6d942a90e850;
 
 	/// @dev bytes32(uint256(keccak256("accountData")) - 1)
-	bytes32 public constant ACCOUNT_DATA_SLOT = 0xd99c780451d9589cdd83ff1d8ed0684df210618b9ee75f785e13dd0b0f50a0bc;
+	bytes32 private constant ACCOUNT_DATA_SLOT = 0xd99c780451d9589cdd83ff1d8ed0684df210618b9ee75f785e13dd0b0f50a0bc;
 
 	/// @dev bytes32(uint256(keccak256("msgSender")) - 1)
-	bytes32 public constant MSG_SENDER_SLOT = 0x92d1ab7c2e926a8b0c0c873d3b809f7236b38c75135b8c33df2a722097f5486c;
+	bytes32 private constant MSG_SENDER_SLOT = 0x92d1ab7c2e926a8b0c0c873d3b809f7236b38c75135b8c33df2a722097f5486c;
 
 	/// @dev bytes32(uint256(keccak256("msgValue")) - 1)
-	bytes32 public constant MSG_VALUE_SLOT = 0x22b631f9536ce10e1c528e6fbfa1a31b8b90f6d7b15c83120655a1274d1c4141;
+	bytes32 private constant MSG_VALUE_SLOT = 0x22b631f9536ce10e1c528e6fbfa1a31b8b90f6d7b15c83120655a1274d1c4141;
 
 	/// @dev bytes32(uint256(keccak256("msgData")) - 1)
-	bytes32 public constant MSG_DATA_SLOT = 0xa82b740e76fc933fae1c74ee6ccc29bd2a816a3d4e55e2545c942ed2447cac7e;
+	bytes32 private constant MSG_DATA_SLOT = 0xa82b740e76fc933fae1c74ee6ccc29bd2a816a3d4e55e2545c942ed2447cac7e;
 
 	function onInstall(bytes calldata data) external payable {
 		require(!_isInitialized(msg.sender), AlreadyInitialized(msg.sender));
@@ -56,12 +58,24 @@ contract MockHook is HookBase {
 		return _accountData[account];
 	}
 
+	function preCheck(
+		address msgSender,
+		uint256 msgValue,
+		bytes calldata msgData
+	) external payable returns (bytes memory hookData) {
+		return _preCheck(_mapAccount(), msgSender, msgValue, msgData);
+	}
+
+	function postCheck(bytes calldata hookData) external payable {
+		_postCheck(_mapAccount(), hookData);
+	}
+
 	function _preCheck(
 		address account,
 		address msgSender,
 		uint256 msgValue,
 		bytes calldata msgData
-	) internal virtual override returns (bytes memory context) {
+	) internal virtual returns (bytes memory context) {
 		bytes memory accountData = _accountData[account];
 
 		_cache(ACCOUNT_DATA_SLOT, accountData);
@@ -78,7 +92,7 @@ contract MockHook is HookBase {
 		emit LogPreCheck(account, accountData, msgSender, msgValue, msgData);
 	}
 
-	function _postCheck(address account, bytes calldata context) internal virtual override {
+	function _postCheck(address account, bytes calldata context) internal virtual {
 		bytes calldata accountData;
 		bytes calldata msgData;
 		address msgSender;
@@ -139,8 +153,8 @@ contract MockHook is HookBase {
 		return "1.0.0";
 	}
 
-	function isModuleType(ModuleType moduleTypeId) public pure virtual returns (bool) {
-		return moduleTypeId == TYPE_HOOK;
+	function isModuleType(ModuleType moduleTypeId) external pure returns (bool) {
+		return moduleTypeId == MODULE_TYPE_HOOK;
 	}
 
 	function _isInitialized(address account) internal view returns (bool) {

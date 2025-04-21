@@ -3,13 +3,13 @@ pragma solidity ^0.8.28;
 
 import {Vm} from "forge-std/Vm.sol";
 import {IRegistry, AttestationRequest} from "src/interfaces/registries/IRegistry.sol";
-import {ModuleType, SchemaUID} from "src/types/Types.sol";
+import {ModuleType, SchemaUID} from "src/types/DataTypes.sol";
 
 using AttestationLib for Attester global;
 
 struct Attester {
 	address payable eoa;
-	uint256 privateKey;
+	uint256 key;
 }
 
 library AttestationLib {
@@ -60,7 +60,7 @@ library AttestationLib {
 	}
 
 	function sign(Attester memory attester, bytes32 hash) internal pure returns (bytes memory signature) {
-		(uint8 v, bytes32 r, bytes32 s) = vm.sign(attester.privateKey, hash);
+		(uint8 v, bytes32 r, bytes32 s) = vm.sign(attester.key, hash);
 		return bytes.concat(r, s, bytes1(v));
 	}
 }

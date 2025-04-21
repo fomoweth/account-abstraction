@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {ModuleType} from "src/types/Types.sol";
+import {IFallback} from "src/interfaces/IERC7579Modules.sol";
+import {ModuleType} from "src/types/ModuleType.sol";
 import {FallbackBase} from "src/modules/base/FallbackBase.sol";
 
-contract MockFallback is FallbackBase {
+contract MockFallback is IFallback, FallbackBase {
 	event FallbackCall(address indexed sender, bytes32 indexed value);
 	event FallbackDelegate(address indexed sender, bytes32 indexed value);
 
@@ -65,7 +66,7 @@ contract MockFallback is FallbackBase {
 	}
 
 	function isModuleType(ModuleType moduleTypeId) external pure returns (bool) {
-		return moduleTypeId == TYPE_FALLBACK;
+		return moduleTypeId == MODULE_TYPE_FALLBACK;
 	}
 
 	function _isInitialized(address account) internal view returns (bool) {

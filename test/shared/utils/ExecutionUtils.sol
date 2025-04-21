@@ -3,12 +3,19 @@ pragma solidity ^0.8.28;
 
 import {Vm} from "forge-std/Vm.sol";
 import {Execution} from "src/libraries/ExecutionLib.sol";
-import {CALLTYPE_SINGLE, CALLTYPE_BATCH, CALLTYPE_DELEGATE, EXECTYPE_DEFAULT, EXECTYPE_TRY} from "src/types/Constants.sol";
-import {ExecutionModeLib, ExecutionMode, CallType, ExecType} from "src/types/Types.sol";
+import {ExecutionModeLib, ExecutionMode, CallType, ExecType} from "src/types/ExecutionMode.sol";
 import {Vortex} from "src/Vortex.sol";
 
 library ExecutionUtils {
 	Vm internal constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
+
+	CallType internal constant CALLTYPE_SINGLE = CallType.wrap(0x00);
+	CallType internal constant CALLTYPE_BATCH = CallType.wrap(0x01);
+	CallType internal constant CALLTYPE_STATIC = CallType.wrap(0xFE);
+	CallType internal constant CALLTYPE_DELEGATE = CallType.wrap(0xFF);
+
+	ExecType internal constant EXECTYPE_DEFAULT = ExecType.wrap(0x00);
+	ExecType internal constant EXECTYPE_TRY = ExecType.wrap(0x01);
 
 	function encodeExecutionCalldata(
 		ExecType execType,
