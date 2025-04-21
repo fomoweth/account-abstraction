@@ -2,7 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
-import {CallType, ExecutionMode, ModuleType, PackedModuleTypes, ValidationData} from "src/types/Types.sol";
+import {CallType, ExecutionMode, ModuleType, ValidationData} from "src/types/DataTypes.sol";
 
 /// @title IVortex
 /// @notice Interface for the Vortex contract
@@ -93,48 +93,6 @@ interface IVortex {
 	/// @param moduleTypeId The identifier for the module type
 	/// @return supported True if supported, false otherwise
 	function supportsModule(ModuleType moduleTypeId) external view returns (bool supported);
-
-	/// @notice Configures an ERC-7484 registry with a list of trusted attesters and a quorum threshold
-	/// @param registry The address of the ERC-7484 registry
-	/// @param attesters The list of trusted attesters
-	/// @param threshold The minimum number of attestations required
-	function configureRegistry(address registry, address[] calldata attesters, uint8 threshold) external payable;
-
-	/// @notice Configures a new root validator module
-	/// @param rootValidator The address of the validator module
-	/// @param data Initialization context for the validator
-	function configureRootValidator(address rootValidator, bytes calldata data) external payable;
-
-	/// @notice Returns the currently configured ERC-7484 registry
-	/// @return registry The address of the configured registry
-	function registry() external view returns (address registry);
-
-	/// @notice Returns the currently configured root validator module
-	/// @return rootValidator The address of the root validator module
-	function rootValidator() external view returns (address rootValidator);
-
-	/// @notice Returns globally installed hook modules
-	/// @return hooks The list of globally active hook addresses
-	function globalHooks() external view returns (address[] memory hooks);
-
-	/// @notice Returns the configuration for a given module
-	/// @param module The address of the module
-	/// @return moduleTypeId The identifier for the module type
-	/// @return packedTypes The bit-packed representation of submodule types
-	/// @return hook Optional hook address tied to the module
-	function getConfiguration(
-		address module
-	) external view returns (ModuleType moduleTypeId, PackedModuleTypes packedTypes, address hook);
-
-	/// @notice Returns the fallback module configuration for a function selector
-	/// @param selector The function selector to query
-	/// @return callType The type of call redirection
-	/// @return module The address of the fallback module
-	function fallbackHandler(bytes4 selector) external view returns (CallType callType, address module);
-
-	/// @notice Returns a list of forbidden function selectors for fallback routing
-	/// @return selectors The list of disallowed function selectors
-	function forbiddenSelectors() external pure returns (bytes4[] memory selectors);
 
 	/// @notice Returns the configured EntryPoint
 	/// @return The address of the configured EntryPoint

@@ -3,7 +3,7 @@ pragma solidity ^0.8.28;
 
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 import {IStatelessValidator} from "src/interfaces/IERC7579Modules.sol";
-import {PolicyType, SmartSessionMode, ActionId, PermissionId, ModuleType, ValidationData} from "src/types/Types.sol";
+import {PolicyType, SmartSessionMode, ActionId, PermissionId, ModuleType, ValidationData} from "src/types/DataTypes.sol";
 
 struct EnableSession {
 	uint8 chainDigestIndex;

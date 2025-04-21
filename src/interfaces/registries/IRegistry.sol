@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {ModuleType, PackedModuleTypes, ResolverUID, SchemaUID} from "src/types/Types.sol";
+import {ModuleType, PackedModuleTypes, ResolverUID, SchemaUID} from "src/types/DataTypes.sol";
 import {IERC7484} from "./IERC7484.sol";
 import {IExternalResolver} from "./IExternalResolver.sol";
 import {IExternalSchemaValidator} from "./IExternalSchemaValidator.sol";

@@ -2,7 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
-import {ModuleType, ValidationData} from "src/types/Types.sol";
+import {ConfigId, ModuleType, ValidationData} from "src/types/DataTypes.sol";
 
 /// @title IModule
 /// @notice ERC-7579 module base interface
@@ -30,7 +30,7 @@ interface IModule {
 	function isModuleType(ModuleType moduleTypeId) external view returns (bool);
 
 	/// @notice Checks if the module has been initialized for a specific smart account
-	/// @param account Address of the smart account to check for initialization status
+	/// @param account The address of the smart account to check for initialization status
 	/// @return True if the module is initialized, false otherwise
 	function isInitialized(address account) external view returns (bool);
 }
@@ -78,32 +78,59 @@ interface IHook is IModule {
 	/// @param msgSender The address of the original sender of the transaction
 	/// @param msgValue The value that was sent with the call
 	/// @param msgData The calldata of the transaction
-	/// @return hookData The arbitrary data that may be used or modified throughout the transaction lifecycle, passed to `postCheck`
+	/// @return context The arbitrary data that may be used or modified throughout the transaction lifecycle, passed to `postCheck`
 	function preCheck(
 		address msgSender,
 		uint256 msgValue,
 		bytes calldata msgData
-	) external payable returns (bytes memory hookData);
+	) external payable returns (bytes memory context);
 
 	/// @notice Performs checks after a transaction is executed to ensure state consistency
-	/// @param hookData The data returned from `preCheck`, containing execution context or modifications
-	function postCheck(bytes calldata hookData) external payable;
+	/// @param context The data returned from `preCheck`, containing execution context or modifications
+	function postCheck(bytes calldata context) external payable;
 }
 
 /// @title IPolicy
 /// @notice Interface for the Policy module contract
 interface IPolicy is IModule {
-	function checkUserOpPolicy(
-		bytes32 id,
-		PackedUserOperation calldata userOp
-	) external payable returns (ValidationData);
+	event PolicySet(ConfigId id, address multiplexer, address account);
 
-	function checkSignaturePolicy(
-		bytes32 id,
-		address sender,
+	function initializeWithMultiplexer(address account, ConfigId configId, bytes calldata data) external;
+
+	function isInitialized(address account, ConfigId configId) external view returns (bool);
+
+	function isInitialized(address account, address multiplexer, ConfigId configId) external view returns (bool);
+}
+
+/// @title IUserOpPolicy
+/// @notice Interface for the UserOpPolicy module contract
+interface IUserOpPolicy is IPolicy {
+	function checkUserOpPolicy(ConfigId id, PackedUserOperation calldata userOp) external returns (ValidationData);
+}
+
+/// @title IActionPolicy
+/// @notice Interface for the ActionPolicy module contract
+interface IActionPolicy is IPolicy {
+	function checkAction(
+		ConfigId id,
+		address account,
+		address target,
+		uint256 value,
+		bytes calldata callData
+	) external returns (ValidationData);
+}
+
+/// @title I1271Policy
+/// @notice Interface for the ERC1271Policy module contract
+interface I1271Policy is IPolicy {
+	/// @notice Enforces restrictions on 1271 signed actions
+	function check1271SignedAction(
+		ConfigId id,
+		address requestSender,
+		address account,
 		bytes32 hash,
 		bytes calldata signature
-	) external view returns (ValidationData);
+	) external view returns (bool);
 }
 
 /// @title ISigner
@@ -126,9 +153,48 @@ interface ISigner is IModule {
 /// @title IStatelessValidator
 /// @notice Interface for the StatelessValidator module contract
 interface IStatelessValidator is IModule {
+	/// @notice Validates a signature against using ERC-1271
+	/// @param hash The hash of the data to validate
+	/// @param signature The signature of the data
+	/// @param data The data to validate against (owner address in this case)
+	/// @return True if the signature is valid, false otherwise
 	function validateSignatureWithData(
 		bytes32 hash,
 		bytes calldata signature,
 		bytes calldata data
 	) external view returns (bool);
+}
+
+/// @title IPreValidationHookERC1271
+/// @notice Interface for ERC-1271 pre-validation hook module contract
+interface IPreValidationHookERC1271 is IModule {
+	/// @notice Performs pre-validation checks for isValidSignature
+	/// @dev This method is called before the validation of a signature on a validator within isValidSignature
+	/// @param sender The original sender of the request
+	/// @param hash The hash of signed data
+	/// @param signature The signature to validate
+	/// @return hookHash The hash after applying the pre-validation hook
+	/// @return hookSignature The signature after applying the pre-validation hook
+	function preValidationHookERC1271(
+		address sender,
+		bytes32 hash,
+		bytes calldata signature
+	) external view returns (bytes32 hookHash, bytes memory hookSignature);
+}
+
+/// @title IPreValidationHookERC4337
+/// @notice Interface for ERC-4337 pre-validation hook module contract
+interface IPreValidationHookERC4337 is IModule {
+	/// @notice Performs pre-validation checks for user operations
+	/// @dev This method is called before the validation of a user operation
+	/// @param userOp The user operation to be validated
+	/// @param missingAccountFunds The amount of funds missing in the account
+	/// @param userOpHash The hash of the user operation data
+	/// @return hookHash The hash after applying the pre-validation hook
+	/// @return hookSignature The signature after applying the pre-validation hook
+	function preValidationHookERC4337(
+		PackedUserOperation calldata userOp,
+		uint256 missingAccountFunds,
+		bytes32 userOpHash
+	) external returns (bytes32 hookHash, bytes memory hookSignature);
 }

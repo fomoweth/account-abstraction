@@ -4,10 +4,8 @@ pragma solidity ^0.8.28;
 import {IVortex} from "src/interfaces/IVortex.sol";
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 import {AccountIdLib} from "src/libraries/AccountIdLib.sol";
-import {CalldataDecoder} from "src/libraries/CalldataDecoder.sol";
 import {ExecutionLib} from "src/libraries/ExecutionLib.sol";
-import {ExecutionMode, CallType, ModuleType, PackedModuleTypes, ValidationData} from "src/types/Types.sol";
-import {AccessControl} from "src/core/AccessControl.sol";
+import {ExecutionMode, CallType, ModuleType, ValidationData, ValidationMode} from "src/types/DataTypes.sol";
 import {AccountBase} from "src/core/AccountBase.sol";
 import {AccountCore} from "src/core/AccountCore.sol";
 
@@ -15,14 +13,13 @@ import {AccountCore} from "src/core/AccountCore.sol";
 /// @notice Modular smart account contract supporting ERC-7579 and ERC-4337 standards
 contract Vortex is IVortex, AccountBase, AccountCore {
 	using AccountIdLib for string;
-	using CalldataDecoder for *;
 	using ExecutionLib for address;
 
+	string internal constant ACCOUNT_IMPLEMENTATION_ID = "fomoweth.vortex.1.0.0";
+
 	constructor() {
-		assembly ("memory-safe") {
-			// prevents from initializing the implementation
-			sstore(ROOT_VALIDATOR_STORAGE_SLOT, SENTINEL)
-		}
+		// prevents from initializing the implementation
+		_setRootValidator(SENTINEL);
 	}
 
 	/// @inheritdoc IVortex
@@ -45,12 +42,21 @@ contract Vortex is IVortex, AccountBase, AccountCore {
 
 	/// @inheritdoc IVortex
 	function executeUserOp(PackedUserOperation calldata userOp, bytes32) external payable onlyEntryPoint withHook {
-		bytes4 selector = userOp.callData[4:].decodeSelector();
-		if (selector == this.execute.selector || selector == this.executeFromExecutor.selector) {
-			(ExecutionMode mode, bytes calldata executionCalldata) = userOp.callData[8:].decodeExecutionCalldata();
-			_execute(mode, executionCalldata);
-		} else {
-			address(this).callDelegate(userOp.callData[4:]);
+		bytes calldata callData = userOp.callData[4:];
+
+		assembly ("memory-safe") {
+			let ptr := mload(0x40)
+			calldatacopy(ptr, callData.offset, callData.length)
+
+			if iszero(delegatecall(gas(), address(), ptr, callData.length, codesize(), 0x00)) {
+				if iszero(returndatasize()) {
+					mstore(0x00, 0xacfdb444) // ExecutionFailed()
+					revert(0x1c, 0x04)
+				}
+
+				returndatacopy(ptr, 0x00, returndatasize())
+				revert(ptr, returndatasize())
+			}
 		}
 	}
 
@@ -60,19 +66,25 @@ contract Vortex is IVortex, AccountBase, AccountCore {
 		bytes32 userOpHash,
 		uint256 missingAccountFunds
 	) external payable onlyEntryPoint payPrefund(missingAccountFunds) returns (ValidationData validationData) {
-		(address validator, bool isEnableMode) = _decodeUserOpNonce(userOp);
-		if (isEnableMode) {
-			PackedUserOperation memory op = userOp;
-			op.signature = _enableModule(userOp.signature, userOpHash);
-			return _validateUserOp(validator, op, userOpHash);
-		} else {
-			return _validateUserOp(validator, userOp, userOpHash);
-		}
+		(address validator, ValidationMode mode) = _decodeUserOpNonce(userOp);
+
+		PackedUserOperation memory op = userOp;
+		if (mode == VALIDATION_MODE_ENABLE) op.signature = _enableModule(userOp.signature, userOpHash);
+		(userOpHash, op.signature) = _preValidateERC4337(userOpHash, op, missingAccountFunds);
+
+		return _validateUserOp(validator, op, userOpHash);
 	}
 
 	/// @inheritdoc IVortex
 	function isValidSignature(bytes32 hash, bytes calldata signature) external view returns (bytes4 magicValue) {
-		(address validator, bytes calldata innerSignature) = _decodeSignature(signature);
+		if (signature.length == 0) {
+			if (uint256(hash) == (~signature.length / 0xffff) * 0x7739) {
+				return _validateERC7739Support(_getValidators(), hash);
+			}
+		}
+
+		(address validator, bytes memory innerSignature) = _decodeSignature(signature);
+		(hash, innerSignature) = _preValidateERC1271(hash, innerSignature);
 		return _validateSignature(validator, hash, innerSignature);
 	}
 
@@ -104,7 +116,7 @@ contract Vortex is IVortex, AccountBase, AccountCore {
 	}
 
 	/// @inheritdoc IVortex
-	function supportsModule(ModuleType moduleTypeId) external pure returns (bool supported) {
+	function supportsModule(ModuleType moduleTypeId) public pure virtual returns (bool supported) {
 		assembly ("memory-safe") {
 			// MODULE_TYPE_VALIDATOR: 0x01
 			// MODULE_TYPE_EXECUTOR: 0x02
@@ -113,12 +125,17 @@ contract Vortex is IVortex, AccountBase, AccountCore {
 			// MODULE_TYPE_POLICY: 0x05
 			// MODULE_TYPE_SIGNER: 0x06
 			// MODULE_TYPE_STATELESS_VALIDATOR: 0x07
-			supported := and(iszero(iszero(moduleTypeId)), or(lt(moduleTypeId, 0x05), eq(moduleTypeId, 0x07)))
+			// MODULE_TYPE_PREVALIDATION_HOOK_ERC1271: 0x08
+			// MODULE_TYPE_PREVALIDATION_HOOK_ERC4337: 0x09
+			supported := xor(
+				and(iszero(iszero(moduleTypeId)), iszero(gt(moduleTypeId, 0x09))),
+				or(eq(moduleTypeId, 0x05), eq(moduleTypeId, 0x06))
+			)
 		}
 	}
 
 	/// @inheritdoc IVortex
-	function supportsExecutionMode(ExecutionMode mode) external pure returns (bool supported) {
+	function supportsExecutionMode(ExecutionMode mode) public pure virtual returns (bool supported) {
 		assembly ("memory-safe") {
 			let callType := shr(0xf8, mode)
 			let execType := shr(0xf8, shl(0x08, mode))
@@ -131,10 +148,10 @@ contract Vortex is IVortex, AccountBase, AccountCore {
 		}
 	}
 
-	/// @notice Configures a new ERC-7484 registry
-	/// @param newRegistry Address of the registry
-	/// @param attesters List of trusted attesters
-	/// @param threshold Minimum number of attestations required
+	/// @notice Configures an ERC-7484 registry with a list of trusted attesters and a quorum threshold
+	/// @param newRegistry The address of the ERC-7484 registry
+	/// @param attesters The list of trusted attesters
+	/// @param threshold The minimum number of attestations required
 	function configureRegistry(
 		address newRegistry,
 		address[] calldata attesters,
@@ -144,8 +161,8 @@ contract Vortex is IVortex, AccountBase, AccountCore {
 	}
 
 	/// @notice Configures a new root validator module
-	/// @param newRootValidator Address of the validator module
-	/// @param data Initialization data for the validator
+	/// @param newRootValidator The address of the validator module
+	/// @param data Initialization context for the validator
 	function configureRootValidator(
 		address newRootValidator,
 		bytes calldata data
@@ -163,45 +180,42 @@ contract Vortex is IVortex, AccountBase, AccountCore {
 		return ENTRYPOINT;
 	}
 
-	/// @notice Returns the currently configured ERC-7484 registry
-	/// @return Address of the ERC-7484 registry
-	function registry() external view returns (address) {
-		return _registry();
-	}
-
 	/// @notice Returns the currently configured root validator module
-	/// @return Address of the root validator module
+	/// @return The address of the root validator module
 	function rootValidator() external view returns (address) {
 		return _rootValidator();
 	}
 
-	/// @notice Returns a list of globally installed hook modules
-	/// @return hooks Array of hook module addresses
-	function globalHooks() external view returns (address[] memory hooks) {
-		return _globalHooks();
+	/// @notice Returns the currently configured ERC-7484 registry
+	/// @return The address of the configured registry
+	function registry() external view returns (address) {
+		return _getRegistry();
 	}
 
-	/// @notice Retrieves the configuration for a given module
-	/// @return moduleTypeId Module type identifier
-	/// @return packedTypes Packed representation of sub-module types
-	/// @return hook Address of the associated hook module
-	function getConfiguration(
-		address module
-	) external view returns (ModuleType moduleTypeId, PackedModuleTypes packedTypes, address hook) {
-		return _getConfiguration(module);
+	/// @notice Returns installed validator modules
+	/// @return validators The list of validator addresses
+	function getValidators() external view returns (address[] memory validators) {
+		return _getValidators();
+	}
+
+	/// @notice Returns installed executor modules
+	/// @return executors The list of executor addresses
+	function getExecutors() external view returns (address[] memory executors) {
+		return _getExecutors();
+	}
+
+	/// @notice Returns globally installed hook modules
+	/// @return hooks The list of globally active hook addresses
+	function getGlobalHooks() external view returns (address[] memory hooks) {
+		return _getHooks();
 	}
 
 	/// @notice Returns the fallback module configuration for a function selector
-	/// @return callType Type of call that can be forwarded as
-	/// @return module Address of the fallback module handling the fallback
-	function fallbackHandler(bytes4 selector) external view returns (CallType callType, address module) {
-		return _fallbackHandler(selector);
-	}
-
-	/// @notice Returns a list of selectors forbidden in fallback routing
-	/// @return selectors Array of forbidden function selectors
-	function forbiddenSelectors() external pure returns (bytes4[] memory selectors) {
-		return _forbiddenSelectors();
+	/// @param selector The function selector to query
+	/// @return callType The type of call redirection
+	/// @return module The address of the fallback module
+	function getFallbackHandler(bytes4 selector) external view returns (CallType callType, address module) {
+		return _getFallbackHandler(selector);
 	}
 
 	/// @notice Returns the EIP-712 domain separator for the current chain
@@ -218,14 +232,14 @@ contract Vortex is IVortex, AccountBase, AccountCore {
 	}
 
 	/// @notice Returns the address of the current implementation (EIP-1967)
-	/// @return implementationAddress The current implementation address
+	/// @return The current implementation address
 	function implementation() external view returns (address) {
 		return _selfImplementation();
 	}
 
 	/// @notice Upgrades the implementation and optionally executes a function call
-	/// @param newImplementation Address of the new implementation
-	/// @param data Calldata to execute after the upgrade
+	/// @param newImplementation The address of the new implementation
+	/// @param data The calldata to execute after the upgrade
 	function upgradeToAndCall(
 		address newImplementation,
 		bytes calldata data

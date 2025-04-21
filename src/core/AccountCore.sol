@@ -1,34 +1,80 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import {IVortex} from "src/interfaces/IVortex.sol";
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
+import {Calldata} from "src/libraries/Calldata.sol";
 import {EIP712} from "solady/utils/EIP712.sol";
+import {EnumerableSetLib} from "solady/utils/EnumerableSetLib.sol";
 import {UUPSUpgradeable} from "solady/utils/UUPSUpgradeable.sol";
 import {CalldataDecoder} from "src/libraries/CalldataDecoder.sol";
 import {ExecutionLib} from "src/libraries/ExecutionLib.sol";
-import {CALLTYPE_SINGLE, CALLTYPE_BATCH, CALLTYPE_DELEGATE} from "src/types/Constants.sol";
-import {ExecutionMode, CallType, ExecType, ModuleType, ValidationData} from "src/types/Types.sol";
-import {AccessControl} from "./AccessControl.sol";
-import {AccountBase} from "./AccountBase.sol";
+import {ExecutionMode, CallType, ExecType, ModuleType, ValidationData, ValidationMode} from "src/types/DataTypes.sol";
 import {ModuleManager} from "./ModuleManager.sol";
 
 /// @title AccountCore
-
-abstract contract AccountCore is EIP712, ModuleManager, UUPSUpgradeable {
+/// @notice Implements ERC-4337 and ERC-7579 standards for account management and access control
+abstract contract AccountCore is IVortex, EIP712, ModuleManager, UUPSUpgradeable {
 	using CalldataDecoder for bytes;
+	using EnumerableSetLib for EnumerableSetLib.AddressSet;
 	using ExecutionLib for ExecType;
 
+	error InvalidInitialization();
+
+	error InitializationFailed();
+
+	error InvalidParametersLength();
+
+	error InvalidSignature();
+
+	error InvalidValidator();
+
+	error InvalidValidationMode(ValidationMode mode);
+
+	error EnableNotApproved();
+
 	/// @dev keccak256(bytes("EnableModule(uint256 moduleTypeId,address module,bytes32 initDataHash,bytes32 userOpHash)"));
-	bytes32 internal constant ENABLE_MODULE_TYPEHASH =
+	bytes32 private constant ENABLE_MODULE_TYPEHASH =
 		0xc9285f586ac4794002dd9886bc9d760a4544a5d6a18524daa92803a337338eac;
 
 	bytes4 internal constant ERC1271_SUCCESS = 0x1626ba7e;
 	bytes4 internal constant ERC1271_FAILED = 0xFFFFFFFF;
 
-	/// @notice Does pre-checks and post-checks using installed hooks on the account
-	modifier withHook() {
+	CallType internal constant CALLTYPE_SINGLE = CallType.wrap(0x00);
+	CallType internal constant CALLTYPE_BATCH = CallType.wrap(0x01);
+	CallType internal constant CALLTYPE_STATIC = CallType.wrap(0xFE);
+	CallType internal constant CALLTYPE_DELEGATE = CallType.wrap(0xFF);
+
+	ExecType internal constant EXECTYPE_DEFAULT = ExecType.wrap(0x00);
+	ExecType internal constant EXECTYPE_TRY = ExecType.wrap(0x01);
+
+	ValidationMode internal constant VALIDATION_MODE_DEFAULT = ValidationMode.wrap(0x00);
+	ValidationMode internal constant VALIDATION_MODE_ENABLE = ValidationMode.wrap(0x01);
+
+	/// @notice Verifies that the caller is an executor module currently installed on the account
+	modifier onlyExecutor() virtual {
+		require(
+			_isModuleInstalled(MODULE_TYPE_EXECUTOR, msg.sender, Calldata.emptyBytes()),
+			ModuleNotInstalled(MODULE_TYPE_EXECUTOR, msg.sender)
+		);
+		_;
+	}
+
+	/// @notice Verifies that the specified validator module is currently installed on the account
+	modifier onlyValidator(address validator) virtual {
+		require(
+			_isModuleInstalled(MODULE_TYPE_VALIDATOR, validator, Calldata.emptyBytes()),
+			ModuleNotInstalled(MODULE_TYPE_VALIDATOR, validator)
+		);
+		_;
+	}
+
+	/// @notice Handles pre and post execution checks for global or module-specific hooks installed on the account
+	/// @dev 	If called by EntryPoint or the account itself, invokes batch checks on all global hooks.
+	///      	Otherwise, performs hook checks specific to the calling module, if one is installed.
+	modifier withHook() virtual {
 		if (_isEntryPointOrSelf()) {
-			address[] memory hooks = _globalHooks();
+			address[] memory hooks = _getHooks();
 			bytes[] memory contexts;
 
 			if (hooks.length != 0) contexts = _preCheckBatch(hooks, msg.sender, msg.value, msg.data);
@@ -45,9 +91,12 @@ abstract contract AccountCore is EIP712, ModuleManager, UUPSUpgradeable {
 	}
 
 	function _initializeAccount(bytes calldata data) internal virtual {
+		AccountStorage storage state = _getAccountStorage();
+		if (state.rootValidator != address(0)) revert InvalidInitialization();
+
 		assembly ("memory-safe") {
-			if iszero(iszero(sload(ROOT_VALIDATOR_STORAGE_SLOT))) {
-				mstore(0x00, 0xf92ee8a9) // InvalidInitialization()
+			if lt(data.length, 0x2c) {
+				mstore(0x00, 0x0fe4a1df) // InvalidParametersLength()
 				revert(0x1c, 0x04)
 			}
 
@@ -57,19 +106,15 @@ abstract contract AccountCore is EIP712, ModuleManager, UUPSUpgradeable {
 
 			let ptr := mload(0x40)
 			mstore(0x40, add(ptr, data.length))
-
 			calldatacopy(ptr, data.offset, data.length)
 
 			if iszero(delegatecall(gas(), bootstrap, ptr, data.length, codesize(), 0x00)) {
 				returndatacopy(ptr, 0x00, returndatasize())
 				revert(ptr, returndatasize())
 			}
-
-			if iszero(extcodesize(sload(ROOT_VALIDATOR_STORAGE_SLOT))) {
-				mstore(0x00, 0x19b991a8) // InvalidInitialization()
-				revert(0x1c, 0x04)
-			}
 		}
+
+		if (state.rootValidator == address(0) || !_isInitialized(state.rootValidator)) revert InitializationFailed();
 	}
 
 	function _execute(
@@ -88,12 +133,53 @@ abstract contract AccountCore is EIP712, ModuleManager, UUPSUpgradeable {
 		PackedUserOperation memory userOp,
 		bytes32 userOpHash
 	) internal virtual onlyValidator(validator) returns (ValidationData validationData) {
-		// 0x97003203: validateUserOp((address,uint256,bytes,bytes,bytes32,uint256,bytes32,bytes,bytes),bytes32)
-		bytes memory callData = abi.encodeWithSelector(0x97003203, userOp, userOpHash);
-
 		assembly ("memory-safe") {
-			if iszero(call(gas(), validator, 0x00, add(callData, 0x20), mload(callData), 0x00, 0x20)) {
-				let ptr := mload(0x40)
+			function storeOffset(ptr, slot, offset) -> pos {
+				mstore(ptr, offset)
+				let length := and(add(mload(mload(slot)), 0x1f), not(0x1f))
+				pos := add(offset, add(length, 0x20))
+			}
+
+			function storeBytes(ptr, slot) -> pos {
+				let offset := mload(slot)
+				let length := mload(offset)
+				mstore(ptr, length)
+
+				offset := add(offset, 0x20)
+				let guard := add(offset, length)
+
+				// prettier-ignore
+				for { pos := add(ptr, 0x20) } lt(offset, guard) { pos := add(pos, 0x20) offset := add(offset, 0x20) } {
+					mstore(pos, mload(offset))
+				}
+			}
+
+			let ptr := mload(0x40)
+
+			mstore(ptr, 0x9700320300000000000000000000000000000000000000000000000000000000) // validateUserOp(PackedUserOperation,bytes32)
+			mstore(add(ptr, 0x04), 0x40)
+			mstore(add(ptr, 0x24), userOpHash)
+			mstore(add(ptr, 0x44), shr(0x60, shl(0x60, mload(userOp)))) // sender
+			mstore(add(ptr, 0x64), mload(add(userOp, 0x20))) // nonce
+
+			let pos := 0x120
+			pos := storeOffset(add(ptr, 0x84), add(userOp, 0x40), pos) // initCode
+			pos := storeOffset(add(ptr, 0xa4), add(userOp, 0x60), pos) // callData
+
+			mstore(add(ptr, 0xc4), mload(add(userOp, 0x80))) // accountGasLimits
+			mstore(add(ptr, 0xe4), mload(add(userOp, 0xa0))) // preVerificationGas
+			mstore(add(ptr, 0x104), mload(add(userOp, 0xc0))) // gasFees
+
+			pos := storeOffset(add(ptr, 0x124), add(userOp, 0xe0), pos) // paymasterAndData
+			pos := storeOffset(add(ptr, 0x144), add(userOp, 0x100), pos) // signature
+
+			pos := add(ptr, 0x164)
+			pos := storeBytes(pos, add(userOp, 0x40)) // initCode
+			pos := storeBytes(pos, add(userOp, 0x60)) // callData
+			pos := storeBytes(pos, add(userOp, 0xe0)) // paymasterAndData
+			pos := storeBytes(pos, add(userOp, 0x100)) // signature
+
+			if iszero(call(gas(), validator, 0x00, ptr, sub(pos, ptr), 0x00, 0x20)) {
 				returndatacopy(ptr, 0x00, returndatasize())
 				revert(ptr, returndatasize())
 			}
@@ -102,30 +188,331 @@ abstract contract AccountCore is EIP712, ModuleManager, UUPSUpgradeable {
 		}
 	}
 
-	function _validateSignature(
-		address validator,
-		bytes32 hash,
-		bytes calldata signature
-	) internal view virtual onlyValidator(validator) returns (bytes4 magicValue) {
+	function _enableModule(
+		bytes calldata data,
+		bytes32 userOpHash
+	) internal virtual returns (bytes calldata userOpSignature) {
+		ModuleType moduleTypeId;
+		address module;
+		bytes calldata signature;
+		(moduleTypeId, module, data, signature, userOpSignature) = data.decodeEnableModuleParams();
+
+		(address validator, bytes calldata innerSignature) = _decodeSignature(signature);
+		bytes32 structHash = _enableModuleHash(moduleTypeId, module, data, userOpHash);
+
+		_validateEnableSignature(validator, _hashTypedData(structHash), innerSignature);
+		_installModule(moduleTypeId, module, data);
+	}
+
+	function _preCheck(
+		address hook,
+		address msgSender,
+		uint256 msgValue,
+		bytes calldata msgData
+	) internal virtual returns (bytes memory context) {
 		assembly ("memory-safe") {
 			let ptr := mload(0x40)
+
+			mstore(ptr, 0xd68f602500000000000000000000000000000000000000000000000000000000) // preCheck(address,uint256,bytes)
+			mstore(add(ptr, 0x04), shr(0x60, shl(0x60, msgSender)))
+			mstore(add(ptr, 0x24), msgValue)
+			mstore(add(ptr, 0x44), 0x60)
+			mstore(add(ptr, 0x64), msgData.length)
+			calldatacopy(add(ptr, 0x84), msgData.offset, msgData.length)
+
+			if iszero(call(gas(), hook, 0x00, ptr, add(msgData.length, 0x84), codesize(), 0x00)) {
+				returndatacopy(ptr, 0x00, returndatasize())
+				revert(ptr, returndatasize())
+			}
+
+			context := mload(0x40)
+			mstore(context, returndatasize())
+			mstore(0x40, add(add(context, 0x20), returndatasize()))
+			returndatacopy(add(context, 0x20), 0x00, returndatasize())
+		}
+	}
+
+	function _postCheck(address hook, bytes memory context) internal virtual {
+		assembly ("memory-safe") {
+			let offset := add(context, 0x20)
+			let length := mload(context)
+			let guard := add(offset, length)
+
+			let ptr := mload(0x40)
+
+			mstore(ptr, 0x173bf7da00000000000000000000000000000000000000000000000000000000) // postCheck(bytes)
+			mstore(add(ptr, 0x04), 0x20)
+			mstore(add(ptr, 0x24), length)
+
+			// prettier-ignore
+			for { let pos := add(ptr, 0x44) } lt(offset, guard) { pos := add(pos, 0x20) offset := add(offset, 0x20) } {
+				mstore(pos, mload(offset))
+			}
+
+			mstore(0x40, and(add(guard, 0x1f), not(0x1f)))
+
+			if iszero(call(gas(), hook, 0x00, ptr, add(length, 0x44), codesize(), 0x00)) {
+				returndatacopy(ptr, 0x00, returndatasize())
+				revert(ptr, returndatasize())
+			}
+		}
+	}
+
+	function _preCheckBatch(
+		address[] memory hooks,
+		address msgSender,
+		uint256 msgValue,
+		bytes calldata msgData
+	) internal virtual returns (bytes[] memory contexts) {
+		assembly ("memory-safe") {
+			let ptr := mload(0x40)
+			let ptrSize := add(msgData.length, 0x84)
+			mstore(0x40, add(ptr, ptrSize))
+
+			mstore(ptr, 0xd68f602500000000000000000000000000000000000000000000000000000000) // preCheck(address,uint256,bytes)
+			mstore(add(ptr, 0x04), shr(0x60, shl(0x60, msgSender)))
+			mstore(add(ptr, 0x24), msgValue)
+			mstore(add(ptr, 0x44), 0x60)
+			mstore(add(ptr, 0x64), msgData.length)
+			calldatacopy(add(ptr, 0x84), msgData.offset, msgData.length)
+
+			contexts := mload(0x40)
+			let length := mload(hooks)
+			mstore(contexts, length)
+
+			let offset := add(add(contexts, 0x20), shl(0x05, length))
+
+			// prettier-ignore
+			for { let i } lt(i, length) { i := add(i, 0x01) } {
+				let hook := shr(0x60, shl(0x60, mload(add(add(hooks, 0x20), shl(0x05, i)))))
+
+				if iszero(call(gas(), hook, 0x00, ptr, ptrSize, codesize(), 0x00)) {
+					returndatacopy(ptr, 0x00, returndatasize())
+					revert(ptr, returndatasize())
+				}
+
+				mstore(add(add(contexts, 0x20), shl(0x05, i)), offset)
+				mstore(offset, add(returndatasize(), 0x60))
+				mstore(add(offset, 0x20), hook)
+				mstore(add(offset, 0x40), 0x40)
+				mstore(add(offset, 0x60), returndatasize())
+				returndatacopy(add(offset, 0x80), 0x00, returndatasize())
+				offset := add(add(offset, 0x80), returndatasize())
+			}
+
+			mstore(0x40, offset)
+		}
+	}
+
+	function _postCheckBatch(bytes[] memory contexts) internal virtual {
+		assembly ("memory-safe") {
+			let ptr := mload(0x40)
+
+			mstore(ptr, 0x173bf7da00000000000000000000000000000000000000000000000000000000) // postCheck(bytes)
+
+			// prettier-ignore
+			for { let i } lt(i, mload(contexts)) { i := add(i, 0x01) } {
+				let offset := mload(add(add(contexts, 0x20), shl(0x05, i)))
+				let hook := shr(0x60, shl(0x60, mload(add(offset, 0x20))))
+				let contextLength := mload(add(offset, 0x60))
+				let contextOffset := add(offset, 0x80)
+				let guard := add(contextOffset, contextLength)
+
+				for { let pos := add(ptr, 0x04) } lt(contextOffset, guard) { pos := add(pos, 0x20) contextOffset := add(contextOffset, 0x20) } {
+					mstore(pos, mload(contextOffset))
+				}
+
+				mstore(0x40, and(add(guard, 0x1f), not(0x1f)))
+
+				if iszero(call(gas(), hook, 0x00, ptr, add(contextLength, 0x04), codesize(), 0x00)) {
+					returndatacopy(ptr, 0x00, returndatasize())
+					revert(ptr, returndatasize())
+				}
+			}
+		}
+	}
+
+	function _preValidateERC4337(
+		bytes32 userOpHash,
+		PackedUserOperation memory userOp,
+		uint256 missingAccountFunds
+	) internal virtual returns (bytes32 hookHash, bytes memory hookSignature) {
+		address preValidationHook = _getPreValidationHook(MODULE_TYPE_PREVALIDATION_HOOK_ERC4337);
+		if (preValidationHook == address(0)) return (userOpHash, userOp.signature);
+
+		assembly ("memory-safe") {
+			function storeOffset(ptr, slot, offset) -> pos {
+				mstore(ptr, offset)
+				let length := and(add(mload(mload(slot)), 0x1f), not(0x1f))
+				pos := add(offset, add(length, 0x20))
+			}
+
+			function storeBytes(ptr, slot) -> pos {
+				let offset := mload(slot)
+				let length := mload(offset)
+				mstore(ptr, length)
+
+				offset := add(offset, 0x20)
+				let guard := add(offset, length)
+
+				// prettier-ignore
+				for { pos := add(ptr, 0x20) } lt(offset, guard) { pos := add(pos, 0x20) offset := add(offset, 0x20) } {
+					mstore(pos, mload(offset))
+				}
+			}
+
+			let ptr := mload(0x40)
+
+			mstore(ptr, 0xe24f8f9300000000000000000000000000000000000000000000000000000000) // preValidationHookERC4337(PackedUserOperation,uint256,bytes32)
+			mstore(add(ptr, 0x04), 0x60)
+			mstore(add(ptr, 0x24), missingAccountFunds)
+			mstore(add(ptr, 0x44), userOpHash)
+			mstore(add(ptr, 0x64), shr(0x60, shl(0x60, mload(userOp)))) // sender
+			mstore(add(ptr, 0x84), mload(add(userOp, 0x20))) // nonce
+
+			let pos := 0x120
+			pos := storeOffset(add(ptr, 0xa4), add(userOp, 0x40), pos) // initCode
+			pos := storeOffset(add(ptr, 0xc4), add(userOp, 0x60), pos) // callData
+
+			mstore(add(ptr, 0xe4), mload(add(userOp, 0x80))) // accountGasLimits
+			mstore(add(ptr, 0x104), mload(add(userOp, 0xa0))) // preVerificationGas
+			mstore(add(ptr, 0x124), mload(add(userOp, 0xc0))) // gasFees
+
+			pos := storeOffset(add(ptr, 0x144), add(userOp, 0xe0), pos) // paymasterAndData
+			pos := storeOffset(add(ptr, 0x164), add(userOp, 0x100), pos) // signature
+
+			pos := add(ptr, 0x184)
+			pos := storeBytes(pos, add(userOp, 0x40)) // initCode
+			pos := storeBytes(pos, add(userOp, 0x60)) // callData
+			pos := storeBytes(pos, add(userOp, 0xe0)) // paymasterAndData
+			pos := storeBytes(pos, add(userOp, 0x100)) // signature
+
+			if iszero(call(gas(), preValidationHook, 0x00, ptr, sub(pos, ptr), codesize(), 0x00)) {
+				returndatacopy(ptr, 0x00, returndatasize())
+				revert(ptr, returndatasize())
+			}
+
+			returndatacopy(ptr, 0x00, 0x60)
+
+			hookHash := mload(ptr)
+			let hookSignatureLength := mload(add(ptr, 0x40))
+			hookSignature := mload(0x40)
+
+			mstore(0x40, add(add(hookSignature, 0x20), hookSignatureLength))
+			mstore(hookSignature, hookSignatureLength)
+			returndatacopy(add(hookSignature, 0x20), 0x60, hookSignatureLength)
+		}
+	}
+
+	function _preValidateERC1271(
+		bytes32 hash,
+		bytes memory signature
+	) internal view virtual returns (bytes32 hookHash, bytes memory hookSignature) {
+		address preValidationHook = _getPreValidationHook(MODULE_TYPE_PREVALIDATION_HOOK_ERC1271);
+		if (preValidationHook == address(0)) return (hash, signature);
+
+		assembly ("memory-safe") {
+			let offset := add(signature, 0x20)
+			let length := mload(signature)
+			let guard := add(offset, length)
+
+			let ptr := mload(0x40)
+
+			mstore(ptr, 0x7a0468b700000000000000000000000000000000000000000000000000000000) // preValidationHookERC1271(address,bytes32,bytes)
+			mstore(add(ptr, 0x04), shr(0x60, shl(0x60, caller())))
+			mstore(add(ptr, 0x24), hash)
+			mstore(add(ptr, 0x44), 0x60)
+			mstore(add(ptr, 0x64), length)
+
+			// prettier-ignore
+			for { let pos := add(ptr, 0x84) } lt(offset, guard) { pos := add(pos, 0x20) offset := add(offset, 0x20) } {
+				mstore(pos, mload(offset))
+			}
+
+			mstore(0x40, and(add(guard, 0x1f), not(0x1f)))
+
+			if iszero(staticcall(gas(), preValidationHook, ptr, add(length, 0x84), codesize(), 0x00)) {
+				returndatacopy(ptr, 0x00, returndatasize())
+				revert(ptr, returndatasize())
+			}
+
+			returndatacopy(ptr, 0x00, 0x60)
+
+			hookHash := mload(ptr)
+			length := mload(add(ptr, 0x40))
+			hookSignature := mload(0x40)
+
+			mstore(0x40, add(add(hookSignature, 0x20), length))
+			mstore(hookSignature, length)
+			returndatacopy(add(hookSignature, 0x20), 0x60, length)
+		}
+	}
+
+	function _validateERC7739Support(
+		address[] memory validators,
+		bytes32 hash
+	) internal view virtual returns (bytes4 magicValue) {
+		assembly ("memory-safe") {
+			let ptr := mload(0x40)
+			mstore(0x40, add(ptr, 0xa4))
 
 			mstore(ptr, 0xf551e2ee00000000000000000000000000000000000000000000000000000000) // isValidSignatureWithSender(address,bytes32,bytes)
 			mstore(add(ptr, 0x04), shr(0x60, shl(0x60, caller())))
 			mstore(add(ptr, 0x24), hash)
 			mstore(add(ptr, 0x44), 0x60)
-			mstore(add(ptr, 0x64), signature.length)
-			calldatacopy(add(ptr, 0x84), signature.offset, signature.length)
+			mstore(add(ptr, 0x64), 0x00)
+			mstore(add(ptr, 0x84), 0x00)
 
-			let success := staticcall(gas(), validator, ptr, add(signature.length, 0x84), 0x00, 0x20)
+			let offset := add(validators, 0x20)
+			let length := mload(validators)
 
-			switch and(iszero(signature.length), eq(hash, mul(div(not(signature.length), 0xffff), 0x7739)))
-			case 0x01 {
-				magicValue := or(mload(0x00), sub(0x00, iszero(and(eq(shr(0xf0, mload(0x00)), 0x7739), success))))
+			// prettier-ignore
+			for { let i } lt(i, length) { i := add(i, 0x01) } {
+				let validator := mload(add(offset, shl(0x05, i)))
+
+				if staticcall(gas(), validator, ptr, 0xa4, 0x00, 0x20) {
+					let support := mload(0x00)
+					if eq(shr(0xf0, support), 0x7739) {
+						if gt(support, magicValue) {
+							magicValue := support
+						}
+					}
+				}
 			}
-			default {
-				magicValue := or(mload(0x00), sub(0x00, iszero(success)))
+
+			if iszero(magicValue) {
+				magicValue := ERC1271_FAILED
 			}
+		}
+	}
+
+	function _validateSignature(
+		address validator,
+		bytes32 hash,
+		bytes memory signature
+	) internal view virtual onlyValidator(validator) returns (bytes4 magicValue) {
+		assembly ("memory-safe") {
+			let ptr := mload(0x40)
+			let offset := add(signature, 0x20)
+			let length := mload(signature)
+			let guard := add(offset, length)
+
+			mstore(ptr, 0xf551e2ee00000000000000000000000000000000000000000000000000000000) // isValidSignatureWithSender(address,bytes32,bytes)
+			mstore(add(ptr, 0x04), shr(0x60, shl(0x60, caller())))
+			mstore(add(ptr, 0x24), hash)
+			mstore(add(ptr, 0x44), 0x60)
+			mstore(add(ptr, 0x64), length)
+
+			// prettier-ignore
+			for { let pos := add(ptr, 0x84) } lt(offset, guard) { pos := add(pos, 0x20) offset := add(offset, 0x20) } {
+				mstore(pos, mload(offset))
+			}
+
+			mstore(0x40, and(add(guard, 0x1f), not(0x1f)))
+
+			let success := staticcall(gas(), validator, ptr, add(length, 0x84), 0x00, 0x20)
+
+			magicValue := or(mload(0x00), sub(0x00, iszero(success)))
 		}
 	}
 
@@ -153,20 +540,42 @@ abstract contract AccountCore is EIP712, ModuleManager, UUPSUpgradeable {
 		}
 	}
 
-	function _enableModule(
-		bytes calldata data,
-		bytes32 userOpHash
-	) internal virtual returns (bytes calldata userOpSignature) {
-		ModuleType moduleTypeId;
-		address module;
-		bytes calldata signature;
-		(moduleTypeId, module, data, signature, userOpSignature) = data.decodeEnableModuleParams();
+	function _decodeSignature(
+		bytes calldata signature
+	) internal view virtual returns (address validator, bytes calldata innerSignature) {
+		if (signature.length == 0) return (_rootValidator(), signature);
 
-		bytes32 structHash = _enableModuleHash(moduleTypeId, module, data, userOpHash);
-		(address validator, bytes calldata innerSignature) = _decodeSignature(signature);
+		assembly ("memory-safe") {
+			if lt(signature.length, 0x14) {
+				mstore(0x00, 0x8baa579f) // InvalidSignature()
+				revert(0x1c, 0x04)
+			}
 
-		_validateEnableSignature(validator, _hashTypedData(structHash), innerSignature);
-		_installModule(moduleTypeId, module, data);
+			validator := shr(0x60, calldataload(signature.offset))
+			innerSignature.offset := add(signature.offset, 0x14)
+			innerSignature.length := sub(signature.length, 0x14)
+		}
+	}
+
+	function _decodeUserOpNonce(
+		PackedUserOperation calldata userOp
+	) internal view virtual returns (address validator, ValidationMode mode) {
+		assembly ("memory-safe") {
+			let nonce := calldataload(add(userOp, 0x20))
+			validator := shr(0x60, shl(0x20, nonce))
+			mode := shl(0xf8, shr(0xf8, nonce))
+
+			if iszero(shl(0x60, validator)) {
+				mstore(0x00, 0xcc08c89e) // InvalidValidator()
+				revert(0x1c, 0x04)
+			}
+
+			if gt(mode, shl(0xf8, 0x01)) {
+				mstore(0x00, 0xcc08c89e) // InvalidValidationMode(bytes1)
+				mstore(0x20, mode)
+				revert(0x1c, 0x24)
+			}
+		}
 	}
 
 	function _enableModuleHash(
@@ -174,189 +583,22 @@ abstract contract AccountCore is EIP712, ModuleManager, UUPSUpgradeable {
 		address module,
 		bytes calldata data,
 		bytes32 userOpHash
-	) internal pure virtual returns (bytes32 hash) {
+	) internal pure virtual returns (bytes32 digest) {
 		assembly ("memory-safe") {
 			let ptr := mload(0x40)
+
 			mstore(ptr, ENABLE_MODULE_TYPEHASH)
 			mstore(add(ptr, 0x20), moduleTypeId)
 			mstore(add(ptr, 0x40), module)
+
 			calldatacopy(add(ptr, 0x60), data.offset, data.length)
 			mstore(add(ptr, 0x60), keccak256(add(ptr, 0x60), data.length))
 			mstore(add(ptr, 0x80), userOpHash)
-			hash := keccak256(ptr, 0xa0)
-		}
-	}
 
-	function _decodeSignature(
-		bytes calldata signature
-	) internal view virtual returns (address validator, bytes calldata innerSignature) {
-		assembly ("memory-safe") {
-			switch signature.length
-			case 0x00 {
-				validator := sload(ROOT_VALIDATOR_STORAGE_SLOT)
-				innerSignature.offset := 0x00
-				innerSignature.length := 0x00
-			}
-			default {
-				if lt(signature.length, 0x14) {
-					mstore(0x00, 0x8baa579f) // InvalidSignature()
-					revert(0x1c, 0x04)
-				}
+			digest := keccak256(ptr, 0xa0)
 
-				validator := shr(0x60, calldataload(signature.offset))
-				innerSignature.offset := add(signature.offset, 0x14)
-				innerSignature.length := sub(signature.length, 0x14)
-			}
-		}
-	}
-
-	function _decodeUserOpNonce(
-		PackedUserOperation calldata userOp
-	) internal pure virtual returns (address validator, bool isEnableMode) {
-		assembly ("memory-safe") {
-			let nonce := calldataload(add(userOp, 0x20))
-			validator := shr(0x60, shl(0x20, nonce))
-			isEnableMode := eq(shl(0xf8, shr(0xf8, nonce)), shl(0xf8, 0x01))
-		}
-	}
-
-	function _preCheck(
-		address hook,
-		address msgSender,
-		uint256 msgValue,
-		bytes calldata msgData
-	) internal virtual returns (bytes memory context) {
-		assembly ("memory-safe") {
-			let ptr := mload(0x40)
-
-			mstore(ptr, 0xd68f602500000000000000000000000000000000000000000000000000000000) // preCheck(address,uint256,bytes)
-			mstore(add(ptr, 0x04), shr(0x60, shl(0x60, msgSender)))
-			mstore(add(ptr, 0x24), msgValue)
-			mstore(add(ptr, 0x44), 0x60)
-			mstore(add(ptr, 0x64), msgData.length)
-			calldatacopy(add(ptr, 0x84), msgData.offset, msgData.length)
-
-			if iszero(call(gas(), hook, 0x00, ptr, add(msgData.length, 0x84), codesize(), 0x00)) {
-				returndatacopy(ptr, 0x00, returndatasize())
-				revert(ptr, returndatasize())
-			}
-
-			mstore(0x40, add(add(context, 0x20), returndatasize()))
-			mstore(context, returndatasize())
-			returndatacopy(add(context, 0x20), 0x00, returndatasize())
-		}
-	}
-
-	function _postCheck(address hook, bytes memory context) internal virtual {
-		assembly ("memory-safe") {
-			let offset := add(context, 0x20)
-			let length := mload(context)
-			let ptr := mload(0x40)
-
-			mstore(ptr, 0x173bf7da00000000000000000000000000000000000000000000000000000000) // postCheck(bytes)
-			mstore(add(ptr, 0x04), 0x20)
-			mstore(add(ptr, 0x24), length)
-
-			let pos := add(ptr, 0x44)
-			let guard := add(pos, length)
-
-			// prettier-ignore
-			for { } 0x01 { } {
-				mstore(pos, mload(offset))
-				pos := add(pos, 0x20)
-				if eq(pos, guard) { break }
-				offset := add(offset, 0x20)
-			}
-
-			mstore(0x40, and(add(guard, 0x1f), not(0x1f)))
-
-			if iszero(call(gas(), hook, 0x00, ptr, add(length, 0x44), codesize(), 0x00)) {
-				returndatacopy(ptr, 0x00, returndatasize())
-				revert(ptr, returndatasize())
-			}
-		}
-	}
-
-	function _preCheckBatch(
-		address[] memory hooks,
-		address msgSender,
-		uint256 msgValue,
-		bytes calldata msgData
-	) internal virtual returns (bytes[] memory contexts) {
-		assembly ("memory-safe") {
-			let ptr := mload(0x40)
-			mstore(0x40, add(ptr, add(msgData.length, 0x84)))
-
-			mstore(ptr, 0xd68f602500000000000000000000000000000000000000000000000000000000) // preCheck(address,uint256,bytes)
-			mstore(add(ptr, 0x04), shr(0x60, shl(0x60, msgSender)))
-			mstore(add(ptr, 0x24), msgValue)
-			mstore(add(ptr, 0x44), 0x60)
-			mstore(add(ptr, 0x64), msgData.length)
-			calldatacopy(add(ptr, 0x84), msgData.offset, msgData.length)
-
-			contexts := mload(0x40)
-
-			let length := mload(hooks)
-			let offset := add(add(contexts, 0x20), shl(0x05, length))
-
-			mstore(contexts, length)
-
-			// prettier-ignore
-			for { let i } lt(i, length) { i := add(i, 0x01) } {
-				let hook := shr(0x60, shl(0x60, mload(add(add(hooks, 0x20), shl(0x05, i)))))
-
-				if iszero(call(gas(), hook, 0x00, ptr, add(msgData.length, 0x84), codesize(), 0x00)) {
-					mstore(0x00, 0x4a3a865b) // PreCheckFailed(address)
-					mstore(0x20, hook)
-					revert(0x1c, 0x24)
-				}
-
-				mstore(add(add(contexts, 0x20), shl(0x05, i)), offset)
-				mstore(offset, add(returndatasize(), 0x60))
-				mstore(add(offset, 0x20), hook)
-				mstore(add(offset, 0x40), 0x40)
-				mstore(add(offset, 0x60), returndatasize())
-				returndatacopy(add(offset, 0x80), 0x00, returndatasize())
-				offset := add(add(offset, 0x80), returndatasize())
-			}
-
-			mstore(0x40, offset)
-		}
-	}
-
-	function _postCheckBatch(bytes[] memory contexts) internal virtual {
-		assembly ("memory-safe") {
-			let length := mload(contexts)
-
-			// prettier-ignore
-			for { let i } lt(i, length) { i := add(i, 0x01) } {
-				let offset := mload(add(add(contexts, 0x20), shl(0x05, i)))
-				let hook := shr(0x60, shl(0x60, mload(add(offset, 0x20))))
-				let contextLength := mload(add(offset, 0x60))
-				let contextOffset := add(offset, 0x80)
-
-				let ptr := mload(0x40)
-
-				mstore(ptr, 0x173bf7da00000000000000000000000000000000000000000000000000000000) // postCheck(bytes)
-
-				let pos := add(ptr, 0x04)
-				let guard := add(pos, contextLength)
-
-				for { } 0x01 { } {
-					mstore(pos, mload(contextOffset))
-					pos := add(pos, 0x20)
-					if eq(pos, guard) { break }
-					contextOffset := add(contextOffset, 0x20)
-				}
-
-				mstore(0x40, and(add(guard, 0x1f), not(0x1f)))
-
-				if iszero(call(gas(), hook, 0x00, ptr, add(contextLength, 0x04), codesize(), 0x00)) {
-					mstore(0x00, 0xa154e16d) // PostCheckFailed(address)
-					mstore(0x20, hook)
-					revert(0x1c, 0x24)
-				}
-			}
+			mstore(0x40, ptr)
+			mstore(0x60, 0x00)
 		}
 	}
 
@@ -392,17 +634,9 @@ abstract contract AccountCore is EIP712, ModuleManager, UUPSUpgradeable {
 			let module := shr(0x60, shl(0x60, configuration))
 
 			mstore(0x00, module)
-			mstore(0x20, MODULES_STORAGE_SLOT)
+			mstore(0x20, HOOKS_STORAGE_SLOT)
 
-			configuration := sload(keccak256(0x00, 0x40))
-
-			// MODULE_TYPE_FALLBACK: 0x03
-			if xor(shr(0xf8, configuration), 0x03) {
-				mstore(0x00, 0x2125deae) // InvalidModuleType()
-				revert(0x1c, 0x04)
-			}
-
-			let hook := shr(0x60, shl(0x60, configuration))
+			let hook := shr(0x60, shl(0x60, sload(keccak256(0x00, 0x40))))
 			let context
 
 			if iszero(hook) {
@@ -422,9 +656,8 @@ abstract contract AccountCore is EIP712, ModuleManager, UUPSUpgradeable {
 				calldatacopy(add(context, 0x84), 0x00, calldatasize())
 
 				if iszero(call(gas(), hook, 0x00, context, add(calldatasize(), 0x84), codesize(), 0x00)) {
-					mstore(0x00, 0x4a3a865b) // PreCheckFailed(address)
-					mstore(0x20, hook)
-					revert(0x1c, 0x24)
+					returndatacopy(context, 0x00, returndatasize())
+					revert(context, returndatasize())
 				}
 
 				context := allocate(add(returndatasize(), 0x20))
@@ -467,31 +700,26 @@ abstract contract AccountCore is EIP712, ModuleManager, UUPSUpgradeable {
 			returndatacopy(add(returnData, 0x20), 0x00, returndatasize())
 
 			if and(xor(hook, SENTINEL), xor(callType, 0xFE)) {
-				let length := mload(context)
 				let offset := add(context, 0x20)
+				let length := mload(context)
+				let guard := add(offset, length)
+
 				context := allocate(add(length, 0x44))
 
 				mstore(context, 0x173bf7da00000000000000000000000000000000000000000000000000000000) // postCheck(bytes)
 				mstore(add(context, 0x04), 0x20)
 				mstore(add(context, 0x24), length)
 
-				let pos := add(context, 0x44)
-				let guard := add(pos, length)
-
 				// prettier-ignore
-				for { } 0x01 { } {
+				for { let pos := add(context, 0x44) } lt(offset, guard) { pos := add(pos, 0x20) offset := add(offset, 0x20) } {
 					mstore(pos, mload(offset))
-					pos := add(pos, 0x20)
-					if eq(pos, guard) { break }
-					offset := add(offset, 0x20)
 				}
 
 				mstore(0x40, and(add(guard, 0x1f), not(0x1f)))
 
 				if iszero(call(gas(), hook, 0x00, context, add(length, 0x44), codesize(), 0x00)) {
-					mstore(0x00, 0xa154e16d) // PostCheckFailed(address)
-					mstore(0x20, hook)
-					revert(0x1c, 0x24)
+					returndatacopy(context, 0x00, returndatasize())
+					revert(context, returndatasize())
 				}
 			}
 
