@@ -6,21 +6,23 @@ import {ModuleType} from "src/types/ModuleType.sol";
 /// @title RegistryAdapter
 /// @notice Provides an interface for interacting with an ERC-7484 compliant registry
 abstract contract RegistryAdapter {
+	/// @notice Emitted when a new ERC-7484 registry is successfully configured
 	event RegistryConfigured(address indexed registry);
 
 	/// @dev keccak256("RegistryConfigured(address)")
 	bytes32 private constant REGISTRY_CONFIGURED_TOPIC =
 		0x7d1c97842846d37d5ecd1884bd61723b85333bfbc4e3daa46882adaf1876afd2;
 
-	/// @dev keccak256(abi.encode(uint256(keccak256("eip7579.account.registry")) - 1)) & ~bytes32(uint256(0xff))
-	bytes32 private constant REGISTRY_STORAGE_SLOT = 0xe5f524a5fbd3033d72d91a5bc47131cee70f90a3764a2c1800c3b0911ca62c00;
+	/// @dev keccak256(abi.encode(uint256(keccak256("eip7579.vortex.storage.registry")) - 1)) & ~bytes32(uint256(0xff))
+	bytes32 private constant REGISTRY_STORAGE_SLOT = 0x1a72bca8c19a5ea6f4c84f32c9ea9486de8a7c32689a31ace7fab938dfd59100;
 
+	/// @notice Restricts execution to modules that satisfy the attestation requirements from the configured ERC-7484 registry
 	modifier withRegistry(address module, ModuleType moduleTypeId) {
 		_checkRegistry(module, moduleTypeId);
 		_;
 	}
 
-	function _registry() internal view virtual returns (address registry) {
+	function _getRegistry() internal view virtual returns (address registry) {
 		assembly ("memory-safe") {
 			registry := sload(REGISTRY_STORAGE_SLOT)
 		}
@@ -29,10 +31,12 @@ abstract contract RegistryAdapter {
 	function _configureRegistry(address registry, address[] calldata attesters, uint8 threshold) internal virtual {
 		assembly ("memory-safe") {
 			registry := shr(0x60, shl(0x60, registry))
+
 			sstore(REGISTRY_STORAGE_SLOT, registry)
+
 			log2(codesize(), 0x00, REGISTRY_CONFIGURED_TOPIC, registry)
 
-			if iszero(iszero(shl(0x60, registry))) {
+			if iszero(iszero(registry)) {
 				let ptr := mload(0x40)
 
 				mstore(ptr, 0xf05c04e100000000000000000000000000000000000000000000000000000000) // trustAttesters(uint8,address[])
@@ -53,7 +57,7 @@ abstract contract RegistryAdapter {
 		assembly ("memory-safe") {
 			let registry := sload(REGISTRY_STORAGE_SLOT)
 
-			if iszero(iszero(shl(0x60, registry))) {
+			if iszero(iszero(registry)) {
 				let ptr := mload(0x40)
 
 				mstore(ptr, 0x96fb721700000000000000000000000000000000000000000000000000000000) // check(address,uint256)

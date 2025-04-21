@@ -5,10 +5,8 @@ import {IVortex} from "src/interfaces/IVortex.sol";
 import {AccessControl} from "./AccessControl.sol";
 
 /// @title AccountBase
-
+/// @notice Implements ERC-4337 standards for account management
 abstract contract AccountBase is IVortex, AccessControl {
-	string internal constant ACCOUNT_IMPLEMENTATION_ID = "fomoweth.vortex.1.0.0";
-
 	/// @notice Pays to the EntryPoint the missing funds for this transaction
 	/// @param missingAccountFunds The minimum value this modifier should send the EntryPoint
 	modifier payPrefund(uint256 missingAccountFunds) {
