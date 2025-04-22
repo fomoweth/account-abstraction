@@ -2,8 +2,6 @@
 
 source .env
 
-# SCRIPT="Deploy"
-# SCRIPT=$1
 CHAIN=$1
 SCRIPT=${2:-Deploy}
 
