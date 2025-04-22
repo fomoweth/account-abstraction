@@ -5,7 +5,7 @@ import {IAccountFactory} from "src/interfaces/factories/IAccountFactory.sol";
 import {StakingAdapter} from "src/core/StakingAdapter.sol";
 
 /// @title AccountFactory
-/// @notice Manages smart account creation compliant with ERC-4337 and ERC-7579 using a factory pattern
+/// @notice Enables the creation of modular smart accounts via a factory pattern, adhering to ERC-4337 and ERC-7579 specifications.
 contract AccountFactory is IAccountFactory, StakingAdapter {
 	/// @dev keccak256("AccountCreated(address,bytes32)")
 	bytes32 internal constant ACCOUNT_CREATED_TOPIC =

@@ -10,7 +10,7 @@ import {ModuleType, ValidationData} from "src/types/DataTypes.sol";
 import {ERC7739Validator} from "src/modules/base/ERC7739Validator.sol";
 
 /// @title K1Validator
-/// @notice Verifies user operation signatures for smart accounts
+/// @notice Verifies user operation signatures for smart accounts.
 /// @dev Modified from https://github.com/erc7579/erc7739Validator/blob/main/src/SampleK1ValidatorWithERC7739.sol
 contract K1Validator is IValidator, IStatelessValidator, ERC7739Validator {
 	using EnumerableSet4337 for EnumerableSet4337.AddressSet;

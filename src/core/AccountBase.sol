@@ -5,7 +5,7 @@ import {IVortex} from "src/interfaces/IVortex.sol";
 import {AccessControl} from "./AccessControl.sol";
 
 /// @title AccountBase
-/// @notice Implements ERC-4337 standards for account management
+/// @notice ERC-4337-compliant smart account implementation.
 abstract contract AccountBase is IVortex, AccessControl {
 	/// @notice Pays to the EntryPoint the missing funds for this transaction
 	/// @param missingAccountFunds The minimum value this modifier should send the EntryPoint

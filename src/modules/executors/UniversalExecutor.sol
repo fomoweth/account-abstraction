@@ -10,7 +10,7 @@ import {ReentrancyGuard} from "src/modules/utils/ReentrancyGuard.sol";
 import {ExecutorBase} from "src/modules/base/ExecutorBase.sol";
 
 /// @title UniversalExecutor
-/// @notice Executor module that allows smart account to perform swaps via UniversalRouter
+/// @notice Executor module enabling smart accounts to perform token swaps via UniversalRouter.
 contract UniversalExecutor is IExecutor, ExecutorBase, ReentrancyGuard {
 	/// @notice Thrown when the provided currency is invalid
 	error InvalidCurrency();
@@ -104,8 +104,9 @@ contract UniversalExecutor is IExecutor, ExecutorBase, ReentrancyGuard {
 		return _accountRouters[account];
 	}
 
-	/// @notice Performs exact-input swap via UniversalRouter
-	/// @param params Encoded swap data
+	/// @notice Executes an exact-input token swap using UniversalRouter.
+	/// @param params Encoded data for the swap operation
+	/// @return returnData A list of return values, including errors if using try mode
 	function swapExactInput(bytes calldata params) external payable nonReentrant returns (bytes[] memory returnData) {
 		(
 			uint256 protocol,
@@ -125,8 +126,9 @@ contract UniversalExecutor is IExecutor, ExecutorBase, ReentrancyGuard {
 		}
 	}
 
-	/// @notice Performs exact-output swap via UniversalRouter
-	/// @param params Encoded swap data
+	/// @notice Executes an exact-output token swap using UniversalRouter.
+	/// @param params Encoded data for the swap operation
+	/// @return returnData A list of return values, including errors if using try mode
 	function swapExactOutput(bytes calldata params) external payable nonReentrant returns (bytes[] memory returnData) {
 		(
 			uint256 protocol,

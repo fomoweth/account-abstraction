@@ -10,7 +10,7 @@ import {AccountBase} from "src/core/AccountBase.sol";
 import {AccountCore} from "src/core/AccountCore.sol";
 
 /// @title Vortex Smart Account
-/// @notice Modular smart account contract supporting ERC-7579 and ERC-4337 standards
+/// @notice A modular and extensible smart account supporting ERC-7579 (modularity) and ERC-4337 (account abstraction).
 contract Vortex is IVortex, AccountBase, AccountCore {
 	using AccountIdLib for string;
 	using ExecutionLib for address;
@@ -46,14 +46,10 @@ contract Vortex is IVortex, AccountBase, AccountCore {
 
 		assembly ("memory-safe") {
 			let ptr := mload(0x40)
+			mstore(0x40, add(ptr, callData.length))
 			calldatacopy(ptr, callData.offset, callData.length)
 
 			if iszero(delegatecall(gas(), address(), ptr, callData.length, codesize(), 0x00)) {
-				if iszero(returndatasize()) {
-					mstore(0x00, 0xacfdb444) // ExecutionFailed()
-					revert(0x1c, 0x04)
-				}
-
 				returndatacopy(ptr, 0x00, returndatasize())
 				revert(ptr, returndatasize())
 			}
@@ -79,7 +75,7 @@ contract Vortex is IVortex, AccountBase, AccountCore {
 	function isValidSignature(bytes32 hash, bytes calldata signature) external view returns (bytes4 magicValue) {
 		if (signature.length == 0) {
 			if (uint256(hash) == (~signature.length / 0xffff) * 0x7739) {
-				return _validateERC7739Support(_getValidators(), hash);
+				return _validateERC7739Support(_getValidators(), hash, signature);
 			}
 		}
 

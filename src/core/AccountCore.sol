@@ -5,7 +5,6 @@ import {IVortex} from "src/interfaces/IVortex.sol";
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 import {Calldata} from "src/libraries/Calldata.sol";
 import {EIP712} from "solady/utils/EIP712.sol";
-import {EnumerableSetLib} from "solady/utils/EnumerableSetLib.sol";
 import {UUPSUpgradeable} from "solady/utils/UUPSUpgradeable.sol";
 import {CalldataDecoder} from "src/libraries/CalldataDecoder.sol";
 import {ExecutionLib} from "src/libraries/ExecutionLib.sol";
@@ -13,10 +12,9 @@ import {ExecutionMode, CallType, ExecType, ModuleType, ValidationData, Validatio
 import {ModuleManager} from "./ModuleManager.sol";
 
 /// @title AccountCore
-/// @notice Implements ERC-4337 and ERC-7579 standards for account management and access control
+/// @notice Core contract implementing ERC-4337 and ERC-7579 for smart account execution and modular access control.
 abstract contract AccountCore is IVortex, EIP712, ModuleManager, UUPSUpgradeable {
 	using CalldataDecoder for bytes;
-	using EnumerableSetLib for EnumerableSetLib.AddressSet;
 	using ExecutionLib for ExecType;
 
 	error InvalidInitialization();
@@ -95,11 +93,6 @@ abstract contract AccountCore is IVortex, EIP712, ModuleManager, UUPSUpgradeable
 		if (state.rootValidator != address(0)) revert InvalidInitialization();
 
 		assembly ("memory-safe") {
-			if lt(data.length, 0x2c) {
-				mstore(0x00, 0x0fe4a1df) // InvalidParametersLength()
-				revert(0x1c, 0x04)
-			}
-
 			let bootstrap := shr(0x60, calldataload(data.offset))
 			data.offset := add(data.offset, 0x14)
 			data.length := sub(data.length, 0x14)
@@ -114,6 +107,7 @@ abstract contract AccountCore is IVortex, EIP712, ModuleManager, UUPSUpgradeable
 			}
 		}
 
+		// rootValidator must be installed at this point via Bootstrap
 		if (state.rootValidator == address(0) || !_isInitialized(state.rootValidator)) revert InitializationFailed();
 	}
 
@@ -134,12 +128,14 @@ abstract contract AccountCore is IVortex, EIP712, ModuleManager, UUPSUpgradeable
 		bytes32 userOpHash
 	) internal virtual onlyValidator(validator) returns (ValidationData validationData) {
 		assembly ("memory-safe") {
+			// stores offsets for dynamic fields and computes the next position
 			function storeOffset(ptr, slot, offset) -> pos {
 				mstore(ptr, offset)
 				let length := and(add(mload(mload(slot)), 0x1f), not(0x1f))
 				pos := add(offset, add(length, 0x20))
 			}
 
+			// stores data for dynamic field and computes the next position of the pointer
 			function storeBytes(ptr, slot) -> pos {
 				let offset := mload(slot)
 				let length := mload(offset)
@@ -162,7 +158,7 @@ abstract contract AccountCore is IVortex, EIP712, ModuleManager, UUPSUpgradeable
 			mstore(add(ptr, 0x44), shr(0x60, shl(0x60, mload(userOp)))) // sender
 			mstore(add(ptr, 0x64), mload(add(userOp, 0x20))) // nonce
 
-			let pos := 0x120
+			let pos := 0x120 // where the offset of initCode is at
 			pos := storeOffset(add(ptr, 0x84), add(userOp, 0x40), pos) // initCode
 			pos := storeOffset(add(ptr, 0xa4), add(userOp, 0x60), pos) // callData
 
@@ -281,16 +277,19 @@ abstract contract AccountCore is IVortex, EIP712, ModuleManager, UUPSUpgradeable
 			mstore(contexts, length)
 
 			let offset := add(add(contexts, 0x20), shl(0x05, length))
+			let hook
 
 			// prettier-ignore
 			for { let i } lt(i, length) { i := add(i, 0x01) } {
-				let hook := shr(0x60, shl(0x60, mload(add(add(hooks, 0x20), shl(0x05, i)))))
+				hook := shr(0x60, shl(0x60, mload(add(add(hooks, 0x20), shl(0x05, i)))))
 
 				if iszero(call(gas(), hook, 0x00, ptr, ptrSize, codesize(), 0x00)) {
 					returndatacopy(ptr, 0x00, returndatasize())
 					revert(ptr, returndatasize())
 				}
 
+				// Store the current hook address along with the return data from the `preCheck` call.
+				// Equivalent to: `contexts[i] = abi.encode(hook, returndata);`
 				mstore(add(add(contexts, 0x20), shl(0x05, i)), offset)
 				mstore(offset, add(returndatasize(), 0x60))
 				mstore(add(offset, 0x20), hook)
@@ -310,13 +309,20 @@ abstract contract AccountCore is IVortex, EIP712, ModuleManager, UUPSUpgradeable
 
 			mstore(ptr, 0x173bf7da00000000000000000000000000000000000000000000000000000000) // postCheck(bytes)
 
+			let length := mload(contexts)
+			let offset
+			let hook
+			let contextLength
+			let contextOffset
+			let guard
+
 			// prettier-ignore
-			for { let i } lt(i, mload(contexts)) { i := add(i, 0x01) } {
-				let offset := mload(add(add(contexts, 0x20), shl(0x05, i)))
-				let hook := shr(0x60, shl(0x60, mload(add(offset, 0x20))))
-				let contextLength := mload(add(offset, 0x60))
-				let contextOffset := add(offset, 0x80)
-				let guard := add(contextOffset, contextLength)
+			for { let i } lt(i, length) { i := add(i, 0x01) } {
+				offset := mload(add(add(contexts, 0x20), shl(0x05, i)))
+				hook := shr(0x60, shl(0x60, mload(add(offset, 0x20))))
+				contextLength := mload(add(offset, 0x60))
+				contextOffset := add(offset, 0x80)
+				guard := add(contextOffset, contextLength)
 
 				for { let pos := add(ptr, 0x04) } lt(contextOffset, guard) { pos := add(pos, 0x20) contextOffset := add(contextOffset, 0x20) } {
 					mstore(pos, mload(contextOffset))
@@ -341,12 +347,14 @@ abstract contract AccountCore is IVortex, EIP712, ModuleManager, UUPSUpgradeable
 		if (preValidationHook == address(0)) return (userOpHash, userOp.signature);
 
 		assembly ("memory-safe") {
+			// stores offsets for dynamic fields and computes the next position
 			function storeOffset(ptr, slot, offset) -> pos {
 				mstore(ptr, offset)
 				let length := and(add(mload(mload(slot)), 0x1f), not(0x1f))
 				pos := add(offset, add(length, 0x20))
 			}
 
+			// stores data for dynamic fields and computes the next position of the pointer
 			function storeBytes(ptr, slot) -> pos {
 				let offset := mload(slot)
 				let length := mload(offset)
@@ -370,7 +378,7 @@ abstract contract AccountCore is IVortex, EIP712, ModuleManager, UUPSUpgradeable
 			mstore(add(ptr, 0x64), shr(0x60, shl(0x60, mload(userOp)))) // sender
 			mstore(add(ptr, 0x84), mload(add(userOp, 0x20))) // nonce
 
-			let pos := 0x120
+			let pos := 0x120 // where the offset of initCode is at
 			pos := storeOffset(add(ptr, 0xa4), add(userOp, 0x40), pos) // initCode
 			pos := storeOffset(add(ptr, 0xc4), add(userOp, 0x60), pos) // callData
 
@@ -450,7 +458,8 @@ abstract contract AccountCore is IVortex, EIP712, ModuleManager, UUPSUpgradeable
 
 	function _validateERC7739Support(
 		address[] memory validators,
-		bytes32 hash
+		bytes32 hash,
+		bytes calldata signature
 	) internal view virtual returns (bytes4 magicValue) {
 		assembly ("memory-safe") {
 			let ptr := mload(0x40)
@@ -460,22 +469,22 @@ abstract contract AccountCore is IVortex, EIP712, ModuleManager, UUPSUpgradeable
 			mstore(add(ptr, 0x04), shr(0x60, shl(0x60, caller())))
 			mstore(add(ptr, 0x24), hash)
 			mstore(add(ptr, 0x44), 0x60)
-			mstore(add(ptr, 0x64), 0x00)
-			mstore(add(ptr, 0x84), 0x00)
+			mstore(add(ptr, 0x64), signature.length)
+			calldatacopy(add(ptr, 0x84), signature.offset, signature.length)
 
 			let offset := add(validators, 0x20)
 			let length := mload(validators)
+			let validator
+			let support
 
 			// prettier-ignore
 			for { let i } lt(i, length) { i := add(i, 0x01) } {
-				let validator := mload(add(offset, shl(0x05, i)))
+				validator := mload(add(offset, shl(0x05, i)))
 
 				if staticcall(gas(), validator, ptr, 0xa4, 0x00, 0x20) {
-					let support := mload(0x00)
-					if eq(shr(0xf0, support), 0x7739) {
-						if gt(support, magicValue) {
-							magicValue := support
-						}
+					support := mload(0x00)
+					if and(eq(shr(0xf0, support), 0x7739), gt(support, magicValue)) {
+						magicValue := support
 					}
 				}
 			}
@@ -492,10 +501,11 @@ abstract contract AccountCore is IVortex, EIP712, ModuleManager, UUPSUpgradeable
 		bytes memory signature
 	) internal view virtual onlyValidator(validator) returns (bytes4 magicValue) {
 		assembly ("memory-safe") {
-			let ptr := mload(0x40)
 			let offset := add(signature, 0x20)
 			let length := mload(signature)
 			let guard := add(offset, length)
+
+			let ptr := mload(0x40)
 
 			mstore(ptr, 0xf551e2ee00000000000000000000000000000000000000000000000000000000) // isValidSignatureWithSender(address,bytes32,bytes)
 			mstore(add(ptr, 0x04), shr(0x60, shl(0x60, caller())))
@@ -565,7 +575,7 @@ abstract contract AccountCore is IVortex, EIP712, ModuleManager, UUPSUpgradeable
 			validator := shr(0x60, shl(0x20, nonce))
 			mode := shl(0xf8, shr(0xf8, nonce))
 
-			if iszero(shl(0x60, validator)) {
+			if iszero(validator) {
 				mstore(0x00, 0xcc08c89e) // InvalidValidator()
 				revert(0x1c, 0x04)
 			}
@@ -617,6 +627,7 @@ abstract contract AccountCore is IVortex, EIP712, ModuleManager, UUPSUpgradeable
 			let configuration := sload(keccak256(0x00, 0x40))
 
 			if iszero(configuration) {
+				// If the selector is not explicitly configured but matches one of the following:
 				// 0x150b7a02: onERC721Received(address,address,uint256,bytes)
 				// 0xf23a6e61: onERC1155Received(address,address,uint256,uint256,bytes)
 				// 0xbc197c81: onERC1155BatchReceived(address,address,uint256[],uint256[],bytes)
@@ -639,12 +650,16 @@ abstract contract AccountCore is IVortex, EIP712, ModuleManager, UUPSUpgradeable
 			let hook := shr(0x60, shl(0x60, sload(keccak256(0x00, 0x40))))
 			let context
 
+			// The default state for a module-specific hook is set to SENTINEL: address(1)
+			// to indicate that no hook has been installed yet.
+			// Therefore, it will be reverted if the hook address is zero.
 			if iszero(hook) {
 				mstore(0x00, 0x026d9639) // ModuleNotInstalled(address)
 				mstore(0x20, module)
 				revert(0x1c, 0x24)
 			}
 
+			// Invoke `preCheck` on the hook if it exists and the call type is not CALLTYPE_STATIC: 0xFE.
 			if and(xor(hook, SENTINEL), xor(callType, 0xFE)) {
 				context := allocate(add(calldatasize(), 0x84))
 
@@ -665,6 +680,7 @@ abstract contract AccountCore is IVortex, EIP712, ModuleManager, UUPSUpgradeable
 				returndatacopy(add(context, 0x20), 0x00, returndatasize())
 			}
 
+			// Stores the call data and append `msg.sender` to the end.
 			let callData := allocate(calldatasize())
 			calldatacopy(callData, 0x00, calldatasize())
 			mstore(allocate(0x14), shl(0x60, caller()))
@@ -695,10 +711,12 @@ abstract contract AccountCore is IVortex, EIP712, ModuleManager, UUPSUpgradeable
 				revert(ptr, returndatasize())
 			}
 
+			// Stores the return data from the fallback module.
 			let returnData := allocate(add(returndatasize(), 0x20))
 			mstore(returnData, returndatasize())
 			returndatacopy(add(returnData, 0x20), 0x00, returndatasize())
 
+			// Invoke `postCheck` on the hook if it exists and the call type is not CALLTYPE_STATIC: 0xFE.
 			if and(xor(hook, SENTINEL), xor(callType, 0xFE)) {
 				let offset := add(context, 0x20)
 				let length := mload(context)

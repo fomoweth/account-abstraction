@@ -10,7 +10,7 @@ import {ERC7201} from "./ERC7201.sol";
 import {RegistryAdapter} from "./RegistryAdapter.sol";
 
 /// @title ModuleManager
-/// @notice Implements ERC-7579 standards for module management
+/// @notice Base contract that manages the modules enabled on a smart account.
 abstract contract ModuleManager is AccessControl, ERC7201, RegistryAdapter {
 	using CalldataDecoder for bytes;
 	using EnumerableSetLib for EnumerableSetLib.AddressSet;
@@ -42,9 +42,7 @@ abstract contract ModuleManager is AccessControl, ERC7201, RegistryAdapter {
 	/// @dev keccak256(abi.encode(uint256(keccak256("eip7579.vortex.storage.hooks")) - 1)) & ~bytes32(uint256(0xff))
 	bytes32 internal constant HOOKS_STORAGE_SLOT = 0x804aa2c00aa2afd5774b5603b005ba2fe99b98231bb0faa297c8cbc51d78c800;
 
-	address internal constant SMART_SESSION = 0x00000000002B0eCfbD0496EE71e01257dA0E37DE;
 	address internal constant SENTINEL = 0x0000000000000000000000000000000000000001;
-	address internal constant ZERO = 0x0000000000000000000000000000000000000000;
 
 	ModuleType internal constant MODULE_TYPE_MULTI = ModuleType.wrap(0x00);
 	ModuleType internal constant MODULE_TYPE_VALIDATOR = ModuleType.wrap(0x01);
@@ -107,6 +105,7 @@ abstract contract ModuleManager is AccessControl, ERC7201, RegistryAdapter {
 		}
 
 		assembly ("memory-safe") {
+			// Store the hook address for the given module, defaulting to the SENTINEL: address(1).
 			module := shr(0x60, shl(0x60, module))
 			mstore(0x00, module)
 			mstore(0x20, HOOKS_STORAGE_SLOT)
@@ -155,6 +154,7 @@ abstract contract ModuleManager is AccessControl, ERC7201, RegistryAdapter {
 			mstore(0x00, module)
 			mstore(0x20, HOOKS_STORAGE_SLOT)
 
+			// Retrieve the hook address for the given module and clear its storage slot.
 			let slot := keccak256(0x00, 0x40)
 			hook := shr(0x60, shl(0x60, sload(slot)))
 			sstore(slot, 0x00)
@@ -207,13 +207,20 @@ abstract contract ModuleManager is AccessControl, ERC7201, RegistryAdapter {
 				callType := shr(0xf8, shl(0x20, configuration))
 				selector := shr(0xe0, configuration)
 
-				// CALLTYPE_SINGLE: 0x00 | CALLTYPE_STATIC: 0xFE | CALLTYPE_DELEGATE: 0xFF
+				// Ensure the current call type is not one of the following restricted values:
+				// - CALLTYPE_SINGLE: 0x00
+				// - CALLTYPE_STATIC: 0xFE
+				// - CALLTYPE_DELEGATE: 0xFF
 				if iszero(or(iszero(callType), or(eq(callType, 0xFE), eq(callType, 0xFF)))) {
 					mstore(0x00, 0xb96fcfe4) // UnsupportedCallType(bytes1)
 					mstore(0x20, shl(0xf8, callType))
 					revert(0x1c, 0x24)
 				}
 
+				// Ensure the current selector is not one of the following restricted values:
+				// - bytes4(0)
+				// - 0x6d61fe70: onInstall(bytes)
+				// - 0x8a91b0e3: onUninstall(bytes)
 				if or(iszero(selector), or(eq(selector, 0x6d61fe70), eq(selector, 0x8a91b0e3))) {
 					mstore(0x00, 0x9ff8cd94) // ForbiddenSelector(bytes4)
 					mstore(0x20, shl(0xe0, selector))
@@ -246,6 +253,10 @@ abstract contract ModuleManager is AccessControl, ERC7201, RegistryAdapter {
 			for { let i } lt(i, selectors.length) { i := add(i, 0x01) } {
 				selector := shr(0xe0, calldataload(add(selectors.offset, shl(0x05, i))))
 
+				// Ensure the current selector is not one of the following restricted values:
+				// - bytes4(0)
+				// - 0x6d61fe70: onInstall(bytes)
+				// - 0x8a91b0e3: onUninstall(bytes)
 				if or(iszero(selector), or(eq(selector, 0x6d61fe70), eq(selector, 0x8a91b0e3))) {
 					mstore(0x00, 0x9ff8cd94) // ForbiddenSelector(bytes4)
 					mstore(0x20, shl(0xe0, selector))
@@ -322,12 +333,14 @@ abstract contract ModuleManager is AccessControl, ERC7201, RegistryAdapter {
 	function _getHook(address module) internal view virtual returns (address hook) {
 		assembly ("memory-safe") {
 			module := shr(0x60, shl(0x60, module))
-
 			mstore(0x00, module)
 			mstore(0x20, HOOKS_STORAGE_SLOT)
 
 			hook := shr(0x60, shl(0x60, sload(keccak256(0x00, 0x40))))
 
+			// The default state for a module-specific hook is set to SENTINEL: address(1)
+			// to indicate that no hook has been installed yet.
+			// Therefore, it will be reverted if the hook address is zero.
 			if iszero(hook) {
 				mstore(0x00, 0x026d9639) // ModuleNotInstalled(address)
 				mstore(0x20, module)

@@ -2,7 +2,7 @@
 pragma solidity ^0.8.28;
 
 /// @title AccessControl
-/// @notice Provides modifiers for restricting access control to the contract and its entry points
+/// @notice Provides access control modifiers for restricting function execution and EntryPoint interactions.
 abstract contract AccessControl {
 	address internal constant ENTRYPOINT = 0x0000000071727De22E5E9d8BAf0edAc6f37da032;
 

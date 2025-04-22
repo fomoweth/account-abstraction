@@ -5,7 +5,7 @@ import {EnumerableSetLib} from "solady/utils/EnumerableSetLib.sol";
 import {ModuleType} from "src/types/DataTypes.sol";
 
 /// @title ERC7201
-/// @notice Manages isolated storage spaces for smart account in compliance with ERC-7201 standard
+/// @notice Manages isolated storage spaces for smart account in compliance with ERC-7201 standard.
 contract ERC7201 {
 	struct AccountStorage {
 		address rootValidator;

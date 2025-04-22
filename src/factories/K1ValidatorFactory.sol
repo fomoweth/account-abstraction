@@ -9,7 +9,7 @@ import {ModuleType} from "src/types/ModuleType.sol";
 import {IAccountFactory, AccountFactory} from "./AccountFactory.sol";
 
 /// @title K1ValidatorFactory
-/// @notice Manages smart account creation compliant with ERC-4337 and ERC-7579 with K1Validator
+/// @notice Creates modular smart accounts that integrate K1Validator for signature validation, in compliance with ERC-4337 and ERC-7579.
 contract K1ValidatorFactory is IK1ValidatorFactory, AccountFactory {
 	using BootstrapLib for address;
 

@@ -5,14 +5,14 @@ import {IModuleFactory} from "src/interfaces/factories/IModuleFactory.sol";
 import {IERC7484} from "src/interfaces/registries/IERC7484.sol";
 
 /// @title ModuleFactory
-/// @notice Manages deploying and registering ERC-7579 modules
+/// @notice Deploys and registers modules compliant with the ERC-7579 standard.
 contract ModuleFactory is IModuleFactory {
 	/// @dev keccak256("ModuleDeployed(address,bytes32)")
 	bytes32 private constant MODULE_DEPLOYED_TOPIC = 0x4f980749b81a25271e0bfdc77dd2910421a2226fe562a239470c55be0903c6cd;
 
-	/// @dev keccak256(abi.encode(uint256(keccak256("ModuleFactory.transient.context")) - 1)) & ~bytes32(uint256(0xff))
+	/// @dev keccak256(abi.encode(uint256(keccak256("eip7579.factory.transient.context")) - 1)) & ~bytes32(uint256(0xff))
 	bytes32 private constant CONTEXT_TRANSIENT_SLOT =
-		0xde557460fd871882dedbf060f124b1eb56f0e4c6de163d7849de8f1adb2d2f00;
+		0x840c2bd03063860b15b0896c830a627dd319d8fb64e9b8370fa6cee732293600;
 
 	bytes32 private constant RESOLVER_UID = 0xdbca873b13c783c0c9c6ddfc4280e505580bf6cc3dac83f8a0f7b44acaafca4f;
 
