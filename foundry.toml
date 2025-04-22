@@ -21,11 +21,8 @@ gas_reports = [
     "Vortex"
 ]
 fs_permissions = [
-    { access = "read-write", path = "broadcast"},
     { access = "read", path = "config"},
-	{ access = "read-write", path = "deployments" },
-    { access = "read", path = "out"},
-    { access = "read", path = "script"}
+    { access = "read", path = "out"}
 ]
 
 [rpc_endpoints]

@@ -5,7 +5,8 @@ import {IMetaFactory} from "src/interfaces/factories/IMetaFactory.sol";
 import {StakingAdapter} from "src/core/StakingAdapter.sol";
 
 /// @title MetaFactory
-/// @notice Manages the creation of ERC-4337 and ERC-7579 compliant smart accounts through authorized factories, and the registration of factory permissions
+/// @notice Coordinates the creation of ERC-4337 and ERC-7579-compliant smart accounts
+/// through authorized factories and handles the permission management of those factories.
 contract MetaFactory is IMetaFactory, StakingAdapter {
 	mapping(address factory => bool) internal _isAuthorized;
 

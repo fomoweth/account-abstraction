@@ -8,7 +8,7 @@ import {ModuleType} from "src/types/ModuleType.sol";
 import {FallbackBase} from "src/modules/base/FallbackBase.sol";
 
 /// @title STETHWrapperFallback
-/// @notice Fallback module that allows smart accounts to wrap and unwrap stETH and wstETH
+/// @notice Fallback module that enables smart accounts to wrap and unwrap stETH and wstETH.
 contract STETHWrapperFallback is IFallback, FallbackBase {
 	/// @notice Thrown when trying to wrap/unwrap tokens by insufficient amount
 	error InsufficientBalance();

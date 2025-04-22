@@ -1,0 +1,273 @@
+{
+	"chainId": "421614",
+	"latest": {
+		"AccountFactory": {
+			"address": "0x4d4939c94C7876509EBE20Fe7ab40A93AAabC662",
+			"deployer": "0x70D66c0b7a77C871c81de4953B822B6DDbC3D378",
+			"hash": "0xbcc72e89cfa86d762fffceff1211ecab19b784bdfb59d163bacb1e60f44af4e0",
+			"salt": "0x0000000000000000000000000000000000000000000000000000000000007579",
+			"version": "1.0.0",
+			"timestamp": 1745358820,
+			"commit": "74ba93b"
+		},
+		"Bootstrap": {
+			"address": "0x18Fb5B34057eaEFB6190827364CD4D3EbCe7C841",
+			"deployer": "0x70D66c0b7a77C871c81de4953B822B6DDbC3D378",
+			"hash": "0x0858790063581f815e580a7bbf155f69d2fbeebea9f2125fd77e1eaa6311d389",
+			"salt": "0x0000000000000000000000000000000000000000000000000000000000007579",
+			"version": "1.0.0",
+			"timestamp": 1745358820,
+			"commit": "74ba93b"
+		},
+		"ECDSAValidator": {
+			"address": "0xE2ab421Acdef09C5F53A4687bbAAfC5F6e138228",
+			"deployer": "0x70D66c0b7a77C871c81de4953B822B6DDbC3D378",
+			"factory": "0x62aAc6987998aDF35e034606dFB92B9c7048b6f3",
+			"hash": "0x136f59d6d6e97f18b7f57344a2fef6b29f7396446677bd0a3c9415e37449e50d",
+			"salt": "0x0000000000000000000000000000000000000000000000000000000000007579",
+			"version": "1.0.0",
+			"timestamp": 1745358820,
+			"commit": "74ba93b"
+		},
+		"K1Validator": {
+			"address": "0xcE3374BfE3a2c16D9d95a0F70051050c2E4E7502",
+			"deployer": "0x70D66c0b7a77C871c81de4953B822B6DDbC3D378",
+			"factory": "0x62aAc6987998aDF35e034606dFB92B9c7048b6f3",
+			"hash": "0x821e2c743eb75125f96a84885cf417942ceb7fd4fdd14c862f21d753d6c4df6a",
+			"salt": "0x0000000000000000000000000000000000000000000000000000000000007579",
+			"version": "1.0.0",
+			"timestamp": 1745358820,
+			"commit": "74ba93b"
+		},
+		"K1ValidatorFactory": {
+			"address": "0x0B48195C74939E9F6342a864F89a2a6F3245A15F",
+			"deployer": "0x70D66c0b7a77C871c81de4953B822B6DDbC3D378",
+			"hash": "0x0d90c839771e49dd30ae9380a9e305805ee1d2cf35a889088bc2e0e54d962d16",
+			"salt": "0x0000000000000000000000000000000000000000000000000000000000007579",
+			"version": "1.0.0",
+			"timestamp": 1745358820,
+			"commit": "74ba93b"
+		},
+		"MetaFactory": {
+			"address": "0x8500F318d07Fd9aCB85007cc0daA69D5Af5380B4",
+			"deployer": "0x70D66c0b7a77C871c81de4953B822B6DDbC3D378",
+			"hash": "0x06029dfc7b3292b5d123ba40e9c96f31708ae4882bc5c9680675c17159f5fdbf",
+			"salt": "0x0000000000000000000000000000000000000000000000000000000000007579",
+			"version": "1.0.0",
+			"timestamp": 1745358820,
+			"commit": "74ba93b"
+		},
+		"ModuleFactory": {
+			"address": "0x62aAc6987998aDF35e034606dFB92B9c7048b6f3",
+			"deployer": "0x70D66c0b7a77C871c81de4953B822B6DDbC3D378",
+			"hash": "0xa6ce1100b32c125bc5db2ba074e731b3a5c7ea62ea57ae9ce5b6a811c55cf664",
+			"salt": "0x0000000000000000000000000000000000000000000000000000000000007579",
+			"version": "1.0.0",
+			"timestamp": 1745358820,
+			"commit": "74ba93b"
+		},
+		"NativeWrapperFallback": {
+			"address": "0x2A1F60087Aa4A4283C996b1328eefe234ACfd47b",
+			"deployer": "0x70D66c0b7a77C871c81de4953B822B6DDbC3D378",
+			"factory": "0x62aAc6987998aDF35e034606dFB92B9c7048b6f3",
+			"hash": "0x0f23cc9c8220bed443f55f1705e8647f5b3b161eff97f747d0fb08cd4d1663f9",
+			"salt": "0x0000000000000000000000000000000000000000000000000000000000007579",
+			"version": "1.0.0",
+			"timestamp": 1745358820,
+			"commit": "74ba93b"
+		},
+		"Permit2Executor": {
+			"address": "0x1F06fFf9078B2C633FbAB343fa75f97A64594F3c",
+			"deployer": "0x70D66c0b7a77C871c81de4953B822B6DDbC3D378",
+			"factory": "0x62aAc6987998aDF35e034606dFB92B9c7048b6f3",
+			"hash": "0x1388f7156d0b6f16805c3576ad74f6d43824e7721ccbb5bfb0521e90c0b5b9fd",
+			"salt": "0x0000000000000000000000000000000000000000000000000000000000007579",
+			"version": "1.0.0",
+			"timestamp": 1745358820,
+			"commit": "74ba93b"
+		},
+		"RegistryFactory": {
+			"address": "0x1E07B7fd6B419855ccBAfb5Bca4266c853D058BC",
+			"deployer": "0x70D66c0b7a77C871c81de4953B822B6DDbC3D378",
+			"hash": "0xf2e9d93d2245159727a6ef5cb9df625426143c9fb16383d7926ab718e837e11d",
+			"salt": "0x0000000000000000000000000000000000000000000000000000000000007579",
+			"version": "1.0.0",
+			"timestamp": 1745358820,
+			"commit": "74ba93b"
+		},
+		"UniversalExecutor": {
+			"address": "0xC088ad1198De43a4e154013e21cB189B1ee47034",
+			"deployer": "0x70D66c0b7a77C871c81de4953B822B6DDbC3D378",
+			"factory": "0x62aAc6987998aDF35e034606dFB92B9c7048b6f3",
+			"hash": "0xb2e0d43b58e7c4b6bc8ee08b29c6fd5688c1a98b986787cf198198c686e71cf3",
+			"salt": "0x0000000000000000000000000000000000000000000000000000000000007579",
+			"version": "1.0.0",
+			"timestamp": 1745358820,
+			"commit": "74ba93b"
+		},
+		"Vortex": {
+			"address": "0x32d239b9AD01dEb571e4D5a6fc2Fe0d04b109697",
+			"deployer": "0x70D66c0b7a77C871c81de4953B822B6DDbC3D378",
+			"hash": "0x86d12b1a944c254418926d5e4ccb5473cc7b4a2fff393af3fe4ae28553de8caf",
+			"salt": "0x0000000000000000000000000000000000000000000000000000000000007579",
+			"version": "1.0.0",
+			"timestamp": 1745358820,
+			"commit": "74ba93b"
+		}
+	},
+	"history": [
+		{
+			"contracts": {
+				"AccountFactory": {
+					"address": "0x4d4939c94C7876509EBE20Fe7ab40A93AAabC662",
+					"deployer": "0x70D66c0b7a77C871c81de4953B822B6DDbC3D378",
+					"hash": "0xbcc72e89cfa86d762fffceff1211ecab19b784bdfb59d163bacb1e60f44af4e0",
+					"salt": "0x0000000000000000000000000000000000000000000000000000000000007579",
+					"version": "1.0.0",
+					"input": {
+						"constructor": {
+							"implementation": "0x32d239b9AD01dEb571e4D5a6fc2Fe0d04b109697",
+							"initialOwner": "0x70D66c0b7a77C871c81de4953B822B6DDbC3D378"
+						}
+					}
+				},
+				"Bootstrap": {
+					"address": "0x18Fb5B34057eaEFB6190827364CD4D3EbCe7C841",
+					"deployer": "0x70D66c0b7a77C871c81de4953B822B6DDbC3D378",
+					"hash": "0x0858790063581f815e580a7bbf155f69d2fbeebea9f2125fd77e1eaa6311d389",
+					"salt": "0x0000000000000000000000000000000000000000000000000000000000007579",
+					"version": "1.0.0",
+					"input": {
+						"constructor": {}
+					}
+				},
+				"ECDSAValidator": {
+					"address": "0xE2ab421Acdef09C5F53A4687bbAAfC5F6e138228",
+					"deployer": "0x70D66c0b7a77C871c81de4953B822B6DDbC3D378",
+					"factory": "0x62aAc6987998aDF35e034606dFB92B9c7048b6f3",
+					"hash": "0x136f59d6d6e97f18b7f57344a2fef6b29f7396446677bd0a3c9415e37449e50d",
+					"salt": "0x0000000000000000000000000000000000000000000000000000000000007579",
+					"version": "1.0.0",
+					"input": {
+						"constructor": {}
+					}
+				},
+				"K1Validator": {
+					"address": "0xcE3374BfE3a2c16D9d95a0F70051050c2E4E7502",
+					"deployer": "0x70D66c0b7a77C871c81de4953B822B6DDbC3D378",
+					"factory": "0x62aAc6987998aDF35e034606dFB92B9c7048b6f3",
+					"hash": "0x821e2c743eb75125f96a84885cf417942ceb7fd4fdd14c862f21d753d6c4df6a",
+					"salt": "0x0000000000000000000000000000000000000000000000000000000000007579",
+					"version": "1.0.0",
+					"input": {
+						"constructor": {}
+					}
+				},
+				"K1ValidatorFactory": {
+					"address": "0x0B48195C74939E9F6342a864F89a2a6F3245A15F",
+					"deployer": "0x70D66c0b7a77C871c81de4953B822B6DDbC3D378",
+					"hash": "0x0d90c839771e49dd30ae9380a9e305805ee1d2cf35a889088bc2e0e54d962d16",
+					"salt": "0x0000000000000000000000000000000000000000000000000000000000007579",
+					"version": "1.0.0",
+					"input": {
+						"constructor": {
+							"implementation": "0x32d239b9AD01dEb571e4D5a6fc2Fe0d04b109697",
+							"k1Validator": "0xcE3374BfE3a2c16D9d95a0F70051050c2E4E7502",
+							"bootstrap": "0x18Fb5B34057eaEFB6190827364CD4D3EbCe7C841",
+							"registry": "0x000000000069E2a187AEFFb852bF3cCdC95151B2",
+							"initialOwner": "0x70D66c0b7a77C871c81de4953B822B6DDbC3D378"
+						}
+					}
+				},
+				"MetaFactory": {
+					"address": "0x8500F318d07Fd9aCB85007cc0daA69D5Af5380B4",
+					"deployer": "0x70D66c0b7a77C871c81de4953B822B6DDbC3D378",
+					"hash": "0x06029dfc7b3292b5d123ba40e9c96f31708ae4882bc5c9680675c17159f5fdbf",
+					"salt": "0x0000000000000000000000000000000000000000000000000000000000007579",
+					"version": "1.0.0",
+					"input": {
+						"constructor": {
+							"initialOwner": "0x70D66c0b7a77C871c81de4953B822B6DDbC3D378"
+						}
+					}
+				},
+				"ModuleFactory": {
+					"address": "0x62aAc6987998aDF35e034606dFB92B9c7048b6f3",
+					"deployer": "0x70D66c0b7a77C871c81de4953B822B6DDbC3D378",
+					"hash": "0xa6ce1100b32c125bc5db2ba074e731b3a5c7ea62ea57ae9ce5b6a811c55cf664",
+					"salt": "0x0000000000000000000000000000000000000000000000000000000000007579",
+					"version": "1.0.0",
+					"input": {
+						"constructor": {
+							"registry": "0x000000000069E2a187AEFFb852bF3cCdC95151B2"
+						}
+					}
+				},
+				"NativeWrapperFallback": {
+					"address": "0x2A1F60087Aa4A4283C996b1328eefe234ACfd47b",
+					"deployer": "0x70D66c0b7a77C871c81de4953B822B6DDbC3D378",
+					"factory": "0x62aAc6987998aDF35e034606dFB92B9c7048b6f3",
+					"hash": "0x0f23cc9c8220bed443f55f1705e8647f5b3b161eff97f747d0fb08cd4d1663f9",
+					"salt": "0x0000000000000000000000000000000000000000000000000000000000007579",
+					"version": "1.0.0",
+					"input": {
+						"constructor": {
+							"0": "0x980B62Da83eFf3D4576C647993b0c1D7faf17c73"
+						}
+					}
+				},
+				"Permit2Executor": {
+					"address": "0x1F06fFf9078B2C633FbAB343fa75f97A64594F3c",
+					"deployer": "0x70D66c0b7a77C871c81de4953B822B6DDbC3D378",
+					"factory": "0x62aAc6987998aDF35e034606dFB92B9c7048b6f3",
+					"hash": "0x1388f7156d0b6f16805c3576ad74f6d43824e7721ccbb5bfb0521e90c0b5b9fd",
+					"salt": "0x0000000000000000000000000000000000000000000000000000000000007579",
+					"version": "1.0.0",
+					"input": {
+						"constructor": {}
+					}
+				},
+				"RegistryFactory": {
+					"address": "0x1E07B7fd6B419855ccBAfb5Bca4266c853D058BC",
+					"deployer": "0x70D66c0b7a77C871c81de4953B822B6DDbC3D378",
+					"hash": "0xf2e9d93d2245159727a6ef5cb9df625426143c9fb16383d7926ab718e837e11d",
+					"salt": "0x0000000000000000000000000000000000000000000000000000000000007579",
+					"version": "1.0.0",
+					"input": {
+						"constructor": {
+							"implementation": "0x32d239b9AD01dEb571e4D5a6fc2Fe0d04b109697",
+							"bootstrap": "0x18Fb5B34057eaEFB6190827364CD4D3EbCe7C841",
+							"registry": "0x000000000069E2a187AEFFb852bF3cCdC95151B2",
+							"initialOwner": "0x70D66c0b7a77C871c81de4953B822B6DDbC3D378"
+						}
+					}
+				},
+				"UniversalExecutor": {
+					"address": "0xC088ad1198De43a4e154013e21cB189B1ee47034",
+					"deployer": "0x70D66c0b7a77C871c81de4953B822B6DDbC3D378",
+					"factory": "0x62aAc6987998aDF35e034606dFB92B9c7048b6f3",
+					"hash": "0xb2e0d43b58e7c4b6bc8ee08b29c6fd5688c1a98b986787cf198198c686e71cf3",
+					"salt": "0x0000000000000000000000000000000000000000000000000000000000007579",
+					"version": "1.0.0",
+					"input": {
+						"constructor": {
+							"0": "0x980B62Da83eFf3D4576C647993b0c1D7faf17c73"
+						}
+					}
+				},
+				"Vortex": {
+					"address": "0x32d239b9AD01dEb571e4D5a6fc2Fe0d04b109697",
+					"deployer": "0x70D66c0b7a77C871c81de4953B822B6DDbC3D378",
+					"hash": "0x86d12b1a944c254418926d5e4ccb5473cc7b4a2fff393af3fe4ae28553de8caf",
+					"salt": "0x0000000000000000000000000000000000000000000000000000000000007579",
+					"version": "1.0.0",
+					"input": {
+						"constructor": {}
+					}
+				}
+			},
+			"timestamp": 1745358820,
+			"commit": "74ba93b"
+		}
+	]
+}

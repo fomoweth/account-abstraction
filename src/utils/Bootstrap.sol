@@ -5,7 +5,7 @@ import {IBootstrap, BootstrapConfig} from "src/interfaces/IBootstrap.sol";
 import {ModuleManager} from "src/core/ModuleManager.sol";
 
 /// @title Bootstrap
-/// @notice Provides configuration and initialization for smart accounts
+/// @notice Provides configuration and initialization for smart accounts.
 contract Bootstrap is IBootstrap, ModuleManager {
 	/// @inheritdoc IBootstrap
 	function initialize(

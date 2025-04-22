@@ -9,7 +9,7 @@ import {ReentrancyGuard} from "src/modules/utils/ReentrancyGuard.sol";
 import {ExecutorBase} from "src/modules/base/ExecutorBase.sol";
 
 /// @title Permit2Executor
-/// @notice Executor module that allows smart accounts to handle ERC20 token permissions via Permit2
+/// @notice Executor module enabling smart accounts to manage ERC20 approvals via Permit2.
 contract Permit2Executor is IExecutor, ExecutorBase, ReentrancyGuard {
 	struct PermitDetails {
 		Currency currency;
@@ -34,10 +34,6 @@ contract Permit2Executor is IExecutor, ExecutorBase, ReentrancyGuard {
 
 	address private constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
 
-	bytes4 private constant APPROVE_SELECTOR = 0x87517c45;
-	bytes4 private constant PERMIT_SINGLE_SELECTOR = 0x2b67b570;
-	bytes4 private constant PERMIT_BATCH_SELECTOR = 0x2a2d80d1;
-
 	/// @inheritdoc IModule
 	function onInstall(bytes calldata) external payable {
 		require(!_isInitialized(msg.sender), AlreadyInitialized(msg.sender));
@@ -55,8 +51,9 @@ contract Permit2Executor is IExecutor, ExecutorBase, ReentrancyGuard {
 		return _isInitialized(account);
 	}
 
-	/// @notice Approves the Permit2 for the given list of currencies
-	/// @param params Encoded list of currencies
+	/// @notice Approves the specified currencies for transfer via Permit2.
+	/// @param params Encoded list of currency addresses to approve
+	/// @return returnData The list of return values, including errors if using try mode
 	function approveCurrencies(
 		bytes calldata params
 	) external payable nonReentrant returns (bytes[] memory returnData) {
@@ -76,22 +73,34 @@ contract Permit2Executor is IExecutor, ExecutorBase, ReentrancyGuard {
 		}
 	}
 
-	/// @notice Approves the spender to use up to amount of the specified token up until the expiration
-	/// @param currency The currency to approve
-	/// @param spender The spender address to approve
-	/// @param amount The approved amount of the token
-	/// @param expiration The timestamp at which the approval is no longer valid
+	/// @notice Grants time-limited spending permission to a spender for a specified token and amount.
+	/// @param currency The address of the ERC20 token
+	/// @param spender The address receiving spending rights
+	/// @param amount The token amount approved for spending
+	/// @param expiration Unix timestamp after which the approval becomes invalid
+	/// @return returnData The list of return values, including errors if using try mode
 	function approve(
 		Currency currency,
 		address spender,
 		uint160 amount,
 		uint48 expiration
 	) external payable nonReentrant returns (bytes[] memory returnData) {
-		return _execute(PERMIT2, 0, abi.encodeWithSelector(APPROVE_SELECTOR, currency, spender, amount, expiration));
+		returnData = _execute(
+			PERMIT2,
+			0,
+			abi.encodeWithSelector(
+				0x87517c45, // approve(address,address,uint160,uint48)
+				currency,
+				spender,
+				amount,
+				expiration
+			)
+		);
 	}
 
-	/// @notice Permit a spender to a given amount of the owners token via the owner's EIP-712 signature
-	/// @param params Encoded PermitSingle struct followed by the signature
+	/// @notice Permits a spender to use a specified amount of the owner's token using an EIP-712 signature.
+	/// @param params Encoded PermitSingle struct followed by the owner's signature
+	/// @return returnData The list of return values, including errors if using try mode
 	function permitSingle(bytes calldata params) external payable nonReentrant returns (bytes[] memory returnData) {
 		PermitSingle calldata permit;
 		bytes calldata signature;
@@ -104,11 +113,21 @@ contract Permit2Executor is IExecutor, ExecutorBase, ReentrancyGuard {
 			signature.length := calldataload(ptr)
 		}
 
-		return _execute(PERMIT2, 0, abi.encodeWithSelector(PERMIT_SINGLE_SELECTOR, msg.sender, permit, signature));
+		returnData = _execute(
+			PERMIT2,
+			0,
+			abi.encodeWithSelector(
+				0x2b67b570, // permit(address,((address,uint160,uint48,uint48),address,uint256),bytes)
+				msg.sender,
+				permit,
+				signature
+			)
+		);
 	}
 
-	/// @notice Permit a spender to the signed amounts of the owners tokens via the owner's EIP-712 signature
+	/// @notice Permits a spender to use a specified amount of the owner's token using an EIP-712 signature.
 	/// @param params Encoded PermitBatch struct followed by the signature
+	/// @return returnData The list of return values, including errors if using try mode
 	function permitBatch(bytes calldata params) external payable nonReentrant returns (bytes[] memory returnData) {
 		PermitBatch calldata permit;
 		bytes calldata signature;
@@ -121,7 +140,16 @@ contract Permit2Executor is IExecutor, ExecutorBase, ReentrancyGuard {
 			signature.length := calldataload(ptr)
 		}
 
-		return _execute(PERMIT2, 0, abi.encodeWithSelector(PERMIT_BATCH_SELECTOR, msg.sender, permit, signature));
+		returnData = _execute(
+			PERMIT2,
+			0,
+			abi.encodeWithSelector(
+				0x2a2d80d1, // permit(address,((address,uint160,uint48,uint48)[],address,uint256),bytes)
+				msg.sender,
+				permit,
+				signature
+			)
+		);
 	}
 
 	/// @notice Returns the current nonce

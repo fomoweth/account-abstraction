@@ -4,7 +4,7 @@ pragma solidity ^0.8.28;
 import {ModuleType} from "src/types/ModuleType.sol";
 
 /// @title RegistryAdapter
-/// @notice Provides an interface for interacting with an ERC-7484 compliant registry
+/// @notice Provides an interface for interacting with an ERC-7484 compliant registry.
 abstract contract RegistryAdapter {
 	/// @notice Emitted when a new ERC-7484 registry is successfully configured
 	event RegistryConfigured(address indexed registry);

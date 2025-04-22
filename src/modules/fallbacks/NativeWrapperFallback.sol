@@ -8,7 +8,7 @@ import {ModuleType} from "src/types/ModuleType.sol";
 import {FallbackBase} from "src/modules/base/FallbackBase.sol";
 
 /// @title NativeWrapperFallback
-/// @notice Fallback module that allows smart accounts to wrap and unwrap wrapped native token
+/// @notice Fallback module that enables smart accounts to wrap and unwrap the native token.
 contract NativeWrapperFallback is IFallback, FallbackBase {
 	/// @notice Thrown when trying to wrap/unwrap tokens by insufficient amount
 	error InsufficientBalance();

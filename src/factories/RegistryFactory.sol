@@ -10,7 +10,7 @@ import {ModuleType} from "src/types/ModuleType.sol";
 import {IAccountFactory, AccountFactory} from "./AccountFactory.sol";
 
 /// @title RegistryFactory
-/// @notice Manages smart account creation compliant with ERC-4337 and ERC-7579 with authorized ERC-7579 modules
+/// @notice Deploys ERC-4337 and ERC-7579-compliant smart accounts using authorized ERC-7579 modules.
 contract RegistryFactory is IRegistryFactory, AccountFactory {
 	using Arrays for address[];
 

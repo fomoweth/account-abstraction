@@ -5,7 +5,7 @@ import {IStakingAdapter} from "src/interfaces/IStakingAdapter.sol";
 import {Ownable} from "solady/auth/Ownable.sol";
 
 /// @title StakingAdapter
-/// @notice Provides an interface for managing ETH deposit and stake on EntryPoint
+/// @notice Provides an interface for managing ETH deposit and stake on EntryPoint.
 contract StakingAdapter is IStakingAdapter, Ownable {
 	uint112 internal constant MAX_STAKE = (1 << 112) - 1;
 	uint112 internal constant MIN_STAKE = 0.5 ether;

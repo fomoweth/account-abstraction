@@ -9,7 +9,7 @@ import {ModuleType, ValidationData} from "src/types/DataTypes.sol";
 import {ERC7739Validator} from "src/modules/base/ERC7739Validator.sol";
 
 /// @title ECDSAValidator
-/// @notice Verifies user operation signatures for smart accounts
+/// @notice Verifies user operation signatures for smart accounts.
 /// @dev Modified from https://github.com/zerodevapp/kernel/blob/dev/src/validator/ECDSAValidator.sol
 contract ECDSAValidator is IValidator, IHook, ERC7739Validator {
 	using MessageHashUtils for bytes32;
