@@ -64,4 +64,4 @@ esac
 
 forge script script/$SCRIPT.s.sol --broadcast --verify --rpc-url $RPC_URL
 
-node --env-file=.env script/utils/extract.js --chain $CHAIN_ID --rpc-url $RPC_URL --name $SCRIPT
+node script/utils/extract.js --chain $CHAIN_ID --rpc-url $RPC_URL --name $SCRIPT

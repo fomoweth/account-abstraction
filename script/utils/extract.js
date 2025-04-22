@@ -11,7 +11,7 @@ async function main() {
 	const [chainId, rpcUrl, scriptName, forceFlag, skipJsonFlag] = validateInputs();
 
 	const json = await generateJson(scriptName, chainId, rpcUrl, forceFlag, skipJsonFlag);
-	if (!!json) generateMarkdown(json);
+	if (!!json) generateMarkdown(chainId, json);
 }
 
 async function generateJson(scriptName, chainId, rpcUrl, force, skip) {
@@ -266,11 +266,10 @@ async function generateJson(scriptName, chainId, rpcUrl, force, skip) {
 	return output;
 }
 
-function generateMarkdown(input) {
+function generateMarkdown(chainId, input) {
 	const projectUrl = getProjectUrl();
-	const projectName = getProjectName();
 
-	let output = `# ${projectName}\n\n`;
+	let output = `# ${getChainName(chainId)} Deployment\n\n`;
 	output += `\n### Table of Contents\n- [Summary](#summary)\n- [Contracts](#contracts)\n\t- `;
 	output += Object.keys(input.latest)
 		.map((contractName) => `[${contractName}](#${contractName.toLowerCase()})`)
@@ -304,6 +303,33 @@ function generateMarkdown(input) {
 		.join("\n\n---\n\n");
 
 	writeFileSync(join(__dirname, `../../deployments/${input.chainId}.md`), output, "utf-8");
+}
+
+function getChainName(chainId) {
+	switch (parseInt(chainId)) {
+		case 1:
+			return "Ethereum";
+		case 11155111:
+			return "Sepolia";
+		case 10:
+			return "Optimism";
+		case 11155420:
+			return "Optimism Sepolia";
+		case 137:
+			return "Polygon";
+		case 80002:
+			return "Polygon Amoy";
+		case 8453:
+			return "Base";
+		case 84532:
+			return "Base Sepolia";
+		case 42161:
+			return "Arbitrum One";
+		case 421614:
+			return "Arbitrum Sepolia";
+		default:
+			throw new Error(`Unsupported chain: ${chainId}`);
+	}
 }
 
 function getConstructorInputs(abi, arguments) {
