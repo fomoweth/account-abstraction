@@ -34,7 +34,6 @@ import {MockValidator} from "test/shared/mocks/MockValidator.sol";
 
 import {Attester} from "test/shared/structs/Attester.sol";
 import {Signer} from "test/shared/structs/Signer.sol";
-import {Deploy} from "test/shared/utils/Deploy.sol";
 import {SolArray} from "test/shared/utils/SolArray.sol";
 
 import {Configured} from "config/Configured.sol";
@@ -44,8 +43,6 @@ abstract contract Deployers is Test, Configured, Constants {
 	using Arrays for address[];
 	using BootstrapLib for address;
 	using BootstrapLib for BootstrapConfig;
-	using Deploy for bytes32;
-	using Deploy for ModuleFactory;
 	using SolArray for *;
 
 	struct Auxiliary {
