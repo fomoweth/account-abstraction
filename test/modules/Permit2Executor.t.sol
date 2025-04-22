@@ -5,6 +5,7 @@ import {IEntryPoint} from "account-abstraction/interfaces/IEntryPoint.sol";
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 import {Currency} from "src/types/Currency.sol";
 import {ExecType} from "src/types/ExecutionMode.sol";
+import {Permit2Executor} from "src/modules/executors/Permit2Executor.sol";
 import {Vortex} from "src/Vortex.sol";
 
 import {BaseTest} from "test/shared/env/BaseTest.sol";
@@ -31,13 +32,8 @@ contract Permit2ExecutorTest is BaseTest {
 
 		currencies = WNATIVE.currencies(WSTETH, USDC, DAI);
 
-		deployVortex(ALICE, 0, INITIAL_VALUE, address(K1_FACTORY), true);
-
-		ALICE.install(
-			TYPE_EXECUTOR,
-			address(PERMIT2_EXECUTOR),
-			encodeInstallModuleParams(TYPE_EXECUTOR.moduleTypes(), "", "")
-		);
+		deployVortex(ALICE);
+		ALICE.install(TYPE_EXECUTOR, address(aux.permit2Executor), encodeModuleParams("", ""));
 	}
 
 	function test_approveCurrenciesViaExecutor() public virtual impersonate(ALICE, true) {
@@ -45,7 +41,7 @@ contract Permit2ExecutorTest is BaseTest {
 			assertEq(currencies[i].allowance(address(ALICE.account), address(PERMIT2)), 0);
 		}
 
-		PERMIT2_EXECUTOR.approveCurrencies(abi.encodePacked(WNATIVE, WSTETH, USDC, DAI));
+		aux.permit2Executor.approveCurrencies(abi.encodePacked(WNATIVE, WSTETH, USDC, DAI));
 
 		for (uint256 i; i < currencies.length; ++i) {
 			assertEq(currencies[i].allowance(address(ALICE.account), address(PERMIT2)), MAX_UINT256);
@@ -58,12 +54,12 @@ contract Permit2ExecutorTest is BaseTest {
 		}
 
 		bytes memory callData = abi.encodeCall(
-			PERMIT2_EXECUTOR.approveCurrencies,
+			aux.permit2Executor.approveCurrencies,
 			(abi.encodePacked(WNATIVE, WSTETH, USDC, DAI))
 		);
 
 		bytes memory executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(
-			address(PERMIT2_EXECUTOR),
+			address(aux.permit2Executor),
 			0,
 			callData
 		);
@@ -83,7 +79,7 @@ contract Permit2ExecutorTest is BaseTest {
 		assertEq(amount, 0);
 		assertEq(expiration, 0);
 
-		PERMIT2_EXECUTOR.approve(WSTETH, spender, MAX_UINT160, MAX_UINT48);
+		aux.permit2Executor.approve(WSTETH, spender, MAX_UINT160, MAX_UINT48);
 
 		(amount, expiration, ) = PERMIT2.allowance(address(ALICE.account), WSTETH, spender);
 		assertEq(amount, MAX_UINT160);
@@ -95,10 +91,10 @@ contract Permit2ExecutorTest is BaseTest {
 		assertEq(amount, 0);
 		assertEq(expiration, 0);
 
-		bytes memory callData = abi.encodeCall(PERMIT2_EXECUTOR.approve, (WSTETH, spender, MAX_UINT160, MAX_UINT48));
+		bytes memory callData = abi.encodeCall(Permit2Executor.approve, (WSTETH, spender, MAX_UINT160, MAX_UINT48));
 
 		bytes memory executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(
-			address(PERMIT2_EXECUTOR),
+			address(aux.permit2Executor),
 			0,
 			callData
 		);
@@ -117,7 +113,7 @@ contract Permit2ExecutorTest is BaseTest {
 		Currency currency = WSTETH;
 
 		(, , uint48 nonce) = PERMIT2.allowance(address(ALICE.account), currency, spender);
-		assertEq(nonce, PERMIT2_EXECUTOR.getNonce(address(ALICE.account), currency, spender));
+		assertEq(nonce, aux.permit2Executor.getNonce(address(ALICE.account), currency, spender));
 		assertEq(nonce, 0);
 
 		(PermitSingle memory permit, bytes memory signature, ) = preparePermitSingle(ALICE, currency, spender);
@@ -128,7 +124,7 @@ contract Permit2ExecutorTest is BaseTest {
 		assertTrue(success);
 
 		(, , nonce) = PERMIT2.allowance(address(ALICE.account), currency, spender);
-		assertEq(nonce, PERMIT2_EXECUTOR.getNonce(address(ALICE.account), currency, spender));
+		assertEq(nonce, aux.permit2Executor.getNonce(address(ALICE.account), currency, spender));
 		assertEq(nonce, 1);
 	}
 
@@ -157,9 +153,9 @@ contract Permit2ExecutorTest is BaseTest {
 			});
 
 			executions[1] = Execution({
-				target: address(PERMIT2_EXECUTOR),
+				target: address(aux.permit2Executor),
 				value: 0,
-				callData: abi.encodeCall(PERMIT2_EXECUTOR.permitSingle, (params))
+				callData: abi.encodeCall(Permit2Executor.permitSingle, (params))
 			});
 
 			bytes memory executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(executions);
@@ -178,7 +174,7 @@ contract Permit2ExecutorTest is BaseTest {
 	}
 
 	function test_permitSingleViaExecutor() public virtual impersonate(ALICE, true) {
-		PERMIT2_EXECUTOR.approveCurrencies(abi.encodePacked(WNATIVE, WSTETH, USDC, DAI));
+		aux.permit2Executor.approveCurrencies(abi.encodePacked(WNATIVE, WSTETH, USDC, DAI));
 
 		for (uint256 i; i < currencies.length; ++i) {
 			(uint160 amount, uint48 expiration, uint48 nonce) = PERMIT2.allowance(
@@ -195,7 +191,7 @@ contract Permit2ExecutorTest is BaseTest {
 
 			bytes memory params = abi.encode(permit, signature);
 
-			PERMIT2_EXECUTOR.permitSingle(params);
+			aux.permit2Executor.permitSingle(params);
 
 			(amount, expiration, nonce) = PERMIT2.allowance(address(ALICE.account), currencies[i], spender);
 
@@ -207,7 +203,7 @@ contract Permit2ExecutorTest is BaseTest {
 
 	function test_permitSingle() public virtual {
 		vm.prank(address(ALICE.account));
-		PERMIT2_EXECUTOR.approveCurrencies(abi.encodePacked(WNATIVE, WSTETH, USDC, DAI));
+		aux.permit2Executor.approveCurrencies(abi.encodePacked(WNATIVE, WSTETH, USDC, DAI));
 
 		for (uint256 i; i < currencies.length; ++i) {
 			(uint160 amount, uint48 expiration, uint48 nonce) = PERMIT2.allowance(
@@ -224,10 +220,10 @@ contract Permit2ExecutorTest is BaseTest {
 
 			bytes memory params = abi.encode(permit, signature);
 
-			bytes memory callData = abi.encodeCall(PERMIT2_EXECUTOR.permitSingle, (params));
+			bytes memory callData = abi.encodeCall(Permit2Executor.permitSingle, (params));
 
 			bytes memory executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(
-				address(PERMIT2_EXECUTOR),
+				address(aux.permit2Executor),
 				0,
 				callData
 			);
@@ -247,21 +243,21 @@ contract Permit2ExecutorTest is BaseTest {
 
 	function test_permitSingle_revertsWithInvalidSignature() public virtual {
 		vm.prank(address(ALICE.account));
-		PERMIT2_EXECUTOR.approveCurrencies(abi.encodePacked(WNATIVE, WSTETH, USDC, DAI));
+		aux.permit2Executor.approveCurrencies(abi.encodePacked(WNATIVE, WSTETH, USDC, DAI));
 
 		revertToState();
 
 		for (uint256 i; i < currencies.length; ++i) {
 			(PermitSingle memory permit, , bytes32 hash) = preparePermitSingle(ALICE, currencies[i], spender);
 
-			bytes memory signature = abi.encodePacked(K1_VALIDATOR, MURPHY.sign(hash));
+			bytes memory signature = abi.encodePacked(aux.k1Validator, MURPHY.sign(hash));
 
 			bytes memory params = abi.encode(permit, signature);
 
-			bytes memory callData = abi.encodeCall(PERMIT2_EXECUTOR.permitSingle, (params));
+			bytes memory callData = abi.encodeCall(Permit2Executor.permitSingle, (params));
 
 			bytes memory executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(
-				address(PERMIT2_EXECUTOR),
+				address(aux.permit2Executor),
 				0,
 				callData
 			);
@@ -311,9 +307,9 @@ contract Permit2ExecutorTest is BaseTest {
 		bytes memory params = abi.encode(permit, signature);
 
 		executions[currencies.length] = Execution({
-			target: address(PERMIT2_EXECUTOR),
+			target: address(aux.permit2Executor),
 			value: 0,
-			callData: abi.encodeCall(PERMIT2_EXECUTOR.permitBatch, (params))
+			callData: abi.encodeCall(Permit2Executor.permitBatch, (params))
 		});
 
 		bytes memory executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(executions);
@@ -337,7 +333,7 @@ contract Permit2ExecutorTest is BaseTest {
 	}
 
 	function test_permitBatchViaExecutor() public virtual impersonate(ALICE, true) {
-		PERMIT2_EXECUTOR.approveCurrencies(abi.encodePacked(WNATIVE, WSTETH, USDC, DAI));
+		aux.permit2Executor.approveCurrencies(abi.encodePacked(WNATIVE, WSTETH, USDC, DAI));
 
 		for (uint256 i; i < currencies.length; ++i) {
 			(uint160 amount, uint48 expiration, uint48 nonce) = PERMIT2.allowance(
@@ -355,7 +351,7 @@ contract Permit2ExecutorTest is BaseTest {
 
 		bytes memory params = abi.encode(permit, signature);
 
-		PERMIT2_EXECUTOR.permitBatch(params);
+		aux.permit2Executor.permitBatch(params);
 
 		for (uint256 i; i < currencies.length; ++i) {
 			(uint160 amount, uint48 expiration, uint48 nonce) = PERMIT2.allowance(
@@ -372,7 +368,7 @@ contract Permit2ExecutorTest is BaseTest {
 
 	function test_permitBatch() public virtual {
 		vm.prank(address(ALICE.account));
-		PERMIT2_EXECUTOR.approveCurrencies(abi.encodePacked(WNATIVE, WSTETH, USDC, DAI));
+		aux.permit2Executor.approveCurrencies(abi.encodePacked(WNATIVE, WSTETH, USDC, DAI));
 
 		for (uint256 i; i < currencies.length; ++i) {
 			(uint160 amount, uint48 expiration, uint48 nonce) = PERMIT2.allowance(
@@ -390,10 +386,10 @@ contract Permit2ExecutorTest is BaseTest {
 
 		bytes memory params = abi.encode(permit, signature);
 
-		bytes memory callData = abi.encodeCall(PERMIT2_EXECUTOR.permitBatch, (params));
+		bytes memory callData = abi.encodeCall(Permit2Executor.permitBatch, (params));
 
 		bytes memory executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(
-			address(PERMIT2_EXECUTOR),
+			address(aux.permit2Executor),
 			0,
 			callData
 		);
@@ -418,18 +414,18 @@ contract Permit2ExecutorTest is BaseTest {
 
 	function test_permitBatch_revertsWithInvalidSignature() public virtual {
 		vm.prank(address(ALICE.account));
-		PERMIT2_EXECUTOR.approveCurrencies(abi.encodePacked(WNATIVE, WSTETH, USDC, DAI));
+		aux.permit2Executor.approveCurrencies(abi.encodePacked(WNATIVE, WSTETH, USDC, DAI));
 
 		(PermitBatch memory permit, , bytes32 hash) = preparePermitBatch(ALICE, currencies, spender);
 
-		bytes memory invalidSignature = abi.encodePacked(K1_VALIDATOR, MURPHY.sign(hash));
+		bytes memory invalidSignature = abi.encodePacked(aux.k1Validator, MURPHY.sign(hash));
 
 		bytes memory params = abi.encode(permit, invalidSignature);
 
-		bytes memory callData = abi.encodeCall(PERMIT2_EXECUTOR.permitBatch, (params));
+		bytes memory callData = abi.encodeCall(Permit2Executor.permitBatch, (params));
 
 		bytes memory executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(
-			address(PERMIT2_EXECUTOR),
+			address(aux.permit2Executor),
 			0,
 			callData
 		);

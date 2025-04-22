@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {VALIDATION_MODE_DEFAULT, VALIDATION_MODE_ENABLE} from "./Constants.sol";
-
 type ValidationMode is bytes1;
 
-using ValidationModeLib for ValidationMode global;
+using ValidationLib for ValidationMode global;
+
 using {eqValidationMode as ==, neqValidationMode as !=} for ValidationMode global;
 
 function eqValidationMode(ValidationMode x, ValidationMode y) pure returns (bool z) {
@@ -20,9 +19,8 @@ function neqValidationMode(ValidationMode x, ValidationMode y) pure returns (boo
 	}
 }
 
-/// @title ValidationModeLib
-
-library ValidationModeLib {
+/// @title ValidationLib
+library ValidationLib {
 	// [1 bytes validation mode][3 bytes unused][20 bytes validator][8 bytes nonce]
 	function encodeNonceKey(ValidationMode mode, address validator) internal pure returns (uint192 key) {
 		assembly ("memory-safe") {

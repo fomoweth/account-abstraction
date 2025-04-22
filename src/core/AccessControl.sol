@@ -1,32 +1,20 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {MODULE_TYPE_VALIDATOR, MODULE_TYPE_EXECUTOR} from "src/types/Constants.sol";
-import {ModuleType} from "src/types/Types.sol";
-
 /// @title AccessControl
-
+/// @notice Provides modifiers for restricting access control to the contract and its entry points
 abstract contract AccessControl {
 	address internal constant ENTRYPOINT = 0x0000000071727De22E5E9d8BAf0edAc6f37da032;
-	address internal constant SENTINEL = 0x0000000000000000000000000000000000000001;
 
-	modifier onlyEntryPoint() {
+	/// @notice Restricts access to the EntryPoint
+	modifier onlyEntryPoint() virtual {
 		_checkEntryPoint();
 		_;
 	}
 
-	modifier onlyEntryPointOrSelf() {
+	/// @notice Restricts access to EntryPoint or the account itself
+	modifier onlyEntryPointOrSelf() virtual {
 		_checkEntryPointOrSelf();
-		_;
-	}
-
-	modifier onlyExecutor() {
-		_checkModule(msg.sender, MODULE_TYPE_EXECUTOR);
-		_;
-	}
-
-	modifier onlyValidator(address validator) {
-		_checkModule(validator, MODULE_TYPE_VALIDATOR);
 		_;
 	}
 
@@ -53,6 +41,4 @@ abstract contract AccessControl {
 			}
 		}
 	}
-
-	function _checkModule(address module, ModuleType moduleTypeId) internal view virtual;
 }

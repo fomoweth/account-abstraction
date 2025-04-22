@@ -18,6 +18,16 @@
 				"useTabs": true,
 				"singleQuote": false
 			}
+		},
+		{
+			"files": "*.js",
+			"options": {
+				"printWidth": 120,
+				"tabWidth": 4,
+				"useTabs": true,
+				"singleQuote": false,
+				"explicitTypes": "preserve"
+			}
 		}
 	]
 }

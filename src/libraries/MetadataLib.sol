@@ -5,7 +5,6 @@ import {Currency} from "src/types/Currency.sol";
 
 /// @title MetadataLib
 /// @dev Implementation from https://github.com/Vectorized/solady/blob/main/src/utils/MetadataReaderLib.sol
-
 library MetadataLib {
 	uint256 internal constant GAS_STIPEND_NO_GRIEF = 100000;
 

@@ -10,8 +10,7 @@ struct Execution {
 }
 
 /// @title ExecutionLib
-/// @notice Provides functions to handle executions for smart account
-
+/// @notice Provides functions to handle executions for smart account.
 library ExecutionLib {
 	event TryExecuteUnsuccessful(uint256 index, bytes returnData);
 

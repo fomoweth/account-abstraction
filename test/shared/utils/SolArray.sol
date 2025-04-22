@@ -2,7 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {Currency} from "src/types/Currency.sol";
-import {CallType, ModuleType} from "src/types/Types.sol";
+import {CallType, ModuleType} from "src/types/DataTypes.sol";
 
 library SolArray {
 	function callTypes(CallType a) internal pure returns (CallType[] memory arr) {

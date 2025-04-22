@@ -6,10 +6,9 @@ import {IEntryPoint} from "account-abstraction/interfaces/IEntryPoint.sol";
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 import {IModule} from "src/interfaces/IERC7579Modules.sol";
 import {ExecutionLib} from "src/libraries/ExecutionLib.sol";
-import {SignatureChecker} from "src/libraries/SignatureChecker.sol";
-import {VALIDATION_MODE_DEFAULT, VALIDATION_MODE_ENABLE} from "src/types/Constants.sol";
-import {ExecType, ModuleType, ValidationMode} from "src/types/Types.sol";
-import {Vortex} from "src/Vortex.sol";
+import {MessageHashUtils} from "src/libraries/MessageHashUtils.sol";
+import {ExecType, ModuleType, ValidationMode} from "src/types/DataTypes.sol";
+import {IVortex, Vortex} from "src/Vortex.sol";
 
 import {ExecutionUtils} from "test/shared/utils/ExecutionUtils.sol";
 
@@ -26,17 +25,17 @@ struct Signer {
 
 library SignerLib {
 	using ExecutionUtils for ExecType;
-	using SignatureChecker for bytes32;
-
-	event ModuleInstalled(ModuleType indexed moduleTypeId, address indexed module);
-	event ModuleUninstalled(ModuleType indexed moduleTypeId, address indexed module);
+	using MessageHashUtils for bytes32;
 
 	Vm internal constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
 
 	IEntryPoint internal constant ENTRYPOINT = IEntryPoint(0x0000000071727De22E5E9d8BAf0edAc6f37da032);
 
+	ValidationMode internal constant VALIDATION_MODE_DEFAULT = ValidationMode.wrap(0x00);
+	ValidationMode internal constant VALIDATION_MODE_ENABLE = ValidationMode.wrap(0x01);
+
 	function addDeposit(Signer memory signer, uint256 value, address beneficiary) internal {
-		vm.assertTrue(value != 0);
+		vm.assertTrue(value != 0 && beneficiary != address(0));
 
 		uint256 deposit = ENTRYPOINT.balanceOf(beneficiary);
 
@@ -63,13 +62,13 @@ library SignerLib {
 	}
 
 	function install(Signer memory signer, ModuleType moduleTypeId, address module, bytes memory data) internal {
-		bytes memory callData = abi.encodeCall(Vortex.installModule, (moduleTypeId, module, data));
+		bytes memory callData = abi.encodeCall(IVortex.installModule, (moduleTypeId, module, data));
 
 		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
 		(userOps[0], ) = signer.prepareUserOp(callData, signer.account.rootValidator());
 
-		vm.expectEmit(true, true, true, true);
-		emit ModuleInstalled(moduleTypeId, module);
+		vm.expectEmit(true, false, false, true);
+		emit IVortex.ModuleInstalled(moduleTypeId, module);
 
 		ENTRYPOINT.handleOps(userOps, signer.eoa);
 
@@ -77,13 +76,13 @@ library SignerLib {
 	}
 
 	function uninstall(Signer memory signer, ModuleType moduleTypeId, address module, bytes memory data) internal {
-		bytes memory callData = abi.encodeCall(Vortex.uninstallModule, (moduleTypeId, module, data));
+		bytes memory callData = abi.encodeCall(IVortex.uninstallModule, (moduleTypeId, module, data));
 
 		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
 		(userOps[0], ) = signer.prepareUserOp(callData, signer.account.rootValidator());
 
-		vm.expectEmit(true, true, true, true);
-		emit ModuleUninstalled(moduleTypeId, module);
+		vm.expectEmit(true, false, false, true);
+		emit IVortex.ModuleUninstalled(moduleTypeId, module);
 
 		ENTRYPOINT.handleOps(userOps, signer.eoa);
 

@@ -1,15 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {IExecutor} from "src/interfaces/IERC7579Modules.sol";
-import {IERC7579Account} from "src/interfaces/IERC7579Account.sol";
+import {IVortex} from "src/interfaces/IVortex.sol";
 import {Execution} from "src/libraries/ExecutionLib.sol";
 import {ExecutionModeLib, ExecutionMode, CallType, ExecType} from "src/types/ExecutionMode.sol";
 import {ModuleBase} from "./ModuleBase.sol";
 
 /// @title ExecutorBase
-
-abstract contract ExecutorBase is IExecutor, ModuleBase {
+/// @notice ERC-7579 executor module base interface
+abstract contract ExecutorBase is ModuleBase {
 	CallType internal constant CALLTYPE_SINGLE = CallType.wrap(0x00);
 	CallType internal constant CALLTYPE_BATCH = CallType.wrap(0x01);
 	CallType internal constant CALLTYPE_STATIC = CallType.wrap(0xFE);
@@ -35,7 +34,7 @@ abstract contract ExecutorBase is IExecutor, ModuleBase {
 		ExecutionMode mode = ExecutionModeLib.encodeSingle();
 		bytes memory executionCalldata = abi.encodePacked(target, value, callData);
 
-		return IERC7579Account(account).executeFromExecutor{value: msg.value}(mode, executionCalldata);
+		return IVortex(account).executeFromExecutor{value: msg.value}(mode, executionCalldata);
 	}
 
 	function _execute(address target, bytes memory callData) internal virtual returns (bytes[] memory returnData) {
@@ -50,7 +49,7 @@ abstract contract ExecutorBase is IExecutor, ModuleBase {
 		ExecutionMode mode = ExecutionModeLib.encodeDelegate();
 		bytes memory executionCalldata = abi.encodePacked(target, callData);
 
-		return IERC7579Account(account).executeFromExecutor{value: msg.value}(mode, executionCalldata);
+		return IVortex(account).executeFromExecutor{value: msg.value}(mode, executionCalldata);
 	}
 
 	function _execute(Execution[] memory executions) internal virtual returns (bytes[] memory returnData) {
@@ -64,14 +63,6 @@ abstract contract ExecutorBase is IExecutor, ModuleBase {
 		ExecutionMode mode = ExecutionModeLib.encodeBatch();
 		bytes memory executionCalldata = abi.encode(executions);
 
-		return IERC7579Account(account).executeFromExecutor{value: msg.value}(mode, executionCalldata);
+		return IVortex(account).executeFromExecutor{value: msg.value}(mode, executionCalldata);
 	}
-
-	// function _executeFromExecutor(
-	// 	address account,
-	// 	ExecutionMode mode,
-	// 	bytes memory executionCalldata
-	// ) internal virtual returns (bytes[] memory returnData) {
-	// 	return IERC7579Account(account).executeFromExecutor{value: msg.value}(mode, executionCalldata);
-	// }
 }

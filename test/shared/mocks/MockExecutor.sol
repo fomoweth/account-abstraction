@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import {IExecutor} from "src/interfaces/IERC7579Modules.sol";
 import {Execution} from "src/libraries/ExecutionLib.sol";
-import {ExecutionModeLib, ExecutionMode, ModuleType} from "src/types/Types.sol";
+import {ExecutionModeLib, ExecutionMode} from "src/types/ExecutionMode.sol";
+import {ModuleType} from "src/types/ModuleType.sol";
 import {ModuleBase} from "src/modules/base/ModuleBase.sol";
 import {Vortex} from "src/Vortex.sol";
 
-contract MockExecutor is ModuleBase {
+contract MockExecutor is IExecutor, ModuleBase {
 	mapping(address account => bool isInstalled) internal _isInstalled;
 
 	function onInstall(bytes calldata) external payable {
@@ -98,7 +100,7 @@ contract MockExecutor is ModuleBase {
 	}
 
 	function isModuleType(ModuleType moduleTypeId) external pure returns (bool) {
-		return moduleTypeId == TYPE_EXECUTOR;
+		return moduleTypeId == MODULE_TYPE_EXECUTOR;
 	}
 
 	function _isInitialized(address account) internal view returns (bool) {

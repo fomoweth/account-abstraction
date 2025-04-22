@@ -33,7 +33,6 @@ function neqSchemaUID(SchemaUID x, SchemaUID y) pure returns (bool z) {
 
 /// @title UIDLib
 /// @notice Provides functions to encode UID types
-
 library UIDLib {
 	function getResolverUID(address sender, address resolver) internal pure returns (ResolverUID) {
 		return ResolverUID.wrap(keccak256(abi.encodePacked(sender, resolver)));

@@ -5,7 +5,6 @@ import {Currency} from "src/types/Currency.sol";
 
 /// @title BytesLib
 /// @dev Modified from https://github.com/Uniswap/universal-router/blob/main/contracts/modules/uniswap/v3/BytesLib.sol
-
 library BytesLib {
 	uint256 internal constant LENGTH_MASK = 0xffffffff;
 

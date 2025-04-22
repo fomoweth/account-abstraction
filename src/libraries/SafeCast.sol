@@ -3,7 +3,6 @@ pragma solidity ^0.8.28;
 
 /// @title SafeCast
 /// @dev Implementation from https://github.com/Vectorized/solady/blob/main/src/utils/SafeCastLib.sol
-
 library SafeCast {
 	function toUint8(uint256 x) internal pure returns (uint8) {
 		if (x >= 1 << 8) revertOverflow();

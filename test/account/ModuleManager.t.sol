@@ -3,7 +3,8 @@ pragma solidity ^0.8.28;
 
 import {IEntryPoint} from "account-abstraction/interfaces/IEntryPoint.sol";
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
-import {CallType, ExecType, ModuleType} from "src/types/Types.sol";
+import {IModule} from "src/interfaces/IERC7579Modules.sol";
+import {CallType, ExecType, ModuleType} from "src/types/DataTypes.sol";
 import {Vortex} from "src/Vortex.sol";
 
 import {BaseTest} from "test/shared/env/BaseTest.sol";
@@ -15,29 +16,30 @@ contract ModuleManagerTest is BaseTest {
 	using ExecutionUtils for ExecType;
 	using SolArray for *;
 
+	error ExceededMaxGlobalHooksLimit();
+
 	function setUp() public virtual override {
 		super.setUp();
-		deployVortex(MURPHY, 0, INITIAL_VALUE, address(ACCOUNT_FACTORY), false);
+		deployVortex(MURPHY);
 	}
 
 	function test_enableModule() public virtual {
-		address enableValidator = address(K1_VALIDATOR);
-		address opValidator = address(MOCK_VALIDATOR);
+		revertToState();
+
+		address enableValidator = address(aux.k1Validator);
+		address opValidator = address(aux.mockValidator);
 
 		assertEq(MURPHY.account.rootValidator(), enableValidator);
 		assertFalse(MURPHY.account.isModuleInstalled(TYPE_VALIDATOR, opValidator, ""));
 
-		ModuleType[] memory moduleTypeIds = TYPE_VALIDATOR.moduleTypes(TYPE_STATELESS_VALIDATOR);
-		bytes memory initData = encodeInstallModuleParams(moduleTypeIds, abi.encodePacked(MURPHY.eoa), "");
+		bytes memory initData = encodeModuleParams(abi.encodePacked(MURPHY.eoa), "");
 		bytes memory callData = abi.encodeCall(Vortex.configureRootValidator, (opValidator, ""));
 
 		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
 
-		revertToState();
-
 		userOps[0] = prepareEnable(enableValidator, TYPE_VALIDATOR, opValidator, initData, callData, true, true);
 
-		vm.expectEmit(true, true, true, true);
+		vm.expectEmit(true, false, false, true);
 		emit ModuleInstalled(TYPE_VALIDATOR, opValidator);
 
 		BUNDLER.handleOps(userOps);
@@ -49,7 +51,7 @@ contract ModuleManagerTest is BaseTest {
 
 		userOps[0] = prepareEnable(enableValidator, TYPE_VALIDATOR, opValidator, initData, callData, true, false);
 
-		vm.expectEmit(true, true, true, true);
+		vm.expectEmit(true, false, false, true);
 		emit ModuleInstalled(TYPE_VALIDATOR, opValidator);
 
 		BUNDLER.handleOps(userOps);
@@ -59,14 +61,13 @@ contract ModuleManagerTest is BaseTest {
 	}
 
 	function test_enableModule_revertsWithInvalidSignature() public virtual {
-		address enableValidator = address(K1_VALIDATOR);
-		address opValidator = address(MOCK_VALIDATOR);
+		address enableValidator = address(aux.k1Validator);
+		address opValidator = address(aux.mockValidator);
 
 		assertEq(MURPHY.account.rootValidator(), enableValidator);
 		assertFalse(MURPHY.account.isModuleInstalled(TYPE_VALIDATOR, opValidator, ""));
 
-		ModuleType[] memory moduleTypeIds = TYPE_VALIDATOR.moduleTypes(TYPE_STATELESS_VALIDATOR);
-		bytes memory initData = encodeInstallModuleParams(moduleTypeIds, abi.encodePacked(MURPHY.eoa), "");
+		bytes memory initData = encodeModuleParams(abi.encodePacked(MURPHY.eoa), "");
 		bytes memory callData = abi.encodeCall(Vortex.configureRootValidator, (opValidator, ""));
 
 		bytes memory revertReason = abi.encodeWithSelector(
@@ -90,14 +91,13 @@ contract ModuleManagerTest is BaseTest {
 	}
 
 	function test_enableModule_revertsIfModuleAlreadyInstalled() public virtual {
-		address enableValidator = address(K1_VALIDATOR);
-		address opValidator = address(MOCK_VALIDATOR);
+		address enableValidator = address(aux.k1Validator);
+		address opValidator = address(aux.mockValidator);
 
 		assertEq(MURPHY.account.rootValidator(), enableValidator);
 		assertFalse(MURPHY.account.isModuleInstalled(TYPE_VALIDATOR, opValidator, ""));
 
-		ModuleType[] memory moduleTypeIds = TYPE_VALIDATOR.moduleTypes(TYPE_STATELESS_VALIDATOR);
-		bytes memory initData = encodeInstallModuleParams(moduleTypeIds, abi.encodePacked(MURPHY.eoa), "");
+		bytes memory initData = encodeModuleParams(abi.encodePacked(MURPHY.eoa), "");
 		bytes memory callData = abi.encodeCall(Vortex.configureRootValidator, (opValidator, ""));
 
 		MURPHY.install(TYPE_VALIDATOR, opValidator, initData);
@@ -107,7 +107,7 @@ contract ModuleManagerTest is BaseTest {
 			IEntryPoint.FailedOpWithRevert.selector,
 			0,
 			"AA23 reverted",
-			abi.encodeWithSelector(ModuleAlreadyInstalled.selector, opValidator)
+			abi.encodeWithSelector(ModuleAlreadyInstalled.selector, TYPE_VALIDATOR, opValidator)
 		);
 
 		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
@@ -124,20 +124,19 @@ contract ModuleManagerTest is BaseTest {
 	}
 
 	function test_enableModule_revertsWithInvalidValidator() public virtual {
-		address opValidator = address(MOCK_VALIDATOR);
+		address opValidator = address(aux.mockValidator);
 		address invalidValidator = opValidator;
 
 		assertFalse(MURPHY.account.isModuleInstalled(TYPE_VALIDATOR, opValidator, ""));
 
-		ModuleType[] memory moduleTypeIds = TYPE_VALIDATOR.moduleTypes(TYPE_STATELESS_VALIDATOR);
-		bytes memory initData = encodeInstallModuleParams(moduleTypeIds, abi.encodePacked(MURPHY.eoa), "");
+		bytes memory initData = encodeModuleParams(abi.encodePacked(MURPHY.eoa), "");
 		bytes memory callData = abi.encodeCall(Vortex.configureRootValidator, (opValidator, ""));
 
 		bytes memory revertReason = abi.encodeWithSelector(
 			IEntryPoint.FailedOpWithRevert.selector,
 			0,
 			"AA23 reverted",
-			abi.encodeWithSelector(ModuleNotInstalled.selector, invalidValidator)
+			abi.encodeWithSelector(ModuleNotInstalled.selector, TYPE_VALIDATOR, invalidValidator)
 		);
 
 		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
@@ -154,14 +153,13 @@ contract ModuleManagerTest is BaseTest {
 	}
 
 	function test_enableModule_revertsWithInvalidModuleTypeId() public virtual {
-		address enableValidator = address(K1_VALIDATOR);
-		address opValidator = address(MOCK_VALIDATOR);
+		address enableValidator = address(aux.k1Validator);
+		address opValidator = address(aux.mockValidator);
 
 		assertEq(MURPHY.account.rootValidator(), enableValidator);
 		assertFalse(MURPHY.account.isModuleInstalled(TYPE_VALIDATOR, opValidator, ""));
 
-		ModuleType[] memory moduleTypeIds = TYPE_EXECUTOR.moduleTypes();
-		bytes memory initData = encodeInstallModuleParams(moduleTypeIds, abi.encodePacked(MURPHY.eoa), "");
+		bytes memory initData = encodeModuleParams(abi.encodePacked(MURPHY.eoa), "");
 		bytes memory callData = abi.encodeCall(Vortex.configureRootValidator, (opValidator, ""));
 
 		bytes memory revertReason = abi.encodeWithSelector(
@@ -185,42 +183,43 @@ contract ModuleManagerTest is BaseTest {
 	}
 
 	function test_configureRootValidator() public virtual {
-		assertFalse(MURPHY.account.isModuleInstalled(TYPE_VALIDATOR, address(MOCK_VALIDATOR), ""));
-		assertEq(MURPHY.account.rootValidator(), address(K1_VALIDATOR));
+		assertFalse(MURPHY.account.isModuleInstalled(TYPE_VALIDATOR, address(aux.mockValidator), ""));
+		assertEq(MURPHY.account.rootValidator(), address(aux.k1Validator));
 
-		ModuleType[] memory moduleTypeIds = TYPE_VALIDATOR.moduleTypes(TYPE_STATELESS_VALIDATOR);
-		bytes memory installData = encodeInstallModuleParams(moduleTypeIds, abi.encodePacked(MURPHY.eoa), "");
-		bytes memory callData = abi.encodeCall(Vortex.configureRootValidator, (address(MOCK_VALIDATOR), installData));
+		bytes memory installData = encodeModuleParams(abi.encodePacked(MURPHY.eoa), "");
+		bytes memory callData = abi.encodeCall(
+			Vortex.configureRootValidator,
+			(address(aux.mockValidator), installData)
+		);
 		bytes memory executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(address(MURPHY.account), 0, callData);
 
 		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
 		(userOps[0], ) = MURPHY.prepareUserOp(executionCalldata);
 
 		vm.expectEmit(true, true, true, true);
-		emit RootValidatorConfigured(address(MOCK_VALIDATOR));
+		emit RootValidatorConfigured(address(aux.mockValidator));
 
 		BUNDLER.handleOps(userOps);
-		assertTrue(MURPHY.account.isModuleInstalled(TYPE_VALIDATOR, address(MOCK_VALIDATOR), ""));
-		assertEq(MURPHY.account.rootValidator(), address(MOCK_VALIDATOR));
+		assertTrue(MURPHY.account.isModuleInstalled(TYPE_VALIDATOR, address(aux.mockValidator), ""));
+		assertEq(MURPHY.account.rootValidator(), address(aux.mockValidator));
 	}
 
 	function test_installValidatorThenSetRootValidator() public virtual {
-		assertFalse(MURPHY.account.isModuleInstalled(TYPE_VALIDATOR, address(MOCK_VALIDATOR), ""));
-		assertEq(MURPHY.account.rootValidator(), address(K1_VALIDATOR));
+		assertFalse(MURPHY.account.isModuleInstalled(TYPE_VALIDATOR, address(aux.mockValidator), ""));
+		assertEq(MURPHY.account.rootValidator(), address(aux.k1Validator));
 
-		ModuleType[] memory moduleTypeIds = TYPE_VALIDATOR.moduleTypes(TYPE_STATELESS_VALIDATOR);
-		bytes memory installData = encodeInstallModuleParams(moduleTypeIds, abi.encodePacked(MURPHY.eoa), "");
+		bytes memory installData = encodeModuleParams(abi.encodePacked(MURPHY.eoa), "");
 
 		Execution[] memory executions = new Execution[](2);
 		executions[0] = Execution(
 			address(MURPHY.account),
 			0,
-			abi.encodeCall(Vortex.installModule, (TYPE_VALIDATOR, address(MOCK_VALIDATOR), installData))
+			abi.encodeCall(Vortex.installModule, (TYPE_VALIDATOR, address(aux.mockValidator), installData))
 		);
 		executions[1] = Execution(
 			address(MURPHY.account),
 			0,
-			abi.encodeCall(Vortex.configureRootValidator, (address(MOCK_VALIDATOR), ""))
+			abi.encodeCall(Vortex.configureRootValidator, (address(aux.mockValidator), ""))
 		);
 
 		bytes memory executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(executions);
@@ -229,11 +228,11 @@ contract ModuleManagerTest is BaseTest {
 		(userOps[0], ) = MURPHY.prepareUserOp(executionCalldata);
 
 		vm.expectEmit(true, true, true, true);
-		emit RootValidatorConfigured(address(MOCK_VALIDATOR));
+		emit RootValidatorConfigured(address(aux.mockValidator));
 
 		BUNDLER.handleOps(userOps);
-		assertTrue(MURPHY.account.isModuleInstalled(TYPE_VALIDATOR, address(MOCK_VALIDATOR), ""));
-		assertEq(MURPHY.account.rootValidator(), address(MOCK_VALIDATOR));
+		assertTrue(MURPHY.account.isModuleInstalled(TYPE_VALIDATOR, address(aux.mockValidator), ""));
+		assertEq(MURPHY.account.rootValidator(), address(aux.mockValidator));
 	}
 
 	function test_configureRegistry() public virtual {
@@ -265,37 +264,35 @@ contract ModuleManagerTest is BaseTest {
 	}
 
 	function test_installValidator() public virtual {
-		assertFalse(MURPHY.account.isModuleInstalled(TYPE_VALIDATOR, address(MOCK_VALIDATOR), ""));
+		assertFalse(MURPHY.account.isModuleInstalled(TYPE_VALIDATOR, address(aux.mockValidator), ""));
 
-		ModuleType[] memory moduleTypeIds = TYPE_VALIDATOR.moduleTypes(TYPE_STATELESS_VALIDATOR);
+		MURPHY.install(
+			TYPE_VALIDATOR,
+			address(aux.mockValidator),
+			encodeModuleParams(abi.encodePacked(MURPHY.eoa), "")
+		);
+		assertTrue(MURPHY.account.isModuleInstalled(TYPE_VALIDATOR, address(aux.mockValidator), ""));
 
-		bytes memory installData = encodeInstallModuleParams(moduleTypeIds, abi.encodePacked(MURPHY.eoa), "");
-
-		MURPHY.install(TYPE_VALIDATOR, address(MOCK_VALIDATOR), installData);
-		assertTrue(MURPHY.account.isModuleInstalled(TYPE_VALIDATOR, address(MOCK_VALIDATOR), ""));
-
-		MURPHY.uninstall(TYPE_VALIDATOR, address(MOCK_VALIDATOR), "");
-		assertFalse(MURPHY.account.isModuleInstalled(TYPE_VALIDATOR, address(MOCK_VALIDATOR), ""));
+		MURPHY.uninstall(TYPE_VALIDATOR, address(aux.mockValidator), "");
+		assertFalse(MURPHY.account.isModuleInstalled(TYPE_VALIDATOR, address(aux.mockValidator), ""));
 	}
 
 	function test_installExecutor() public virtual {
-		assertFalse(MURPHY.account.isModuleInstalled(TYPE_EXECUTOR, address(MOCK_EXECUTOR), ""));
+		assertFalse(MURPHY.account.isModuleInstalled(TYPE_EXECUTOR, address(aux.mockExecutor), ""));
 
-		bytes memory installData = encodeInstallModuleParams(TYPE_EXECUTOR.moduleTypes(), "", "");
+		MURPHY.install(TYPE_EXECUTOR, address(aux.mockExecutor), encodeModuleParams("", ""));
+		assertTrue(MURPHY.account.isModuleInstalled(TYPE_EXECUTOR, address(aux.mockExecutor), ""));
 
-		MURPHY.install(TYPE_EXECUTOR, address(MOCK_EXECUTOR), installData);
-		assertTrue(MURPHY.account.isModuleInstalled(TYPE_EXECUTOR, address(MOCK_EXECUTOR), ""));
-
-		MURPHY.uninstall(TYPE_EXECUTOR, address(MOCK_EXECUTOR), "");
-		assertFalse(MURPHY.account.isModuleInstalled(TYPE_EXECUTOR, address(MOCK_EXECUTOR), ""));
+		MURPHY.uninstall(TYPE_EXECUTOR, address(aux.mockExecutor), "");
+		assertFalse(MURPHY.account.isModuleInstalled(TYPE_EXECUTOR, address(aux.mockExecutor), ""));
 	}
 
 	function test_installFallback() public virtual {
-		bytes4[] memory selectors = MOCK_FALLBACK.fallbackSingle.selector.bytes4s(
-			MOCK_FALLBACK.fallbackDelegate.selector,
-			MOCK_FALLBACK.fallbackStatic.selector,
-			MOCK_FALLBACK.fallbackSuccess.selector,
-			MOCK_FALLBACK.fallbackRevert.selector
+		bytes4[] memory selectors = aux.mockFallback.fallbackSingle.selector.bytes4s(
+			aux.mockFallback.fallbackDelegate.selector,
+			aux.mockFallback.fallbackStatic.selector,
+			aux.mockFallback.fallbackSuccess.selector,
+			aux.mockFallback.fallbackRevert.selector
 		);
 
 		CallType[] memory callTypes = CALLTYPE_SINGLE.callTypes(
@@ -305,82 +302,97 @@ contract ModuleManagerTest is BaseTest {
 			CALLTYPE_STATIC
 		);
 
-		bytes32[] memory configurations = encodeFallbackSelectors(selectors, callTypes);
-
-		for (uint256 i; i < configurations.length; ++i) {
-			bytes memory additionalContext = abi.encodePacked(bytes5(configurations[i]));
-			assertFalse(MURPHY.account.isModuleInstalled(TYPE_FALLBACK, address(MOCK_FALLBACK), additionalContext));
+		for (uint256 i; i < selectors.length; ++i) {
+			assertFalse(
+				MURPHY.account.isModuleInstalled(
+					TYPE_FALLBACK,
+					address(aux.mockFallback),
+					abi.encodePacked(selectors[i])
+				)
+			);
 		}
 
-		bytes memory installData = encodeInstallModuleParams(
-			TYPE_FALLBACK.moduleTypes(),
-			abi.encode(configurations, ""),
-			abi.encodePacked(MOCK_HOOK, "")
+		MURPHY.install(
+			TYPE_FALLBACK,
+			address(aux.mockFallback),
+			encodeModuleParams(
+				abi.encode(encodeFallbackSelectors(selectors, callTypes), ""),
+				abi.encodePacked(aux.mockHook, "")
+			)
 		);
 
-		MURPHY.install(TYPE_FALLBACK, address(MOCK_FALLBACK), installData);
-
-		for (uint256 i; i < configurations.length; ++i) {
-			bytes memory additionalContext = abi.encodePacked(bytes5(configurations[i]));
-			assertTrue(MURPHY.account.isModuleInstalled(TYPE_FALLBACK, address(MOCK_FALLBACK), additionalContext));
+		for (uint256 i; i < selectors.length; ++i) {
+			assertTrue(
+				MURPHY.account.isModuleInstalled(
+					TYPE_FALLBACK,
+					address(aux.mockFallback),
+					abi.encodePacked(selectors[i])
+				)
+			);
 		}
 
-		bytes memory uninstallData = encodeUninstallModuleParams(abi.encode(selectors, ""), "");
-
-		MURPHY.uninstall(TYPE_FALLBACK, address(MOCK_FALLBACK), uninstallData);
+		MURPHY.uninstall(
+			TYPE_FALLBACK,
+			address(aux.mockFallback),
+			encodeUninstallModuleParams(abi.encode(selectors, ""), "")
+		);
 
 		for (uint256 i; i < selectors.length; ++i) {
-			bytes memory additionalContext = abi.encodePacked(selectors[i]);
-			assertFalse(MURPHY.account.isModuleInstalled(TYPE_FALLBACK, address(MOCK_FALLBACK), additionalContext));
+			assertFalse(
+				MURPHY.account.isModuleInstalled(
+					TYPE_FALLBACK,
+					address(aux.mockFallback),
+					abi.encodePacked(selectors[i])
+				)
+			);
 		}
 	}
 
 	function test_installHook() public virtual {
-		assertFalse(MURPHY.account.isModuleInstalled(TYPE_HOOK, address(MOCK_HOOK), ""));
+		assertFalse(MURPHY.account.isModuleInstalled(TYPE_HOOK, address(aux.mockHook), ""));
 
-		bytes memory installData = encodeInstallModuleParams(TYPE_HOOK.moduleTypes(), vm.randomBytes(64), "");
+		MURPHY.install(TYPE_HOOK, address(aux.mockHook), encodeModuleParams(vm.randomBytes(64), ""));
+		assertTrue(MURPHY.account.isModuleInstalled(TYPE_HOOK, address(aux.mockHook), ""));
 
-		MURPHY.install(TYPE_HOOK, address(MOCK_HOOK), installData);
-		assertTrue(MURPHY.account.isModuleInstalled(TYPE_HOOK, address(MOCK_HOOK), ""));
-
-		MURPHY.uninstall(TYPE_HOOK, address(MOCK_HOOK), "");
-		assertFalse(MURPHY.account.isModuleInstalled(TYPE_HOOK, address(MOCK_HOOK), ""));
+		MURPHY.uninstall(TYPE_HOOK, address(aux.mockHook), "");
+		assertFalse(MURPHY.account.isModuleInstalled(TYPE_HOOK, address(aux.mockHook), ""));
 	}
 
 	function test_installHooks(uint8 seed) public virtual {
 		uint256 length = bound(seed, 1, 32);
 		address[] memory hooks = new address[](length);
-		ModuleType[] memory hookTypes = TYPE_HOOK.moduleTypes();
 
 		for (uint256 i; i < length; ++i) {
-			bytes memory installData = encodeInstallModuleParams(hookTypes, vm.randomBytes(32 * (i + 1)), "");
-
-			MURPHY.install(TYPE_HOOK, (hooks[i] = address(new MockHook())), installData);
+			MURPHY.install(
+				TYPE_HOOK,
+				(hooks[i] = address(new MockHook())),
+				encodeModuleParams(vm.randomBytes(32 * (i + 1)), "")
+			);
 			assertTrue(MURPHY.account.isModuleInstalled(TYPE_HOOK, hooks[i], ""));
 		}
 
-		uint256 value = 5 ether;
-		bytes memory callData = abi.encodeWithSignature("deposit()");
-		bytes memory executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(WNATIVE.toAddress(), value, callData);
+		bytes memory executionCalldata = EXECTYPE_DEFAULT.encodeExecutionCalldata(
+			WNATIVE.toAddress(),
+			DEFAULT_VALUE,
+			abi.encodeWithSignature("deposit()")
+		);
 
 		PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
 		(userOps[0], ) = MURPHY.prepareUserOp(executionCalldata);
 
 		assertEq(WNATIVE.balanceOf(address(MURPHY.account)), 0);
-		deal(address(MURPHY.account), address(MURPHY.account).balance + value);
+		deal(address(MURPHY.account), address(MURPHY.account).balance + DEFAULT_VALUE);
 
 		BUNDLER.handleOps(userOps);
-		assertEq(WNATIVE.balanceOf(address(MURPHY.account)), value);
+		assertEq(WNATIVE.balanceOf(address(MURPHY.account)), DEFAULT_VALUE);
 	}
 
 	function test_installModule_revertsIfAlreadyInstalled() public virtual asEntryPoint {
-		ModuleType[] memory moduleTypeIds = TYPE_FALLBACK.moduleTypes();
-
-		bytes4[] memory selectors = MOCK_FALLBACK.fallbackSingle.selector.bytes4s(
-			MOCK_FALLBACK.fallbackDelegate.selector,
-			MOCK_FALLBACK.fallbackStatic.selector,
-			MOCK_FALLBACK.fallbackSuccess.selector,
-			MOCK_FALLBACK.fallbackRevert.selector
+		bytes4[] memory selectors = aux.mockFallback.fallbackSingle.selector.bytes4s(
+			aux.mockFallback.fallbackDelegate.selector,
+			aux.mockFallback.fallbackStatic.selector,
+			aux.mockFallback.fallbackSuccess.selector,
+			aux.mockFallback.fallbackRevert.selector
 		);
 
 		CallType[] memory callTypes = CALLTYPE_SINGLE.callTypes(
@@ -390,120 +402,62 @@ contract ModuleManagerTest is BaseTest {
 			CALLTYPE_STATIC
 		);
 
-		bytes32[] memory configurations = encodeFallbackSelectors(selectors, callTypes);
-
-		bytes memory installData = encodeInstallModuleParams(
-			moduleTypeIds,
-			abi.encode(configurations, ""),
-			abi.encodePacked(MOCK_HOOK, "")
+		bytes memory installData = encodeModuleParams(
+			abi.encode(encodeFallbackSelectors(selectors, callTypes), ""),
+			abi.encodePacked(aux.mockHook, "")
 		);
 
-		MURPHY.account.installModule(TYPE_FALLBACK, address(MOCK_FALLBACK), installData);
+		MURPHY.account.installModule(TYPE_FALLBACK, address(aux.mockFallback), installData);
 
-		vm.expectRevert(abi.encodeWithSelector(ModuleAlreadyInstalled.selector, MOCK_FALLBACK));
-		MURPHY.account.installModule(TYPE_FALLBACK, address(MOCK_FALLBACK), installData);
+		vm.expectRevert(abi.encodeWithSelector(ModuleAlreadyInstalled.selector, TYPE_FALLBACK, aux.mockFallback));
+		MURPHY.account.installModule(TYPE_FALLBACK, address(aux.mockFallback), installData);
 	}
 
 	function test_uninstallModule_revertsIfNotInstalled() public virtual asEntryPoint {
-		bytes4[] memory selectors = MOCK_FALLBACK.fallbackSingle.selector.bytes4s(
-			MOCK_FALLBACK.fallbackDelegate.selector,
-			MOCK_FALLBACK.fallbackStatic.selector,
-			MOCK_FALLBACK.fallbackSuccess.selector,
-			MOCK_FALLBACK.fallbackRevert.selector
+		bytes4[] memory selectors = aux.mockFallback.fallbackSingle.selector.bytes4s(
+			aux.mockFallback.fallbackDelegate.selector,
+			aux.mockFallback.fallbackStatic.selector,
+			aux.mockFallback.fallbackSuccess.selector,
+			aux.mockFallback.fallbackRevert.selector
 		);
 
-		bytes memory uninstallData = encodeUninstallModuleParams(abi.encode(selectors, ""), "");
-
-		vm.expectRevert(abi.encodeWithSelector(ModuleNotInstalled.selector, MOCK_FALLBACK));
-		MURPHY.account.uninstallModule(TYPE_FALLBACK, address(MOCK_FALLBACK), uninstallData);
+		vm.expectRevert(abi.encodeWithSelector(ModuleNotInstalled.selector, TYPE_FALLBACK, aux.mockFallback));
+		MURPHY.account.uninstallModule(
+			TYPE_FALLBACK,
+			address(aux.mockFallback),
+			encodeUninstallModuleParams(abi.encode(selectors, ""), "")
+		);
 	}
 
 	function test_installModule_revertsWithInvalidModuleTypeId() public virtual asEntryPoint {
-		vm.expectRevert(InvalidModuleType.selector);
-
 		bytes memory data = abi.encodePacked(MURPHY.eoa);
 
-		MURPHY.account.installModule(
-			TYPE_FALLBACK,
-			address(MOCK_VALIDATOR),
-			encodeInstallModuleParams(TYPE_FALLBACK.moduleTypes(), data, "")
-		);
-		assertFalse(MURPHY.account.isModuleInstalled(TYPE_FALLBACK, address(MOCK_VALIDATOR), ""));
+		vm.expectRevert(InvalidModuleType.selector);
+		MURPHY.account.installModule(TYPE_EXECUTOR, address(aux.mockValidator), encodeModuleParams(data, ""));
 
-		ModuleType invalidType = ModuleType.wrap(0x00);
+		assertFalse(MURPHY.account.isModuleInstalled(TYPE_EXECUTOR, address(aux.mockValidator), ""));
 
-		vm.expectRevert(abi.encodeWithSelector(UnsupportedModuleType.selector, invalidType));
-
-		MURPHY.account.installModule(
-			invalidType,
-			address(MOCK_VALIDATOR),
-			encodeInstallModuleParams(invalidType.moduleTypes(), data, "")
+		ModuleType[] memory moduleTypes = TYPE_MULTI.moduleTypes(
+			TYPE_POLICY,
+			TYPE_SIGNER,
+			ModuleType.wrap(0x0a),
+			ModuleType.wrap(0x0b)
 		);
 
-		invalidType = ModuleType.wrap(0x08);
-
-		vm.expectRevert(abi.encodeWithSelector(UnsupportedModuleType.selector, invalidType));
-
-		MURPHY.account.installModule(
-			invalidType,
-			address(MOCK_VALIDATOR),
-			encodeInstallModuleParams(invalidType.moduleTypes(), data, "")
-		);
-	}
-
-	function test_installFallback_revertsWithInvalidFlag() public virtual asEntryPoint {
-		ModuleType[] memory moduleTypeIds = TYPE_FALLBACK.moduleTypes();
-
-		bytes4[] memory selectors = MOCK_FALLBACK.fallbackSingle.selector.bytes4s(
-			MOCK_FALLBACK.fallbackDelegate.selector,
-			MOCK_FALLBACK.fallbackStatic.selector,
-			MOCK_FALLBACK.fallbackSuccess.selector,
-			MOCK_FALLBACK.fallbackRevert.selector
-		);
-
-		CallType[] memory callTypes = CALLTYPE_SINGLE.callTypes(
-			CALLTYPE_DELEGATE,
-			CALLTYPE_STATIC,
-			CALLTYPE_STATIC,
-			CALLTYPE_STATIC
-		);
-
-		bytes32[] memory configurations = encodeFallbackSelectors(selectors, callTypes);
-
-		vm.expectRevert(InvalidFlag.selector);
-		MURPHY.account.installModule(
-			TYPE_FALLBACK,
-			address(MOCK_FALLBACK),
-			encodeInstallModuleParams(
-				moduleTypeIds,
-				abi.encode(configurations, abi.encodePacked(bytes1(0x01))),
-				abi.encodePacked(MOCK_HOOK, "")
-			)
-		);
-
-		vm.expectRevert(InvalidFlag.selector);
-		MURPHY.account.installModule(
-			TYPE_FALLBACK,
-			address(MOCK_FALLBACK),
-			encodeInstallModuleParams(
-				moduleTypeIds,
-				abi.encode(configurations, abi.encodePacked(bytes1(0x02))),
-				abi.encodePacked(MOCK_HOOK, "")
-			)
-		);
+		for (uint256 i; i < moduleTypes.length; ++i) {
+			vm.expectRevert(abi.encodeWithSelector(UnsupportedModuleType.selector, moduleTypes[i]));
+			MURPHY.account.installModule(moduleTypes[i], address(aux.mockValidator), encodeModuleParams(data, ""));
+		}
 	}
 
 	function test_installFallback_revertsWithInvalidCallTypes() public virtual asEntryPoint {
-		ModuleType[] memory moduleTypeIds = TYPE_FALLBACK.moduleTypes();
-
-		bytes4[] memory selectors = MOCK_FALLBACK.fallbackSingle.selector.bytes4s(
-			MOCK_FALLBACK.fallbackDelegate.selector,
-			MOCK_FALLBACK.fallbackStatic.selector,
-			MOCK_FALLBACK.fallbackSuccess.selector,
-			MOCK_FALLBACK.fallbackRevert.selector
+		bytes4[] memory selectors = aux.mockFallback.fallbackSingle.selector.bytes4s(
+			aux.mockFallback.fallbackDelegate.selector,
+			aux.mockFallback.fallbackStatic.selector,
+			aux.mockFallback.fallbackSuccess.selector,
+			aux.mockFallback.fallbackRevert.selector
 		);
 
-		// call type of CALLTYPE_BATCH is not supported for fallback handlers
 		CallType[] memory callTypes = CALLTYPE_BATCH.callTypes(
 			CALLTYPE_DELEGATE,
 			CALLTYPE_STATIC,
@@ -511,24 +465,23 @@ contract ModuleManagerTest is BaseTest {
 			CALLTYPE_STATIC
 		);
 
-		bytes memory installData = encodeInstallModuleParams(
-			moduleTypeIds,
-			abi.encode(encodeFallbackSelectors(selectors, callTypes), ""),
-			abi.encodePacked(MOCK_HOOK, "")
-		);
-
 		vm.expectRevert(abi.encodeWithSelector(UnsupportedCallType.selector, CALLTYPE_BATCH));
-		MURPHY.account.installModule(TYPE_FALLBACK, address(MOCK_FALLBACK), installData);
+		MURPHY.account.installModule(
+			TYPE_FALLBACK,
+			address(aux.mockFallback),
+			encodeModuleParams(
+				abi.encode(encodeFallbackSelectors(selectors, callTypes), ""),
+				abi.encodePacked(aux.mockHook, "")
+			)
+		);
 	}
 
 	function test_installFallback_revertsWithForbiddenSelectors() public virtual asEntryPoint {
-		ModuleType[] memory moduleTypeIds = TYPE_FALLBACK.moduleTypes();
-
-		bytes4[] memory selectors = MOCK_FALLBACK.fallbackSingle.selector.bytes4s(
-			MOCK_FALLBACK.fallbackDelegate.selector,
-			MOCK_FALLBACK.fallbackStatic.selector,
-			MOCK_FALLBACK.fallbackSuccess.selector,
-			MOCK_FALLBACK.fallbackRevert.selector
+		bytes4[] memory selectors = aux.mockFallback.fallbackSingle.selector.bytes4s(
+			aux.mockFallback.fallbackDelegate.selector,
+			aux.mockFallback.fallbackStatic.selector,
+			aux.mockFallback.fallbackSuccess.selector,
+			aux.mockFallback.fallbackRevert.selector
 		);
 
 		CallType[] memory callTypes = CALLTYPE_SINGLE.callTypes(
@@ -538,32 +491,29 @@ contract ModuleManagerTest is BaseTest {
 			CALLTYPE_STATIC
 		);
 
-		bytes4[] memory forbiddenSelectors = MURPHY.account.forbiddenSelectors();
+		bytes4[] memory forbiddenSelectors = IModule.onInstall.selector.bytes4s(IModule.onUninstall.selector);
 
 		for (uint256 i; i < forbiddenSelectors.length; ++i) {
 			bytes4 selector = selectors[0] = forbiddenSelectors[i];
 
-			bytes32[] memory configurations = encodeFallbackSelectors(selectors, callTypes);
-
-			bytes memory installData = encodeInstallModuleParams(
-				moduleTypeIds,
-				abi.encode(configurations, ""),
-				abi.encodePacked(MOCK_HOOK, "")
-			);
-
 			vm.expectRevert(abi.encodeWithSelector(ForbiddenSelector.selector, selector));
-			MURPHY.account.installModule(TYPE_FALLBACK, address(MOCK_FALLBACK), installData);
+			MURPHY.account.installModule(
+				TYPE_FALLBACK,
+				address(aux.mockFallback),
+				encodeModuleParams(
+					abi.encode(encodeFallbackSelectors(selectors, callTypes), ""),
+					abi.encodePacked(aux.mockHook, "")
+				)
+			);
 		}
 	}
 
-	function test_uninstallFallback_revertsWithUnknownSelectors() public virtual asEntryPoint {
-		ModuleType[] memory moduleTypeIds = TYPE_FALLBACK.moduleTypes();
-
-		bytes4[] memory selectors = MOCK_FALLBACK.fallbackSingle.selector.bytes4s(
-			MOCK_FALLBACK.fallbackDelegate.selector,
-			MOCK_FALLBACK.fallbackStatic.selector,
-			MOCK_FALLBACK.fallbackSuccess.selector,
-			MOCK_FALLBACK.fallbackRevert.selector
+	function test_uninstallFallback_revertsWithUnknownSelectors() internal virtual asEntryPoint {
+		bytes4[] memory selectors = aux.mockFallback.fallbackSingle.selector.bytes4s(
+			aux.mockFallback.fallbackDelegate.selector,
+			aux.mockFallback.fallbackStatic.selector,
+			aux.mockFallback.fallbackSuccess.selector,
+			aux.mockFallback.fallbackRevert.selector
 		);
 
 		CallType[] memory callTypes = CALLTYPE_SINGLE.callTypes(
@@ -573,25 +523,31 @@ contract ModuleManagerTest is BaseTest {
 			CALLTYPE_STATIC
 		);
 
-		bytes32[] memory configurations = encodeFallbackSelectors(selectors, callTypes);
-
-		bytes memory installData = encodeInstallModuleParams(
-			moduleTypeIds,
-			abi.encode(configurations, ""),
-			abi.encodePacked(MOCK_HOOK, "")
+		MURPHY.account.installModule(
+			TYPE_FALLBACK,
+			address(aux.mockFallback),
+			encodeModuleParams(
+				abi.encode(encodeFallbackSelectors(selectors, callTypes), ""),
+				abi.encodePacked(aux.mockHook, "")
+			)
 		);
 
-		MURPHY.account.installModule(TYPE_FALLBACK, address(MOCK_FALLBACK), installData);
-
-		for (uint256 i; i < configurations.length; ++i) {
-			bytes memory additionalContext = abi.encodePacked(bytes5(configurations[i]));
-			assertTrue(MURPHY.account.isModuleInstalled(TYPE_FALLBACK, address(MOCK_FALLBACK), additionalContext));
+		for (uint256 i; i < selectors.length; ++i) {
+			assertTrue(
+				MURPHY.account.isModuleInstalled(
+					TYPE_FALLBACK,
+					address(aux.mockFallback),
+					abi.encodePacked(selectors[i])
+				)
+			);
 		}
 
-		bytes memory uninstallData = encodeUninstallModuleParams(abi.encode(bytes4(0xdeadbeef).bytes4s(), ""), "");
-
 		vm.expectRevert(abi.encodeWithSelector(UnknownSelector.selector, bytes4(0xdeadbeef)));
-		MURPHY.account.uninstallModule(TYPE_FALLBACK, address(MOCK_FALLBACK), uninstallData);
+		MURPHY.account.uninstallModule(
+			TYPE_FALLBACK,
+			address(aux.mockFallback),
+			encodeUninstallModuleParams(abi.encode(bytes4(0xdeadbeef).bytes4s(), ""), "")
+		);
 	}
 
 	function prepareEnable(
@@ -610,24 +566,19 @@ contract ModuleManagerTest is BaseTest {
 			abi.encode(ENABLE_MODULE_TYPEHASH, moduleTypeId, module, keccak256(initData), userOpHash)
 		);
 
-		bytes32 enableModuleHash;
 		bytes memory enableSignature;
 
 		if (useERC7739) {
-			enableModuleHash = MURPHY.account.hashTypedData(
+			bytes32 typehash = keccak256(
+				abi.encodePacked(
+					"TypedDataSign(EnableModule contents,string name,string version,uint256 chainId,address verifyingContract,bytes32 salt)",
+					ENABLE_MODULE_NOTATION
+				)
+			);
+
+			bytes32 enableModuleHash = MURPHY.account.hashTypedData(
 				keccak256(
-					abi.encodePacked(
-						abi.encode(
-							keccak256(
-								abi.encodePacked(
-									"TypedDataSign(EnableModule contents,string name,string version,uint256 chainId,address verifyingContract,bytes32 salt)",
-									ENABLE_MODULE_NOTATION
-								)
-							),
-							structHash
-						),
-						getAccountDomainStructFields(MURPHY.account)
-					)
+					abi.encodePacked(abi.encode(typehash, structHash), getAccountDomainStructFields(MURPHY.account))
 				)
 			);
 
@@ -643,11 +594,9 @@ contract ModuleManagerTest is BaseTest {
 				contentsLength
 			);
 		} else {
-			enableModuleHash = MURPHY.account.hashTypedData(structHash);
-
 			enableSignature = abi.encodePacked(
 				enableValidator,
-				(useValidSignature ? MURPHY : COOPER).sign(enableModuleHash)
+				(useValidSignature ? MURPHY : COOPER).sign(MURPHY.account.hashTypedData(structHash))
 			);
 		}
 

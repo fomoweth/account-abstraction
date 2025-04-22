@@ -9,50 +9,67 @@
 Create `.env` file with the following content:
 
 ```text
-# using Alchemy
+# EOA
 
-ALCHEMY_API_KEY=YOUR_ALCHEMY_API_KEY
-RPC_ETHEREUM="https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}"
-RPC_OPTIMISM="https://opt-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}"
-RPC_POLYGON="https://polygon-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}"
-RPC_BASE="https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}"
-RPC_ARBITRUM="https://arb-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}"
+MNEMONIC=YOUR_MNEMONIC
+PRIVATE_KEY=YOUR_PRIVATE_KEY
+EOA_INDEX=0 # Optional (Default to 0)
 
-# using Infura
+# Using Alchemy
 
-INFURA_API_KEY=YOUR_INFURA_API_KEY
-RPC_ETHEREUM="https://mainnet.infura.io/v3/${INFURA_API_KEY}"
-RPC_OPTIMISM="https://optimism-mainnet.infura.io/v3/${INFURA_API_KEY}"
-RPC_POLYGON="https://polygon-mainnet.infura.io/v3/${INFURA_API_KEY}"
-RPC_BASE="https://base-mainnet.infura.io/v3/${INFURA_API_KEY}"
-RPC_ARBITRUM="https://arbitrum-mainnet.infura.io/v3/${INFURA_API_KEY}"
+RPC_API_KEY="YOUR_ALCHEMY_API_KEY"
+ETHEREUM_RPC_URL="https://eth-mainnet.g.alchemy.com/v2/${RPC_API_KEY}"
+OPTIMISM_RPC_URL="https://opt-mainnet.g.alchemy.com/v2/${RPC_API_KEY}"
+POLYGON_RPC_URL="https://polygon-mainnet.g.alchemy.com/v2/${RPC_API_KEY}"
+BASE_RPC_URL="https://base-mainnet.g.alchemy.com/v2/${RPC_API_KEY}"
+ARBITRUM_RPC_URL="https://arb-mainnet.g.alchemy.com/v2/${RPC_API_KEY}"
 
-# etherscan
+# Using Infura
 
-ETHERSCAN_API_KEY_ETHEREUM=YOUR_ETHERSCAN_API_KEY_ETHEREUM
+RPC_API_KEY="YOUR_INFURA_API_KEY"
+ETHEREUM_RPC_URL="https://mainnet.infura.io/v3/${RPC_API_KEY}"
+OPTIMISM_RPC_URL="https://optimism-mainnet.infura.io/v3/${RPC_API_KEY}"
+POLYGON_RPC_URL="https://polygon-mainnet.infura.io/v3/${RPC_API_KEY}"
+BASE_RPC_URL="https://base-mainnet.infura.io/v3/${RPC_API_KEY}"
+ARBITRUM_RPC_URL="https://arbitrum-mainnet.infura.io/v3/${RPC_API_KEY}"
+
+# Etherscan
+
+ETHERSCAN_API_KEY_ETHEREUM="YOUR_ETHERSCAN_API_KEY"
 ETHERSCAN_URL_ETHEREUM="https://api.etherscan.io/api"
+ETHERSCAN_URL_SEPOLIA="https://api-sepolia.etherscan.io/api"
 
-ETHERSCAN_API_KEY_OPTIMISM=YOUR_ETHERSCAN_API_KEY_OPTIMISM
+ETHERSCAN_API_KEY_OPTIMISM="YOUR_OPTIMISTIC_ETHERSCAN_API_KEY"
 ETHERSCAN_URL_OPTIMISM="https://api-optimistic.etherscan.io/api"
+ETHERSCAN_URL_OPTIMISM_SEPOLIA="https://api-sepolia-optimistic.etherscan.io/api"
 
-ETHERSCAN_API_KEY_POLYGON=YOUR_ETHERSCAN_API_KEY_POLYGON
+ETHERSCAN_API_KEY_POLYGON="YOUR_POLYGONSCAN_API_KEY"
 ETHERSCAN_URL_POLYGON="https://api.polygonscan.com/api"
+ETHERSCAN_URL_POLYGON_AMOY="https://api-amoy.polygonscan.com/api"
 
-ETHERSCAN_API_KEY_BASE=YOUR_ETHERSCAN_API_KEY_BASE
+ETHERSCAN_API_KEY_BASE="YOUR_BASESCAN_API_KEY"
 ETHERSCAN_URL_BASE="https://api.basescan.org/api"
+ETHERSCAN_URL_BASE_SEPOLIA="https://api-sepolia.basescan.org/api"
 
-ETHERSCAN_API_KEY_ARBITRUM=YOUR_ETHERSCAN_API_KEY_ARBITRUM
+ETHERSCAN_API_KEY_ARBITRUM="YOUR_ARBISCAN_API_KEY"
 ETHERSCAN_URL_ARBITRUM="https://api.arbiscan.io/api"
+ETHERSCAN_URL_ARBITRUM_SEPOLIA="https://api-sepolia.arbiscan.io/api"
 ```
 
 ### Build
 
 ```shell
-$ forge build
+$ forge build --sizes
 ```
 
 ### Test
 
 ```shell
-$ forge test
+$ forge test --chain <CHAIN-ID>
+```
+
+### Deploy
+
+```shell
+$ forge script script/DeployAll.s.sol -vv --broadcast --verify --rpc-url <CHAIN-ID || CHAIN-NAME>
 ```

@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {MODULE_TYPE_VALIDATOR, MODULE_TYPE_EXECUTOR, MODULE_TYPE_FALLBACK, MODULE_TYPE_HOOK, MODULE_TYPE_POLICY, MODULE_TYPE_SIGNER, MODULE_TYPE_STATELESS_VALIDATOR} from "./Constants.sol";
-
 type ModuleType is uint256;
 
 type PackedModuleTypes is uint32;
@@ -39,8 +37,9 @@ function neqPackedModuleTypes(PackedModuleTypes x, PackedModuleTypes y) pure ret
 
 /// @title ModuleTypeLib
 /// @notice Provides functions for handling module type and packed module types
-
 library ModuleTypeLib {
+	error InvalidModuleType();
+
 	function isType(PackedModuleTypes packedTypes, ModuleType moduleType) internal pure returns (bool result) {
 		assembly ("memory-safe") {
 			result := and(packedTypes, shl(moduleType, 0x01))
@@ -49,7 +48,6 @@ library ModuleTypeLib {
 
 	function numberOfTypes(PackedModuleTypes packedTypes) internal pure returns (uint256 count) {
 		assembly ("memory-safe") {
-			// prettier-ignore
 			for { let moduleType } lt(moduleType, 0x20) { moduleType := add(moduleType, 0x01) } {
 				if and(packedTypes, shl(moduleType, 0x01)) {
 					count := add(count, 0x01)
@@ -61,10 +59,10 @@ library ModuleTypeLib {
 	function decode(PackedModuleTypes packedTypes) internal pure returns (ModuleType[] memory moduleTypes) {
 		assembly ("memory-safe") {
 			moduleTypes := mload(0x40)
+
 			let offset := add(moduleTypes, 0x20)
 			let length
 
-			// prettier-ignore
 			for { let moduleType } lt(moduleType, 0x20) { moduleType := add(moduleType, 0x01) } {
 				if and(packedTypes, shl(moduleType, 0x01)) {
 					mstore(add(offset, shl(0x05, length)), moduleType)
@@ -82,9 +80,9 @@ library ModuleTypeLib {
 			let offset := add(moduleTypes, 0x20)
 			let guard := add(offset, shl(0x05, mload(moduleTypes)))
 
-			// prettier-ignore
 			for { } 0x01 { } {
 				let moduleType := mload(offset)
+
 				if or(gt(moduleType, 0x1f), and(packedTypes, shl(moduleType, 0x01))) {
 					mstore(0x00, 0x2125deae) // InvalidModuleType()
 					revert(0x1c, 0x04)
@@ -92,6 +90,7 @@ library ModuleTypeLib {
 
 				packedTypes := or(packedTypes, shl(moduleType, 0x01))
 				offset := add(offset, 0x20)
+
 				if iszero(lt(offset, guard)) { break }
 			}
 		}

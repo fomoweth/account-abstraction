@@ -2,40 +2,48 @@
 pragma solidity ^0.8.28;
 
 import {IRegistryFactory} from "src/interfaces/factories/IRegistryFactory.sol";
+import {IERC7484} from "src/interfaces/registries/IERC7484.sol";
 import {IBootstrap, BootstrapConfig} from "src/interfaces/IBootstrap.sol";
 import {IVortex} from "src/interfaces/IVortex.sol";
 import {Arrays} from "src/libraries/Arrays.sol";
-import {ModuleType, MODULE_TYPE_VALIDATOR, MODULE_TYPE_EXECUTOR, MODULE_TYPE_FALLBACK, MODULE_TYPE_HOOK} from "src/types/ModuleType.sol";
-import {Ownable} from "src/utils/Ownable.sol";
+import {ModuleType} from "src/types/ModuleType.sol";
 import {IAccountFactory, AccountFactory} from "./AccountFactory.sol";
 
 /// @title RegistryFactory
-
-contract RegistryFactory is IRegistryFactory, AccountFactory, Ownable {
+/// @notice Manages smart account creation compliant with ERC-4337 and ERC-7579 with authorized ERC-7579 modules
+contract RegistryFactory is IRegistryFactory, AccountFactory {
 	using Arrays for address[];
 
-	/// @dev keccak256("AttestersConfigured(uint256,uint8)")
-	bytes32 private constant ATTESTERS_CONFIGURED_TOPIC =
-		0xc14f893b670961f12951ae84c405bc2e99f77d9000a2ae42a34adfa0dbd429b5;
+	struct AttestationStorage {
+		uint8 threshold;
+		address[] attesters;
+	}
 
-	/// @dev keccak256(abi.encode(uint256(keccak256("eip7579.factory.attesters")) - 1)) & ~bytes32(uint256(0xff))
-	bytes32 private constant ATTESTERS_STORAGE_SLOT =
-		0x591d670101e679b166bb53529c21081533156f5a77b025e5e95f23dd51cbd500;
+	/// @dev keccak256(abi.encode(uint256(keccak256("eip7579.factory.storage.attestations")) - 1)) & ~bytes32(uint256(0xff))
+	bytes32 private constant STORAGE_NAMESPACE = 0xb3465a40b5a117167923395735af80fbe5f232a4e9b1a720b24f97436b58b800;
 
-	/// @dev keccak256(abi.encode(uint256(keccak256("eip7579.factory.threshold")) - 1)) & ~bytes32(uint256(0xff))
-	bytes32 private constant THRESHOLD_STORAGE_SLOT =
-		0xbd0973d179e1f52a52f8122a9dbb94f0219248b29ce16d6f17a987d4a467a200;
+	ModuleType private constant MODULE_TYPE_VALIDATOR = ModuleType.wrap(0x01);
+	ModuleType private constant MODULE_TYPE_EXECUTOR = ModuleType.wrap(0x02);
+	ModuleType private constant MODULE_TYPE_FALLBACK = ModuleType.wrap(0x03);
+	ModuleType private constant MODULE_TYPE_HOOK = ModuleType.wrap(0x04);
+	ModuleType private constant MODULE_TYPE_PREVALIDATION_HOOK_ERC1271 = ModuleType.wrap(0x08);
+	ModuleType private constant MODULE_TYPE_PREVALIDATION_HOOK_ERC4337 = ModuleType.wrap(0x09);
 
-	address public immutable BOOTSTRAP;
+	uint256 private constant MAX_ATTESTERS = 32;
+	uint256 private constant MAX_THRESHOLD = (1 << 8) - 1;
 
-	address public immutable REGISTRY;
+	/// @notice The Vortex Bootstrap contract
+	IBootstrap public immutable BOOTSTRAP;
+
+	/// @notice The ERC-7484 registry contract
+	IERC7484 public immutable REGISTRY;
 
 	constructor(
 		address implementation,
 		address bootstrap,
 		address registry,
 		address initialOwner
-	) AccountFactory(implementation) {
+	) AccountFactory(implementation, initialOwner) {
 		assembly ("memory-safe") {
 			bootstrap := shr(0x60, shl(0x60, bootstrap))
 			if iszero(bootstrap) {
@@ -50,11 +58,11 @@ contract RegistryFactory is IRegistryFactory, AccountFactory, Ownable {
 			}
 		}
 
-		BOOTSTRAP = bootstrap;
-		REGISTRY = registry;
-		_initializeOwner(initialOwner);
+		BOOTSTRAP = IBootstrap(bootstrap);
+		REGISTRY = IERC7484(registry);
 	}
 
+	/// @inheritdoc IAccountFactory
 	function createAccount(
 		bytes32 salt,
 		bytes calldata params
@@ -64,12 +72,13 @@ contract RegistryFactory is IRegistryFactory, AccountFactory, Ownable {
 		BootstrapConfig[] calldata executors;
 		BootstrapConfig[] calldata fallbacks;
 		BootstrapConfig[] calldata hooks;
+		BootstrapConfig calldata preValidationHook1271;
+		BootstrapConfig calldata preValidationHook4337;
 
 		assembly ("memory-safe") {
-			let ptr := add(params.offset, calldataload(params.offset))
-			rootValidator := ptr
+			rootValidator := add(params.offset, calldataload(params.offset))
 
-			ptr := add(params.offset, calldataload(add(params.offset, 0x20)))
+			let ptr := add(params.offset, calldataload(add(params.offset, 0x20)))
 			validators.offset := add(ptr, 0x20)
 			validators.length := calldataload(ptr)
 
@@ -84,241 +93,218 @@ contract RegistryFactory is IRegistryFactory, AccountFactory, Ownable {
 			ptr := add(params.offset, calldataload(add(params.offset, 0x80)))
 			hooks.offset := add(ptr, 0x20)
 			hooks.length := calldataload(ptr)
+
+			preValidationHook1271 := add(params.offset, calldataload(add(params.offset, 0xa0)))
+			preValidationHook4337 := add(params.offset, calldataload(add(params.offset, 0xc0)))
 		}
 
-		return createAccount(salt, rootValidator, validators, executors, fallbacks, hooks);
+		account = createAccount(
+			salt,
+			rootValidator,
+			validators,
+			executors,
+			fallbacks,
+			hooks,
+			preValidationHook1271,
+			preValidationHook4337
+		);
 	}
 
+	/// @inheritdoc IRegistryFactory
 	function createAccount(
 		bytes32 salt,
 		BootstrapConfig calldata rootValidator,
 		BootstrapConfig[] calldata validators,
 		BootstrapConfig[] calldata executors,
 		BootstrapConfig[] calldata fallbacks,
-		BootstrapConfig[] calldata hooks
+		BootstrapConfig[] calldata hooks,
+		BootstrapConfig calldata preValidationHook1271,
+		BootstrapConfig calldata preValidationHook4337
 	) public payable virtual returns (address payable account) {
-		address[] memory attesters = getAttesters();
-		uint8 threshold = getThreshold();
+		AttestationStorage storage $ = _getAttestationStorage();
+		_validateThreshold($.threshold, $.attesters.length);
 
-		_checkRegistry(REGISTRY, MODULE_TYPE_VALIDATOR, rootValidator.module, threshold, attesters);
+		REGISTRY.check(rootValidator.module, MODULE_TYPE_VALIDATOR, $.attesters, $.threshold);
 
-		uint256 length = validators.length;
-		for (uint256 i; i < length; ) {
-			_checkRegistry(REGISTRY, MODULE_TYPE_VALIDATOR, validators[i].module, threshold, attesters);
+		_checkBootstrapConfigs(validators, MODULE_TYPE_VALIDATOR, $.attesters, $.threshold);
+		_checkBootstrapConfigs(executors, MODULE_TYPE_EXECUTOR, $.attesters, $.threshold);
+		_checkBootstrapConfigs(fallbacks, MODULE_TYPE_FALLBACK, $.attesters, $.threshold);
+		_checkBootstrapConfigs(hooks, MODULE_TYPE_HOOK, $.attesters, $.threshold);
 
-			unchecked {
-				i = i + 1;
-			}
+		if (preValidationHook1271.module != address(0)) {
+			REGISTRY.check(
+				preValidationHook1271.module,
+				MODULE_TYPE_PREVALIDATION_HOOK_ERC1271,
+				$.attesters,
+				$.threshold
+			);
 		}
 
-		length = executors.length;
-		for (uint256 i; i < length; ) {
-			_checkRegistry(REGISTRY, MODULE_TYPE_EXECUTOR, executors[i].module, threshold, attesters);
-
-			unchecked {
-				i = i + 1;
-			}
+		if (preValidationHook4337.module != address(0)) {
+			REGISTRY.check(
+				preValidationHook4337.module,
+				MODULE_TYPE_PREVALIDATION_HOOK_ERC4337,
+				$.attesters,
+				$.threshold
+			);
 		}
 
-		length = fallbacks.length;
-		for (uint256 i; i < length; ) {
-			_checkRegistry(REGISTRY, MODULE_TYPE_FALLBACK, fallbacks[i].module, threshold, attesters);
-
-			unchecked {
-				i = i + 1;
-			}
-		}
-
-		length = hooks.length;
-		for (uint256 i; i < length; ) {
-			_checkRegistry(REGISTRY, MODULE_TYPE_HOOK, hooks[i].module, threshold, attesters);
-
-			unchecked {
-				i = i + 1;
-			}
-		}
-
-		bytes memory initializer = IBootstrap(BOOTSTRAP).getInitializeCalldata(
-			rootValidator,
-			validators,
-			executors,
-			fallbacks,
-			hooks,
-			REGISTRY,
-			attesters,
-			threshold
+		bytes memory params = abi.encodeCall(
+			IVortex.initializeAccount,
+			(
+				BOOTSTRAP.getInitializeCalldata(
+					rootValidator,
+					validators,
+					executors,
+					fallbacks,
+					hooks,
+					preValidationHook1271,
+					preValidationHook4337,
+					address(REGISTRY),
+					$.attesters,
+					$.threshold
+				)
+			)
 		);
 
-		return _createAccount(ACCOUNT_IMPLEMENTATION, salt, abi.encodeCall(IVortex.initializeAccount, (initializer)));
+		return _createAccount(ACCOUNT_IMPLEMENTATION, salt, params);
 	}
 
-	function configureAttesters(address[] calldata attesters, uint8 threshold) external payable onlyOwner {
-		_configureAttesters(REGISTRY, attesters, threshold);
+	/// @inheritdoc IRegistryFactory
+	function configure(address[] calldata attesters, uint8 threshold) external payable onlyOwner {
+		uint256 attestersLength = attesters.length;
+		require(attestersLength <= MAX_ATTESTERS, ExceededMaxAttesters());
+
+		attesters.insertionSort();
+		attesters.uniquifySorted();
+
+		_validateAttesters(attesters, attestersLength);
+		_validateThreshold(threshold, attestersLength);
+
+		AttestationStorage storage $ = _getAttestationStorage();
+		$.attesters = attesters;
+		$.threshold = threshold;
 	}
 
-	function _configureAttesters(address registry, address[] calldata attesters, uint8 threshold) internal virtual {
+	/// @inheritdoc IRegistryFactory
+	function authorize(address attester) external payable onlyOwner {
+		require(attester != address(0), InvalidAttester());
+
+		AttestationStorage storage $ = _getAttestationStorage();
+
+		address[] memory attesters = $.attesters.copy();
+		require(!attesters.inSorted(attester), AttesterAlreadyExists(attester));
+
+		uint256 attestersLength = attesters.length + 1;
+		require(attestersLength <= MAX_ATTESTERS, ExceededMaxAttesters());
+
+		$.attesters.push(attester);
+		attesters = $.attesters.copy();
+
+		attesters.insertionSort();
+		attesters.uniquifySorted();
+
+		_validateAttesters(attesters, attestersLength);
+		_validateThreshold($.threshold, attestersLength);
+
+		$.attesters = attesters;
+	}
+
+	/// @inheritdoc IRegistryFactory
+	function revoke(address attester) external payable onlyOwner {
+		require(attester != address(0), InvalidAttester());
+
+		AttestationStorage storage $ = _getAttestationStorage();
+
+		address[] memory attesters = $.attesters.copy();
+		(bool exists, uint256 index) = attesters.searchSorted(attester);
+		require(exists, AttesterNotExists(attester));
+
+		uint256 attestersLength = attesters.length - 1;
+		attesters[index] = attesters[attestersLength];
+
 		assembly ("memory-safe") {
-			if or(iszero(threshold), gt(threshold, attesters.length)) {
-				mstore(0x00, 0xaabd5a09) // InvalidThreshold()
-				revert(0x1c, 0x04)
-			}
-
-			// construct the call data
-			let ptr := mload(0x40)
-
-			mstore(ptr, 0xf05c04e100000000000000000000000000000000000000000000000000000000) // trustAttesters(uint8,address[])
-			mstore(add(ptr, 0x04), and(threshold, 0xff))
-			mstore(add(ptr, 0x24), 0x40)
-			mstore(add(ptr, 0x44), attesters.length)
-			calldatacopy(add(ptr, 0x64), attesters.offset, shl(0x05, attesters.length))
-
-			if iszero(call(gas(), registry, 0x00, ptr, add(shl(0x05, attesters.length), 0x64), 0x00, 0x00)) {
-				returndatacopy(ptr, 0x00, returndatasize())
-				revert(ptr, returndatasize())
-			}
-
-			// store the threshold
-			sstore(THRESHOLD_STORAGE_SLOT, and(threshold, 0xff))
-
-			// store the length of attesters array
-			sstore(ATTESTERS_STORAGE_SLOT, attesters.length)
-
-			// compute the location of attesters array storage slot
-			mstore(0x00, ATTESTERS_STORAGE_SLOT)
-			let slot := keccak256(0x00, 0x20)
-
-			// attesters and threshold are validated by the registry at this point; therefore, we could skip the validation
-			// prettier-ignore
-			for { let i } lt(i, attesters.length) { i := add(i, 0x01) } {
-				// store the attester at current index
-				sstore(add(slot, i), calldataload(add(attesters.offset, shl(0x05, i))))
-			}
-
-			log3(0x00, 0x00, ATTESTERS_CONFIGURED_TOPIC, attesters.length, threshold)
+			mstore(attesters, attestersLength)
 		}
+
+		attesters.insertionSort();
+		attesters.uniquifySorted();
+
+		_validateAttesters(attesters, attestersLength);
+		_validateThreshold($.threshold, attestersLength);
+
+		$.attesters = attesters;
 	}
 
-	function _initializeAttesters(address registry, address[] memory attesters, uint8 threshold) internal virtual {
-		assembly ("memory-safe") {
-			let length := mload(attesters)
-			let offset := add(attesters, 0x20)
-
-			if or(iszero(threshold), gt(threshold, length)) {
-				mstore(0x00, 0xaabd5a09) // InvalidThreshold()
-				revert(0x1c, 0x04)
-			}
-
-			if iszero(mload(offset)) {
-				mstore(0x00, 0xb8daf542) // InvalidAttester()
-				revert(0x1c, 0x04)
-			}
-
-			// store the threshold
-			sstore(THRESHOLD_STORAGE_SLOT, and(threshold, 0xff))
-
-			// store the length of attesters array
-			sstore(ATTESTERS_STORAGE_SLOT, length)
-
-			// compute the location of attesters array storage slot
-			mstore(0x00, ATTESTERS_STORAGE_SLOT)
-			let slot := keccak256(0x00, 0x20)
-
-			// construct the call data
-			let ptr := mload(0x40)
-
-			mstore(ptr, 0xf05c04e100000000000000000000000000000000000000000000000000000000) // trustAttesters(uint8,address[])
-			mstore(add(ptr, 0x04), and(threshold, 0xff))
-			mstore(add(ptr, 0x24), 0x40)
-			mstore(add(ptr, 0x44), length)
-
-			// prettier-ignore
-			for { let i } lt(i, length) { i := add(i, 0x01) } {
-				let attester := mload(offset)
-				offset := add(offset, 0x20)
-				let attesterNext := mload(offset)
-
-				// validate that the attesters are sorted
-				if iszero(lt(attester, attesterNext)) {
-					mstore(0x00, 0x8e378be0) // AttestersNotSorted()
-					revert(0x1c, 0x04)
-				}
-
-				// store the attester at current index
-				sstore(add(slot, i), attester)
-				mstore(add(add(ptr, 0x64), shl(0x05, i)), attester)
-			}
-
-			if iszero(call(gas(), registry, 0x00, ptr, add(shl(0x05, length), 0x64), 0x00, 0x00)) {
-				returndatacopy(ptr, 0x00, returndatasize())
-				revert(ptr, returndatasize())
-			}
-
-			log3(0x00, 0x00, ATTESTERS_CONFIGURED_TOPIC, length, threshold)
-		}
+	/// @inheritdoc IRegistryFactory
+	function setThreshold(uint8 threshold) external payable onlyOwner {
+		AttestationStorage storage $ = _getAttestationStorage();
+		_validateThreshold(threshold, $.attesters.length);
+		$.threshold = threshold;
 	}
 
-	function getThreshold() public view virtual returns (uint8 threshold) {
-		assembly ("memory-safe") {
-			threshold := sload(THRESHOLD_STORAGE_SLOT)
-		}
+	/// @inheritdoc IRegistryFactory
+	function isAuthorized(address attester) external view returns (bool) {
+		return _getAttestationStorage().attesters.inSorted(attester);
 	}
 
-	function getAttesters() public view virtual returns (address[] memory attesters) {
-		assembly ("memory-safe") {
-			attesters := mload(0x40)
-
-			let length := sload(ATTESTERS_STORAGE_SLOT)
-			let offset := add(attesters, 0x20)
-
-			mstore(attesters, length)
-			mstore(0x40, add(offset, shl(0x05, length)))
-
-			mstore(0x00, ATTESTERS_STORAGE_SLOT)
-			let slot := keccak256(0x00, 0x20)
-
-			// prettier-ignore
-			for { let i } lt(i, length) { i := add(i, 0x01) } {
-				mstore(add(offset, shl(0x05, i)), sload(add(slot, i)))
-			}
-		}
+	/// @inheritdoc IRegistryFactory
+	function getTrustedAttesters() external view returns (address[] memory attesters) {
+		return _getAttestationStorage().attesters;
 	}
 
-	function isAuthorized(address attester) public view virtual returns (bool result) {
-		return getAttesters().inSorted(attester);
+	/// @inheritdoc IRegistryFactory
+	function getThreshold() external view returns (uint8) {
+		return _getAttestationStorage().threshold;
 	}
 
-	function _checkRegistry(
-		address registry,
+	/// @inheritdoc IAccountFactory
+	function name() public pure virtual override(IAccountFactory, AccountFactory) returns (string memory) {
+		return "RegistryFactory";
+	}
+
+	/// @inheritdoc IAccountFactory
+	function version() public pure virtual override(IAccountFactory, AccountFactory) returns (string memory) {
+		return "1.0.0";
+	}
+
+	function _checkBootstrapConfigs(
+		BootstrapConfig[] calldata configs,
 		ModuleType moduleTypeId,
-		address module,
-		uint8 threshold,
-		address[] memory attesters
+		address[] memory attesters,
+		uint256 threshold
 	) internal view virtual {
+		uint256 length = configs.length;
+		for (uint256 i; i < length; ) {
+			REGISTRY.check(configs[i].module, moduleTypeId, attesters, threshold);
+
+			unchecked {
+				i = i + 1;
+			}
+		}
+	}
+
+	function _validateAttestations(
+		address[] memory attesters,
+		uint256 attestersLength,
+		uint8 threshold
+	) internal pure virtual {
+		require(attestersLength <= MAX_ATTESTERS, ExceededMaxAttesters());
+		_validateAttesters(attesters, attestersLength);
+		_validateThreshold(threshold, attestersLength);
+	}
+
+	function _validateAttesters(address[] memory attesters, uint256 attestersLength) internal pure virtual {
+		require(attestersLength == attesters.length && attesters[0] != address(0), InvalidTrustedAttesters());
+	}
+
+	function _validateThreshold(uint8 threshold, uint256 attestersLength) internal pure virtual {
+		require(threshold != 0 && threshold <= attestersLength, InvalidThreshold());
+	}
+
+	function _getAttestationStorage() internal pure virtual returns (AttestationStorage storage $) {
 		assembly ("memory-safe") {
-			let length := mload(attesters)
-			let offset := add(attesters, 0x20)
-			let ptr := mload(0x40)
-
-			mstore(ptr, 0x2ed9446700000000000000000000000000000000000000000000000000000000) // check(address,uint256,address[],uint256)
-			mstore(add(ptr, 0x04), shr(0x60, shl(0x60, module)))
-			mstore(add(ptr, 0x24), moduleTypeId)
-			mstore(add(ptr, 0x44), 0x80)
-			mstore(add(ptr, 0x64), and(threshold, 0xff))
-			mstore(add(ptr, 0x84), length)
-
-			// prettier-ignore
-			for { let i } lt(i, length) { i := add(i, 0x01) } {
-				mstore(add(add(ptr, 0xa4), shl(0x05, i)), mload(add(offset, shl(0x05, i))))
-			}
-
-			mstore(0x40, and(add(add(add(ptr, 0xa4), shl(0x05, length)), 0x1f), not(0x1f)))
-
-			if iszero(staticcall(gas(), registry, ptr, add(shl(0x05, length), 0xa4), 0x00, 0x00)) {
-				mstore(0x00, 0xdcd833b4) // ModuleNotAuthorized(address,uint256)
-				mstore(0x20, shr(0x60, shl(0x60, module)))
-				mstore(0x40, moduleTypeId)
-				revert(0x1c, 0x44)
-			}
+			$.slot := STORAGE_NAMESPACE
 		}
 	}
 }

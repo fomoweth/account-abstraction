@@ -1,0 +1,4 @@
+foundry.toml
+out
+lib/
+cache/
