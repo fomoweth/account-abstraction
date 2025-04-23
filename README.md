@@ -57,6 +57,10 @@ Modules responsible for extending the fallback functionality of a smart account.
 
 - [STETHWrapperFallback](https://github.com/fomoweth/account-abstraction/blob/main/src/modules/fallbacks/STETHWrapperFallback.sol)
 
+## Deployment
+
+You can checkout the deployment information from [here](https://github.com/fomoweth/account-abstraction/blob/main/deployments/index.md)
+
 ## Usage
 
 Create `.env` file with the following variables:
@@ -122,12 +126,6 @@ forge test --chain <CHAIN-ID>
 ```shell
 forge script script/Deploy.s.sol --sig 'run()' --broadcast --verify --rpc-url <CHAIN-ID>
 ```
-
-## Deployments
-
-- [Sepolia](https://github.com/fomoweth/account-abstraction/blob/main/deployments/11155111.md)
-- [Base Sepolia](https://github.com/fomoweth/account-abstraction/blob/main/deployments/84532.md)
-- [Arbitrum Sepolia](https://github.com/fomoweth/account-abstraction/blob/main/deployments/421614.md)
 
 ## Reference
 

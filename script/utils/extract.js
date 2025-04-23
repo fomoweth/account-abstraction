@@ -1,5 +1,5 @@
 const { execSync } = require("child_process");
-const { readFileSync, existsSync, mkdirSync, writeFileSync } = require("fs");
+const { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } = require("fs");
 const { dirname, join } = require("path");
 
 /**
@@ -53,21 +53,6 @@ async function generateJson(scriptName, chainId, rpcUrl, force, skip) {
 	prepareArtifacts();
 
 	// ========== UPDATE LATEST ==========
-
-	const isDuplicate = (name, address, hash) => {
-		for (const history of output.history) {
-			if (history.contracts.hasOwnProperty(name)) {
-				const historyContract = history.contracts[name];
-				if (historyContract.address === address && historyContract.hash === hash) {
-					return true;
-				}
-			}
-		}
-
-		return false;
-	};
-
-	const isTransparentUpgradeableProxy = (proxyType) => proxyType === "TransparentUpgradeableProxy";
 
 	// filter CREATE transactions
 	const createTransactions = transactions.reduce((acc, tx) => {
@@ -128,7 +113,7 @@ async function generateJson(scriptName, chainId, rpcUrl, force, skip) {
 				}
 
 				// CASE: contract already processed
-				if (!!isDuplicate(contractName, contractAddress, hash)) {
+				if (!!isDuplicate(output, contractName, contractAddress, hash)) {
 					console.warn(`\nSkipping duplicate contract: ${contractName}(${contractAddress})\n`);
 					return acc;
 				}
@@ -266,43 +251,64 @@ async function generateJson(scriptName, chainId, rpcUrl, force, skip) {
 	return output;
 }
 
-function generateMarkdown(chainId, input) {
+function generateMarkdown(chainId, json) {
 	const projectUrl = getProjectUrl();
 
-	let output = `# ${getChainName(chainId)} Deployment\n\n`;
-	output += `\n### Table of Contents\n- [Summary](#summary)\n- [Contracts](#contracts)\n\t- `;
-	output += Object.keys(input.latest)
+	let content = `# ${getChainName(chainId)} Deployment\n\n`;
+	content += `\n### Table of Contents\n- [Summary](#summary)\n- [Contracts](#contracts)\n\t- `;
+	content += Object.keys(json.latest)
 		.map((contractName) => `[${contractName}](#${contractName.toLowerCase()})`)
 		.join("\n\t- ");
 
-	output += `\n\n## Summary\n\n<table>\n<tr>\n\t<th>Contract</th>\n\t<th>Address</th>\n\t<th>Version</th>\n</tr>\n`;
+	content += `\n\n## Summary\n\n<table>\n<tr>\n\t<th>Contract</th>\n\t<th>Address</th>\n\t<th>Version</th>\n</tr>\n`;
 
-	output += Object.entries(input.latest)
+	content += Object.entries(json.latest)
 		.map(
 			([contractName, { address, version }]) =>
 				`<tr>\n\t<td>${getContractLinkAnchor(projectUrl, contractName)}</td>\n\t<td>${getEtherscanLinkAnchor(
-					input.chainId,
+					json.chainId,
 					address
 				)}</td>\n\t<td>${version || "N/A"}</td>\n</tr>`
 		)
 		.join("\n");
-	output += `</table>\n`;
+	content += `</table>\n`;
 
-	output += `\n## Contracts\n\n`;
+	content += `\n## Contracts\n\n`;
 
-	output += Object.entries(input.latest)
+	content += Object.entries(json.latest)
 		.map(
 			([contractName, { address, hash, timestamp }]) =>
 				`### ${contractName}\n\nAddress: ${getEtherscanLinkMd(
-					input.chainId,
+					json.chainId,
 					address
-				)}\n\nTransaction Hash: ${getEtherscanLinkMd(input.chainId, hash, "tx")}\n\n${formatTimestamp(
+				)}\n\nTransaction Hash: ${getEtherscanLinkMd(json.chainId, hash, "tx")}\n\n${formatTimestamp(
 					timestamp
 				)}`
 		)
 		.join("\n\n---\n\n");
 
-	writeFileSync(join(__dirname, `../../deployments/${input.chainId}.md`), output, "utf-8");
+	writeFileSync(join(__dirname, `../../deployments/${json.chainId}.md`), content, "utf-8");
+
+	generateIndexMarkdown();
+}
+
+function generateIndexMarkdown() {
+	const directory = join(__dirname, "../../deployments");
+	const files = readdirSync(directory)
+		.filter((file) => file.endsWith(".md") && file !== "index.md")
+		.map((file) => parseInt(file.replace(".md", "")))
+		.sort((a, b) => a - b);
+
+	let content = `# Contract Deployments\n\n`;
+	content += `This repository contains deployment information for the following networks:\n\n`;
+	content += `| Chain ID | Network Name | Deployment Details |\n`;
+	content += `|----------|--------------|-------------------|\n`;
+
+	files.forEach((chainId) => {
+		content += `| ${chainId} | ${getChainName(chainId)} | [View Deployment](./${chainId}.md) |\n`;
+	});
+
+	writeFileSync(join(directory, "index.md"), content, "utf-8");
 }
 
 function getChainName(chainId) {
@@ -376,6 +382,23 @@ function getConstructorInputs(abi, arguments) {
 	return inputs;
 }
 
+function isDuplicate(output, name, address, hash) {
+	for (const history of output.history) {
+		if (history.contracts.hasOwnProperty(name)) {
+			const historyContract = history.contracts[name];
+			if (historyContract.address === address && historyContract.hash === hash) {
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+function isTransparentUpgradeableProxy(proxyType) {
+	return proxyType === "TransparentUpgradeableProxy";
+}
+
 function getContractLinkAnchor(baseUrl, contractName) {
 	const name = contractName.toLowerCase();
 	let path;
@@ -400,8 +423,6 @@ function getEtherscanLink(chainId, address, slug = "address") {
 			return `https://etherscan.io/${slug}/${address}`;
 		case 11155111:
 			return `https://sepolia.etherscan.io/${slug}/${address}`;
-		case 5:
-			return `https://goerli.etherscan.io/${slug}/${address}`;
 		case 10:
 			return `https://optimistic.etherscan.io/${slug}/${address}`;
 		case 11155420:
