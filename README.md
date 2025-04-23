@@ -4,6 +4,8 @@
 
 Vortex is a modular smart account implementation built on ERC-7579 and ERC-4337, designed for extensibility, modularity, and minimalism. It provides a flexible framework for validating user operations and executing arbitrary logic using plug-and-play modules.
 
+For more detailed information, you can read the full article at [Vortex: Account Abstraction](https://rkim.xyz/blog/vortex-account-abstraction)
+
 ## Overview
 
 This repository contains the smart contracts for the Vortex Smart Account system, compliant with both ERC-7579 (modular account abstraction) and ERC-4337 (account abstraction via alt mempool).  
@@ -59,7 +61,7 @@ Modules responsible for extending the fallback functionality of a smart account.
 
 ## Deployment
 
-You can checkout the deployment information from [here](https://github.com/fomoweth/account-abstraction/blob/main/deployments/index.md)
+You can checkout the deployment information [here](https://github.com/fomoweth/account-abstraction/blob/main/deployments/index.md)
 
 ## Usage
 
